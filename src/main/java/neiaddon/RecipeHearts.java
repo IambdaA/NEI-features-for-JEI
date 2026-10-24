@@ -13,12 +13,12 @@ import mezz.jei.api.gui.inputs.RecipeSlotUnderMouse;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.advanced.IRecipeButtonControllerFactory;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.EventPriority;
@@ -98,7 +98,7 @@ public final class RecipeHearts {
         }
 
         @Override
-        public void draw(GuiGraphicsExtractor g, int xOffset, int yOffset) {
+        public void draw(GuiGraphics g, int xOffset, int yOffset) {
             for (int row = 0; row < HEART.length; row++) {
                 String line = HEART[row];
                 int col = 0;
@@ -193,7 +193,7 @@ public final class RecipeHearts {
         }
 
         @Override
-        public void drawExtras(GuiGraphicsExtractor g, Rect2i buttonArea, int mouseX, int mouseY, float partialTicks) {
+        public void drawExtras(GuiGraphics g, Rect2i buttonArea, int mouseX, int mouseY, float partialTicks) {
             long now = System.nanoTime();
             if (mouseX >= buttonArea.getX() && mouseX < buttonArea.getX() + buttonArea.getWidth()
                 && mouseY >= buttonArea.getY() && mouseY < buttonArea.getY() + buttonArea.getHeight()) {
@@ -233,7 +233,7 @@ public final class RecipeHearts {
 
     private static String nameOf(String itemId) {
         try {
-            return BuiltInRegistries.ITEM.getOptional(Identifier.parse(itemId))
+            return BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(itemId))
                 .map(i -> i.getDefaultInstance()
                     .getHoverName()
                     .getString())
@@ -246,7 +246,7 @@ public final class RecipeHearts {
     // ---------------------------------------------------------------- keys
 
     private static boolean onRecipesScreen() {
-        Screen s = Minecraft.getInstance().gui.screen();
+        Screen s = McCompat.screen();
         return s != null && s.getClass()
             .getName()
             .equals(JEI_RECIPES_GUI);

@@ -7,6 +7,14 @@ Status: an early version built and loaded in game. Everything added since (NEI-s
 `neo_version` (gradle.properties) came from the official 26.2 template; `jei_version` is 30.42.0.237. Change either if the build can't resolve them.
 Send back any lines starting with `error:`.
 
+## This is the Minecraft 1.21.1 build
+Same features as the 26.x builds, converted to the 1.21.1 / NeoForge 21.1 APIs (JEI 19.x). Build: JDK 21, `./gradlew clean build`.
+What differs from the 26.x code: drawing uses `GuiGraphics` (1.21.1 draws with a depth test, so everything drawn in front of an
+item goes through `Pose.over` / `Pose.begin`), screens use the old `render` / `mouseClicked(double, double, int)` methods, ids are
+`ResourceLocation`s, chat link click and hover events are the 1.21.1 ones, and the mod-bus events are in `ClientModEvents` and
+`CommonModEvents`. The text calculator window (not reachable since the tree replaced it) is not part of this build.
+Not tried in game yet: expect a few compile errors on the first build and some draw order problems.
+
 ## Features
 - **Highlight tips** (as NEI's HUDRenderer): a tooltip-style box with the item and name of the BLOCK under the crosshair (not entities). Off by default; Numpad 0 toggles it, the player-list key (Tab) hides it. Position `hudX`/`hudY` (0..10000, NEI defaults 5000/100) in `neiaddon-client.toml`; bind "Move Highlight Tooltips" in Controls to open NEI's drag-to-position screen. Extras not in NEI (off by default): `hudShowMod`, `hudShowId`.
 - **Item info pages**: `config/neiaddon/informationpages.cfg` (created on first start), NEI's `filter = text` format. Filters: `namespace:path` (with `*`), `$namespace:tag` (NEI's `$oredict`; `$name` means `c:name`), `@modid`. Lines starting with `#` are comments, as in NEI. Shown in JEI on the item's recipe page.

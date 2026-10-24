@@ -14,9 +14,9 @@ import mezz.jei.api.recipe.IRecipeManager;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import mezz.jei.api.recipe.transfer.IRecipeTransferHandler;
-import mezz.jei.api.recipe.types.IRecipeType;
+import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.runtime.IJeiRuntime;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
@@ -136,8 +136,8 @@ public final class RecipeLookup {
             if (sep > 0) {
                 String typeUid = recipeId.substring(0, sep);
                 String rest = recipeId.substring(sep + 1);
-                Optional<IRecipeType<?>> type = rt.getRecipeManager()
-                    .getRecipeType(Identifier.parse(typeUid));
+                Optional<RecipeType<?>> type = rt.getRecipeManager()
+                    .getRecipeType(ResourceLocation.parse(typeUid));
                 if (type.isPresent()) {
                     found = search(rt, type.get(), recipeId, byIdentifier, rest, hint, true);
                     if (found == null && hint != null && !hint.isEmpty()) {
@@ -156,7 +156,7 @@ public final class RecipeLookup {
         return found.copy();
     }
 
-    private static <T> RecipeShape search(IJeiRuntime rt, IRecipeType<T> type, String recipeId, boolean byIdentifier,
+    private static <T> RecipeShape search(IJeiRuntime rt, RecipeType<T> type, String recipeId, boolean byIdentifier,
         String identifier, ItemStack hint, boolean focused) {
         IRecipeManager manager = rt.getRecipeManager();
         IFocusFactory focuses = rt.getJeiHelpers()
@@ -173,7 +173,7 @@ public final class RecipeLookup {
         for (T recipe : lookup.get()
             .toList()) {
             if (byIdentifier) {
-                Identifier id = category.getIdentifier(recipe);
+                ResourceLocation id = category.getRegistryName(recipe);
                 if (id == null || !identifier.equals(id.toString())) continue;
             }
             Optional<IRecipeLayoutDrawable<T>> layout = manager

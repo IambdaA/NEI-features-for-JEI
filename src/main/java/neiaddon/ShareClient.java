@@ -4,17 +4,16 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
-import net.minecraft.client.gui.ActiveTextCollector;
-import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientChatReceivedEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
-import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
  * Ctrl + L chat links, the client half: sending (NEIClientUtils.sendChatItemLink), keeping what the server hands out
@@ -54,7 +53,7 @@ public final class ShareClient {
             say("That is too big to share in chat.");
             return true;
         }
-        ClientPacketDistributor.sendToServer(new Share.ShareRequest(payload));
+        PacketDistributor.sendToServer(new Share.ShareRequest(payload));
         return true;
     }
 
@@ -72,23 +71,15 @@ public final class ShareClient {
      */
     @SubscribeEvent
     static void onMousePressed(ScreenEvent.MouseButtonPressed.Pre event) {
-        if (event.getButton() != 0 || !(event.getScreen() instanceof ChatScreen chatScreen)) return;
-        Minecraft mc = Minecraft.getInstance();
-        ActiveTextCollector.ClickableStyleFinder finder = new ActiveTextCollector.ClickableStyleFinder(
-            chatScreen.getFont(),
-            (int) event.getMouseX(),
-            (int) event.getMouseY());
-        boolean restricted = mc.player != null && mc.player.chatAbilities()
-            .hasAnyRestrictions();
-        mc.gui.hud.getChat()
-            .captureClickableText(
-                finder,
-                mc.getWindow()
-                    .getGuiScaledHeight(),
-                mc.gui.hud.getGuiTicks(),
-                restricted ? ChatComponent.DisplayMode.FOREGROUND_RESTRICTED : ChatComponent.DisplayMode.FOREGROUND);
-        if (finder.result() != null && finder.result()
-            .getClickEvent() instanceof ClickEvent.RunCommand(String command) && command.startsWith(Share.COMMAND + " ")) {
+        if (event.getButton() != 0 || !(event.getScreen() instanceof ChatScreen)) return;
+        Style style = McCompat.chat()
+            .getClickedComponentStyleAt(event.getMouseX(), event.getMouseY());
+        ClickEvent click = style == null ? null : style.getClickEvent();
+        if (click == null || click.getAction() != ClickEvent.Action.RUN_COMMAND) return;
+        // 1.21.1 keeps the leading slash of a command in the click event
+        String command = click.getValue();
+        if (command.startsWith("/")) command = command.substring(1);
+        if (command.startsWith(Share.COMMAND + " ")) {
             event.setCanceled(true);
             open(command.substring(Share.COMMAND.length() + 1));
         }
@@ -101,11 +92,12 @@ public final class ShareClient {
         if (!message.getString()
             .contains("Click to add bookmark")) return;
         message.visit((style, text) -> {
-            if (style.getClickEvent() instanceof ClickEvent.RunCommand(String command)) {
-                NeiAddon.LOGGER.info("Chat link received: \"{}\" runs /{}", text, command);
+            ClickEvent click = style.getClickEvent();
+            if (click != null && click.getAction() == ClickEvent.Action.RUN_COMMAND) {
+                NeiAddon.LOGGER.info("Chat link received: \"{}\" runs {}", text, click.getValue());
             }
             return java.util.Optional.empty();
-        }, net.minecraft.network.chat.Style.EMPTY);
+        }, Style.EMPTY);
     }
 
     /** The player clicked a chat link: import what was kept under the id (NEI's CommandBookmarkAdd). */

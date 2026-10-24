@@ -2,13 +2,11 @@ package neiaddon;
 
 import java.util.List;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.item.ItemStack;
-import org.joml.Matrix3x2fStack;
 
 /**
  * Drawing helpers of the crafting tree window: pieces of NEI's {@code craftingtree.png}, NEI's small overlay text and a
@@ -17,7 +15,7 @@ import org.joml.Matrix3x2fStack;
  */
 final class TreeDraw {
 
-    static final Identifier TEXTURE = Identifier.fromNamespaceAndPath(NeiAddon.MODID, "textures/gui/craftingtree.png");
+    static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath(NeiAddon.MODID, "textures/gui/craftingtree.png");
 
     /** A piece of the texture: where it is and how big. */
     record Sprite(int u, int v, int w, int h) {}
@@ -48,18 +46,18 @@ final class TreeDraw {
         return new Sprite(tree.u(), tree.v() + STATS_ROW, tree.w(), tree.h());
     }
 
-    static void draw(GuiGraphicsExtractor g, Sprite s, int x, int y) {
+    static void draw(GuiGraphics g, Sprite s, int x, int y) {
         part(g, s.u(), s.v(), s.w(), s.h(), x, y);
     }
 
     /** A rectangle of the texture drawn 1:1. */
-    static void part(GuiGraphicsExtractor g, int u, int v, int w, int h, int x, int y) {
+    static void part(GuiGraphics g, int u, int v, int w, int h, int x, int y) {
         if (w <= 0 || h <= 0) return;
-        g.blit(RenderPipelines.GUI_TEXTURED, TEXTURE, x, y, (float) u, (float) v, w, h, 256, 256);
+        g.blit(TEXTURE, x, y, (float) u, (float) v, w, h, 256, 256);
     }
 
     /** NEI's {@code DrawableResource.draw(x, y, w, h)} with slices: corners as they are, edges and middle tiled. */
-    static void sliced(GuiGraphicsExtractor g, Sprite s, int sliceLeft, int sliceRight, int sliceTop, int sliceBottom, int x, int y,
+    static void sliced(GuiGraphics g, Sprite s, int sliceLeft, int sliceRight, int sliceTop, int sliceBottom, int x, int y,
         int width, int height) {
         int middleW = s.w() - sliceLeft - sliceRight;
         int middleH = s.h() - sliceTop - sliceBottom;
@@ -99,7 +97,7 @@ final class TreeDraw {
     }
 
     /** A sprite tiled sideways over {@code width} pixels (the stats scrollbar's track and thumb). */
-    static void tiledWide(GuiGraphicsExtractor g, Sprite s, int x, int y, int width) {
+    static void tiledWide(GuiGraphics g, Sprite s, int x, int y, int width) {
         for (int done = 0; done < width; done += s.w()) {
             part(g, s.u(), s.v(), Math.min(s.w(), width - done), s.h(), x + done, y);
         }
@@ -116,16 +114,18 @@ final class TreeDraw {
     /**
      * NEI's {@code drawNEIOverlayText}: text at half size inside a rectangle (an amount in the corner of a slot's item).
      */
-    static void overlayText(GuiGraphicsExtractor g, Font font, String text, int rx, int ry, int rw, int rh, int color, Align align) {
+    static void overlayText(GuiGraphics g, Font font, String text, int rx, int ry, int rw, int rh, int color, Align align) {
         float scale = 0.5f;
         float width = font.width(text) * scale;
         float x = align == Align.BOTTOM_RIGHT ? rx + rw - width : rx;
         float y = align == Align.TOP_LEFT ? ry : ry + rh - 9 * scale;
-        Matrix3x2fStack pose = g.pose();
+        Pose pose = Pose.of(g);
         pose.pushMatrix();
+        // an amount is drawn in front of the item it belongs to
+        pose.translateZ(Pose.OVER);
         pose.translate((float) Math.ceil(x), (float) Math.ceil(y));
         pose.scale(scale, scale);
-        g.text(font, text, 0, 0, 0xFF000000 | color, true);
+        g.drawString(font, text, 0, 0, 0xFF000000 | color, true);
         pose.popMatrix();
     }
 
@@ -151,7 +151,7 @@ final class TreeDraw {
      * {@code extraW x extraH} that {@code extra} paints at its top left corner. The first line is the title and gets a
      * little more room, like every tooltip.
      */
-    static void tooltip(GuiGraphicsExtractor g, Font font, int mx, int my, int screenW, int screenH, List<FormattedCharSequence> lines,
+    static void tooltip(GuiGraphics g, Font font, int mx, int my, int screenW, int screenH, List<FormattedCharSequence> lines,
         List<IconLine> icons, int extraW, int extraH, ExtraPainter extra) {
         int textW = 0;
         for (FormattedCharSequence line : lines) textW = Math.max(textW, font.width(line));
@@ -172,7 +172,7 @@ final class TreeDraw {
         y = Math.max(y, 6);
         x = Math.max(x, 6);
 
-        g.nextStratum();
+        Pose.begin(g, Pose.TOOLTIP);
         g.fill(x - 3, y - 4, x + width + 3, y + height + 4, 0xF0100010);
         g.fill(x - 4, y - 3, x + width + 4, y + height + 3, 0xF0100010);
         g.fill(x - 3, y - 3, x + width + 3, y - 2, 0xF0280070);
@@ -182,18 +182,18 @@ final class TreeDraw {
 
         int ty = y;
         for (int i = 0; i < lines.size(); i++) {
-            g.text(font, lines.get(i), x, ty, 0xFFFFFFFF);
+            g.drawString(font, lines.get(i), x, ty, 0xFFFFFFFF);
             ty += i == 0 && lines.size() > 1 ? 12 : 10;
         }
         for (IconLine icon : icons) {
             ty += 2;
-            g.text(font, seq(icon.label() + ":"), x, ty, 0xFFFFFFFF);
+            g.drawString(font, seq(icon.label() + ":"), x, ty, 0xFFFFFFFF);
             ty += 11;
             for (int n = 0; n < icon.stacks().size(); n++) {
                 int sx = x + (n % TIP_MAX_COLUMNS) * TIP_SLOT;
                 int sy = ty + (n / TIP_MAX_COLUMNS) * TIP_SLOT;
                 if (n == icon.active()) g.fill(sx, sy, sx + TIP_SLOT, sy + TIP_SLOT, 0x66555555);
-                g.fakeItem(icon.stacks().get(n), sx + 1, sy + 1);
+                g.renderFakeItem(icon.stacks().get(n), sx + 1, sy + 1);
                 String amount = n < icon.amounts().size() ? icon.amounts().get(n) : "";
                 if (!amount.isEmpty()) overlayText(g, font, amount, sx + 1, sy + 1, 16, 16, 0xFFFFFF, Align.BOTTOM_RIGHT);
             }
@@ -203,6 +203,7 @@ final class TreeDraw {
             ty += 2;
             extra.paint(g, x, ty);
         }
+        Pose.end(g);
     }
 
     /** A string with legacy colour codes (section sign) as drawable text. */
@@ -213,6 +214,6 @@ final class TreeDraw {
 
     interface ExtraPainter {
 
-        void paint(GuiGraphicsExtractor g, int x, int y);
+        void paint(GuiGraphics g, int x, int y);
     }
 }

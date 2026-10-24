@@ -6,6 +6,8 @@
 
 # The license for you mod. This is mandatory metadata and allows for easier comprehension of your redistributive properties.
 # Review your options at https://choosealicense.com/. All rights reserved is the default copyright stance, and is thus the default here.
+modLoader="javafml" #mandatory
+loaderVersion="[4,)" #mandatory
 license="${mod_license}"
 
 # A URL to refer people to when problems occur with this mod
@@ -29,7 +31,7 @@ displayName="${mod_name}" #mandatory
 # A URL for the "homepage" for this mod, displayed in the mod UI
 displayURL="https://github.com/IambdaA/NEI-features-for-JEI" #optional
 
-# A file name (in the root of the mod JAR) containing a logo for display
+# A file name (in the root of the mod JAR) containing a square icon for display
 logoFile="logo.png" #optional
 
 # A text field displayed in the mod UI
@@ -90,6 +92,6 @@ An unofficial port of GTNH NotEnoughItems features to Just Enough Items: bookmar
 [[dependencies.${mod_id}]]
     modId="jei"
     type="required"
-    versionRange="[30,)"
+    versionRange="${jei_version_range}"
     ordering="AFTER"
     side="CLIENT"

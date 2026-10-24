@@ -9,7 +9,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
@@ -24,7 +24,8 @@ import org.lwjgl.glfw.GLFW;
 @EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
 public final class CalcKeys {
 
-    private static final KeyMapping.Category CATEGORY = new KeyMapping.Category(Identifier.fromNamespaceAndPath(NeiAddon.MODID, "main"));
+    // 1.21.1: a key category is just its translation key
+    private static final String CATEGORY = "key.category.neiaddon.main";
 
     // NEI's defaults: bookmark.add = A, bookmark.open_crafting_tree = T, bookmark.hide = B
     public static final KeyMapping ADD = new KeyMapping("key.neiaddon.bookmark_add", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_A, CATEGORY);
@@ -50,9 +51,7 @@ public final class CalcKeys {
 
     private CalcKeys() {}
 
-    @SubscribeEvent
     static void register(RegisterKeyMappingsEvent event) {
-        event.registerCategory(CATEGORY);
         event.register(ADD);
         event.register(TREE);
         event.register(FAVORITE);
@@ -106,12 +105,12 @@ public final class CalcKeys {
     @SubscribeEvent
     static void onKey(ScreenEvent.KeyPressed.Pre event) {
         Screen screen = event.getScreen();
-        if (screen instanceof CalculatorScreen || typing()) return;
+        if (typing()) return;
         if (screen instanceof CraftingTreeScreen tree && tree.searchFocused()) return;
         InputConstants.Key key = InputConstants.Type.KEYSYM.getOrCreate(event.getKeyCode());
-        boolean shift = Minecraft.getInstance().hasShiftDown();
+        boolean shift = McCompat.shift();
         int code = event.getKeyCode();
-        if (!shift && Minecraft.getInstance().hasControlDown() && (code == GLFW.GLFW_KEY_C || code == GLFW.GLFW_KEY_X || code == GLFW.GLFW_KEY_D)) {
+        if (!shift && McCompat.ctrl() && (code == GLFW.GLFW_KEY_C || code == GLFW.GLFW_KEY_X || code == GLFW.GLFW_KEY_D)) {
             // NEI: Ctrl+C copies the item name, Ctrl+X the item id, Ctrl+D the ore dictionary names (here: tags)
             ItemStack copy = hoveredStack(screen);
             if (!copy.isEmpty()) {
@@ -126,7 +125,7 @@ public final class CalcKeys {
             }
         }
         Optional<ItemStack> listed = HotkeyTips.hoveredInList();
-        if (Minecraft.getInstance().hasControlDown() && CHAT_LINK.isActiveAndMatches(key)) {
+        if (McCompat.ctrl() && CHAT_LINK.isActiveAndMatches(key)) {
             // NEI sendRecipeInChatLink: Ctrl+Shift sends the hovered (or favorite) recipe, otherwise the item
             ItemStack stack = hoveredStack(screen);
             if (!stack.isEmpty()) {
@@ -153,7 +152,7 @@ public final class CalcKeys {
         if (shift && CRAFT.isActiveAndMatches(key)) {
             // NEI runAutoCrafting over an item that has a favorite recipe; Ctrl keeps what the inventory already holds
             ItemStack stack = hoveredStack(screen);
-            if (!stack.isEmpty() && RecipeHearts.autocraftFavorite(stack, !Minecraft.getInstance().hasControlDown())) {
+            if (!stack.isEmpty() && RecipeHearts.autocraftFavorite(stack, !McCompat.ctrl())) {
                 event.setCanceled(true);
                 return;
             }
@@ -183,7 +182,7 @@ public final class CalcKeys {
             ItemStack stack = hoveredStack(screen);
             if (!stack.isEmpty()) {
                 // NEI bookmark.add toggles: an item that is already bookmarked is removed. Ctrl keeps the stack size.
-                long amount = !Minecraft.getInstance().hasControlDown() ? 1
+                long amount = !McCompat.ctrl() ? 1
                     : listed.isPresent() ? QuantityField.scrollMultiplier(stack) : Math.max(1, stack.getCount());
                 Bookmarks.toggle(stack, amount);
                 event.setCanceled(true);
@@ -219,7 +218,7 @@ public final class CalcKeys {
             if (fromRecipes.isPresent()) return fromRecipes.get();
         }
         if (screen instanceof AbstractContainerScreen<?> container) {
-            Slot slot = container.getHoveredSlot();
+            Slot slot = container.getSlotUnderMouse();
             if (slot != null && slot.hasItem()) return slot.getItem();
         }
         return ItemStack.EMPTY;

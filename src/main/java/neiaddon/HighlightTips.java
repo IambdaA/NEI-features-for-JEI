@@ -5,23 +5,20 @@ import java.util.List;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RedStoneWireBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.ModList;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
-import net.neoforged.neoforge.client.gui.GuiLayer;
+import net.minecraft.client.gui.LayeredDraw;
 import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 import net.neoforged.neoforgespi.language.IModInfo;
 import org.apache.commons.lang3.StringUtils;
@@ -31,12 +28,10 @@ import org.apache.commons.lang3.StringUtils;
  * item. Off by default, toggled with Numpad 0, hidden while the player list key is held. Position is
  * {@code hudX}/{@code hudY} (0..10000, NEI defaults 5000/100); a screen to drag it is bound to a key in Controls.
  */
-@EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
-public final class HighlightTips implements GuiLayer {
+public final class HighlightTips implements LayeredDraw.Layer {
 
-    private static final Identifier LAYER_ID = Identifier.fromNamespaceAndPath(NeiAddon.MODID, "highlight_tips");
+    private static final ResourceLocation LAYER_ID = ResourceLocation.fromNamespaceAndPath(NeiAddon.MODID, "highlight_tips");
 
-    @SubscribeEvent
     static void register(RegisterGuiLayersEvent event) {
         event.registerAbove(VanillaGuiLayers.CROSSHAIR, LAYER_ID, new HighlightTips());
     }
@@ -50,17 +45,17 @@ public final class HighlightTips implements GuiLayer {
     }
 
     @Override
-    public void render(GuiGraphicsExtractor g, DeltaTracker deltaTracker) {
+    public void render(GuiGraphics g, DeltaTracker deltaTracker) {
         Minecraft mc = Minecraft.getInstance();
         // NEI: only without a screen, in a world, while the player list key is not held, and only for blocks
         if (!AddonConfig.HUD_ENABLED.get() || mc.level == null || mc.player == null) return;
-        if (mc.gui.screen() != null || mc.options.keyPlayerList.isDown()) return;
+        if (McCompat.screen() != null || mc.options.keyPlayerList.isDown()) return;
         if (!(mc.hitResult instanceof BlockHitResult block) || block.getType() != HitResult.Type.BLOCK) return;
 
         BlockPos pos = block.getBlockPos();
         BlockState state = mc.level.getBlockState(pos);
         if (state.isAir()) return;
-        ItemStack icon = state.getCloneItemStack(pos, mc.level, false, mc.player);
+        ItemStack icon = state.getBlock().getCloneItemStack(mc.level, pos, state);
         if (icon.isEmpty()) return;
 
         List<String> lines = new ArrayList<>();
@@ -71,7 +66,7 @@ public final class HighlightTips implements GuiLayer {
             name = name + " " + (power.length() < 2 ? " " + power : power);
         }
         lines.add(name);
-        Identifier id = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+        ResourceLocation id = BuiltInRegistries.BLOCK.getKey(state.getBlock());
         if (AddonConfig.HUD_SHOW_ID.get()) lines.add(id.toString());
         if (AddonConfig.HUD_SHOW_MOD.get()) lines.add(modName(id.getNamespace()));
         draw(g, mc.font, icon, lines, AddonConfig.HUD_X.get(), AddonConfig.HUD_Y.get());
@@ -87,19 +82,19 @@ public final class HighlightTips implements GuiLayer {
         return new int[] { x, y, w, h };
     }
 
-    static void draw(GuiGraphicsExtractor g, Font font, ItemStack icon, List<String> lines, int posX, int posY) {
+    static void draw(GuiGraphics g, Font font, ItemStack icon, List<String> lines, int posX, int posY) {
         int[] b = box(font, lines, posX, posY, g.guiWidth(), g.guiHeight());
         int x = b[0], y = b[1], w = b[2], h = b[3];
         tooltipBox(g, x, y, w, h);
         int ty = (h - 8 * lines.size()) / 2;
         for (int i = 0; i < lines.size(); i++) {
-            g.text(font, lines.get(i), x + 24, y + ty + 10 * i, 0xFFA0A0A0, true);
+            g.drawString(font, lines.get(i), x + 24, y + ty + 10 * i, 0xFFA0A0A0, true);
         }
-        if (!icon.isEmpty()) g.fakeItem(icon, x + 5, y + h / 2 - 8);
+        if (!icon.isEmpty()) g.renderFakeItem(icon, x + 5, y + h / 2 - 8);
     }
 
     /** The vanilla 1.7.10 tooltip box NEI's GuiDraw.drawTooltipBox draws. */
-    private static void tooltipBox(GuiGraphicsExtractor g, int x, int y, int w, int h) {
+    private static void tooltipBox(GuiGraphics g, int x, int y, int w, int h) {
         int bg = 0xF0100010;
         int c1 = 0x505000FF;
         int c2 = 0x5028007F;

@@ -31,8 +31,7 @@ public final class HotkeyTips {
     private HotkeyTips() {}
 
     public static boolean altDown() {
-        return Minecraft.getInstance()
-            .hasAltDown();
+        return McCompat.alt();
     }
 
     /** NEI's "showHotkeys": "Hold ALT for hotkeys", gray with ALT in gold. */

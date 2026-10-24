@@ -16,7 +16,7 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.Rect2i;
 import mezz.jei.api.runtime.IJeiRuntime;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
@@ -25,8 +25,8 @@ import net.minecraft.world.item.ItemStack;
 public class NeiAddonJeiPlugin implements IModPlugin {
 
     @Override
-    public Identifier getPluginUid() {
-        return Identifier.fromNamespaceAndPath(NeiAddon.MODID, "main");
+    public ResourceLocation getPluginUid() {
+        return ResourceLocation.fromNamespaceAndPath(NeiAddon.MODID, "main");
     }
 
     @Override

@@ -1,7 +1,7 @@
 # NEI Features for JEI
 
 An unofficial port of features from [GTNH NotEnoughItems](https://github.com/GTNewHorizons/NotEnoughItems) to
-[Just Enough Items](https://github.com/mezz/JustEnoughItems), for **Minecraft 26.2 / NeoForge**. Not affiliated with the
+[Just Enough Items](https://github.com/mezz/JustEnoughItems), for **Minecraft 1.21.1 / NeoForge** (this branch; other versions have their own builds). Not affiliated with the
 NotEnoughItems authors.
 
 ## Features
@@ -17,8 +17,8 @@ See [BUILDING.md](BUILDING.md) for the full list, keys and notes.
 
 ## Requirements
 
-- Minecraft 26.2, NeoForge 26.2.0.90 or newer
-- JEI 30.42 or newer
+- Minecraft 1.21.1, NeoForge 21.1
+- JEI 19.x
 
 ## Status
 
@@ -30,7 +30,7 @@ fluids in the chain maths.
 
 ## Building
 
-JDK 25, then `./gradlew build`. The jar is in `build/libs/`. `./gradlew runClient` starts a dev client with JEI.
+JDK 21, then `./gradlew build`. The jar is in `build/libs/`. `./gradlew runClient` starts a dev client with JEI.
 
 ## License
 

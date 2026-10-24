@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -87,14 +87,14 @@ public final class InfoPages {
             }
             if (filter.startsWith("$")) {
                 String name = filter.substring(1);
-                TagKey<Item> tag = TagKey.create(Registries.ITEM, Identifier.parse(name.contains(":") ? name : "c:" + name));
+                TagKey<Item> tag = TagKey.create(Registries.ITEM, ResourceLocation.parse(name.contains(":") ? name : "c:" + name));
                 return item -> new ItemStack(item).is(tag);
             }
             if (filter.contains("*")) {
                 Pattern p = Pattern.compile("\\Q" + filter.replace("*", "\\E.*\\Q") + "\\E");
                 return item -> p.matcher(BuiltInRegistries.ITEM.getKey(item).toString()).matches();
             }
-            Identifier id = Identifier.parse(filter);
+            ResourceLocation id = ResourceLocation.parse(filter);
             return item -> BuiltInRegistries.ITEM.getKey(item).equals(id);
         } catch (RuntimeException e) {
             NeiAddon.LOGGER.warn("Ignoring bad info page filter '{}': {}", filter, e.getMessage());

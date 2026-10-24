@@ -14,12 +14,11 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.ItemStackTemplate;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -48,7 +47,7 @@ public final class Share {
     /** Client to server: share this payload. */
     public record ShareRequest(String payload) implements CustomPacketPayload {
 
-        public static final Type<ShareRequest> TYPE = new Type<>(Identifier.fromNamespaceAndPath(NeiAddon.MODID, "share_request"));
+        public static final Type<ShareRequest> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(NeiAddon.MODID, "share_request"));
         public static final StreamCodec<RegistryFriendlyByteBuf, ShareRequest> STREAM_CODEC = StreamCodec
             .composite(ByteBufCodecs.STRING_UTF8, ShareRequest::payload, ShareRequest::new);
 
@@ -61,7 +60,7 @@ public final class Share {
     /** Server to every client: keep this payload under this id until someone clicks the link. */
     public record SharedPayload(String id, String payload) implements CustomPacketPayload {
 
-        public static final Type<SharedPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath(NeiAddon.MODID, "shared_payload"));
+        public static final Type<SharedPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(NeiAddon.MODID, "shared_payload"));
         public static final StreamCodec<RegistryFriendlyByteBuf, SharedPayload> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.STRING_UTF8,
             SharedPayload::id,
@@ -78,7 +77,7 @@ public final class Share {
     /** Server to one client: import the payload you kept under this id (the player clicked the chat link). */
     public record ImportRequest(String id) implements CustomPacketPayload {
 
-        public static final Type<ImportRequest> TYPE = new Type<>(Identifier.fromNamespaceAndPath(NeiAddon.MODID, "import_request"));
+        public static final Type<ImportRequest> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(NeiAddon.MODID, "import_request"));
         public static final StreamCodec<RegistryFriendlyByteBuf, ImportRequest> STREAM_CODEC = StreamCodec
             .composite(ByteBufCodecs.STRING_UTF8, ImportRequest::id, ImportRequest::new);
 
@@ -117,7 +116,6 @@ public final class Share {
                             })));
     }
 
-    @SubscribeEvent
     static void register(RegisterPayloadHandlersEvent event) {
         event.registrar("1")
             .executesOn(HandlerThread.MAIN)
@@ -150,12 +148,12 @@ public final class Share {
         MutableComponent clickable = null;
         if (lines.length > 1 && lines[1].startsWith("target\t")) {
             try {
-                Optional<Item> item = BuiltInRegistries.ITEM.getOptional(Identifier.parse(lines[1].substring(7)));
+                Optional<Item> item = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(lines[1].substring(7)));
                 if (item.isPresent()) {
                     // built like JEI's own item chat links: plain text carrying the click and the item hover
                     ItemStack stack = new ItemStack(item.get());
                     clickable = Component.literal("[" + stack.getHoverName().getString() + "]")
-                        .withStyle(style -> style.withColor(ChatFormatting.AQUA).withHoverEvent(new HoverEvent.ShowItem(ItemStackTemplate.fromNonEmptyStack(stack))));
+                        .withStyle(style -> style.withColor(ChatFormatting.AQUA).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_ITEM, new HoverEvent.ItemStackInfo(stack))));
                 }
             } catch (RuntimeException ignored) {
                 // unreadable item id: fall back to the plain label
@@ -164,7 +162,7 @@ public final class Share {
         if (clickable == null) {
             clickable = Component.literal("[Bookmark " + (kind.equals("group") ? "Group" : kind.equals("recipe") ? "Recipe" : "Item") + "]");
         }
-        clickable.withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(COMMAND + " " + id)));
+        clickable.withStyle(style -> style.withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/" + COMMAND + " " + id)));
         NeiAddon.LOGGER.info("Sharing a {} link from {} as {} ({} characters)", kind, sender.getName().getString(), id, payload.length());
         Component message = Component.literal("<")
             .append(sender.getDisplayName())

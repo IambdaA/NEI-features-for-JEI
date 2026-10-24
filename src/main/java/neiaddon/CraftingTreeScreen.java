@@ -25,16 +25,13 @@ import neiaddon.chain.TreeStats;
 import neiaddon.chain.TreeStatsLayout;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.CharacterEvent;
-import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.util.FormattedCharSequence;
@@ -44,7 +41,6 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
-import org.joml.Matrix3x2fStack;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -130,7 +126,7 @@ public final class CraftingTreeScreen extends Screen {
 
     public static void open(Bookmarks.Page page, int gid) {
         Minecraft mc = Minecraft.getInstance();
-        mc.gui.setScreen(new CraftingTreeScreen(mc.gui.screen(), page, gid));
+        McCompat.setScreen(new CraftingTreeScreen(McCompat.screen(), page, gid));
     }
 
     private static String tr(String key, Object... args) {
@@ -178,7 +174,7 @@ public final class CraftingTreeScreen extends Screen {
     protected void init() {
         // the group can go while a recipe screen opened from the tree is shown
         if (!Bookmarks.groupExists(page, gid)) {
-            Minecraft.getInstance().gui.setScreen(prev);
+            McCompat.setScreen(prev);
             return;
         }
         TreeRecipes.stopWaiting();
@@ -207,7 +203,7 @@ public final class CraftingTreeScreen extends Screen {
 
     @Override
     public void onClose() {
-        Minecraft.getInstance().gui.setScreen(prev);
+        McCompat.setScreen(prev);
     }
 
     /** What the player has: every slot of the open menu except a result slot (NEI's getInventoryItems). */
@@ -477,7 +473,7 @@ public final class CraftingTreeScreen extends Screen {
         if (payload instanceof Bookmarks.Entry e && e.key != null) return e.key.sample;
         if (payload instanceof ItemStack s) return s;
         try {
-            return BuiltInRegistries.ITEM.getOptional(Identifier.parse(id))
+            return BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(id))
                 .map(ItemStack::new)
                 .orElse(ItemStack.EMPTY);
         } catch (RuntimeException e) {
@@ -531,8 +527,8 @@ public final class CraftingTreeScreen extends Screen {
     }
 
     @Override
-    public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float delta) {
-        super.extractRenderState(g, mx, my, delta);
+    public void render(GuiGraphics g, int mx, int my, float delta) {
+        super.render(g, mx, my, delta);
         lastMouseX = mx;
         lastMouseY = my;
         updateHover(mx, my);
@@ -542,26 +538,28 @@ public final class CraftingTreeScreen extends Screen {
         if (math.outputRecipes.isEmpty()) {
             String empty = tr("empty");
             int y = MARGIN + PADDING_TOP + (height - MARGIN * 2 - PADDING_TOP) / 2;
-            g.text(font, empty, (width - font.width(empty)) / 2, y, 0xFFAAAAAA, true);
+            g.drawString(font, empty, (width - font.width(empty)) / 2, y, 0xFFAAAAAA, true);
         } else {
             drawCanvas(g, mx, my);
             if (statsVisible) drawStats(g, mx, my);
         }
 
         String title = tr("title");
-        g.text(font, title, (width - font.width(title)) / 2, MARGIN + PADDING_TOP / 2 - 9 / 2 + 1, 0xFFFFFFFF, true);
+        g.drawString(font, title, (width - font.width(title)) / 2, MARGIN + PADDING_TOP / 2 - 9 / 2 + 1, 0xFFFFFFFF, true);
 
-        search.extractRenderState(g, mx, my, delta);
+        search.render(g, mx, my, delta);
         drawToolbar(g, mx, my);
 
-        g.nextStratum();
+        // in front of the items of the tree
+        Pose.begin(g, Pose.OVER);
         drawMenu(g, mx, my);
         drawTooltips(g, mx, my);
+        Pose.end(g);
     }
 
     // ---- canvas
 
-    private void drawCanvas(GuiGraphicsExtractor g, int mx, int my) {
+    private void drawCanvas(GuiGraphics g, int mx, int my) {
         TreeCamera cam = ui.camera;
         cam.clampToBounds(canvas.treeWidth, canvas.treeHeight);
         float zScrollX = cam.scrollX * cam.zoomLevel;
@@ -571,10 +569,10 @@ public final class CraftingTreeScreen extends Screen {
         TreeSlot collapseHover = cam.isDragging() ? null : arrowAt(mx, my);
         SearchResult search = ui.activeSearchResult();
         boolean snapshot = TreeState.useInventorySnapshot();
-        boolean ctrl = Minecraft.getInstance().hasControlDown();
+        boolean ctrl = McCompat.ctrl();
 
         g.enableScissor(cam.widgetX, cam.widgetY, cam.widgetX + cam.widgetW, cam.widgetY + cam.widgetH);
-        Matrix3x2fStack pose = g.pose();
+        Pose pose = Pose.of(g);
         pose.pushMatrix();
         pose.translate(cam.widgetX - zScrollX, cam.widgetY - zScrollY);
         pose.scale(cam.zoomLevel, cam.zoomLevel);
@@ -587,7 +585,11 @@ public final class CraftingTreeScreen extends Screen {
                     if (p.x < cropXMin || p.x > cropXMax) continue;
                     drawSlot(g, node, snapshot, search, ctrl, node == hoveredNode);
                     drawCollapseIcon(g, node, node == collapseHover);
-                    if (node == hoveredNode) g.fill(p.x + 1, p.y + 1, p.x + SLOT - 1, p.y + SLOT - 1, HOVER_COLOR);
+                    if (node == hoveredNode) {
+                        Pose.begin(g, Pose.OVER);
+                        g.fill(p.x + 1, p.y + 1, p.x + SLOT - 1, p.y + SLOT - 1, HOVER_COLOR);
+                        Pose.end(g);
+                    }
                     if (hasBadge(node)) {
                         drawBadge(g, node, p.x, p.y);
                         if (node == hoveredBadge) drawDeleteButton(g, p.x, p.y);
@@ -601,7 +603,7 @@ public final class CraftingTreeScreen extends Screen {
         drawScrollbars(g);
     }
 
-    private void drawParentLine(GuiGraphicsExtractor g, TreeSlot node) {
+    private void drawParentLine(GuiGraphics g, TreeSlot node) {
         TreeSlot parent = canvas.graph.parentOf.get(node);
         if (parent == null) return;
         TreeLayout.Point p = pointOf(node);
@@ -620,7 +622,7 @@ public final class CraftingTreeScreen extends Screen {
         }
     }
 
-    private static void rect(GuiGraphicsExtractor g, int x, int y, int w, int h) {
+    private static void rect(GuiGraphics g, int x, int y, int w, int h) {
         g.fill(x, y, x + w, y + h, LINE_COLOR);
     }
 
@@ -641,10 +643,10 @@ public final class CraftingTreeScreen extends Screen {
         return canvas.graph.childrenNeedCraftingCache.contains(node) ? TreeDraw.SLOT_DEFAULT : TreeDraw.SLOT_CRAFTING;
     }
 
-    private void drawSlot(GuiGraphicsExtractor g, TreeSlot node, boolean snapshot, SearchResult search, boolean ctrl, boolean hovered) {
+    private void drawSlot(GuiGraphics g, TreeSlot node, boolean snapshot, SearchResult search, boolean ctrl, boolean hovered) {
         TreeLayout.Point p = pointOf(node);
         TreeDraw.draw(g, slotSprite(node, snapshot, search), p.x, p.y);
-        g.fakeItem(stackOf(node), p.x + (SLOT - 16) / 2, p.y + (SLOT - 16) / 2);
+        g.renderFakeItem(stackOf(node), p.x + (SLOT - 16) / 2, p.y + (SLOT - 16) / 2);
 
         if (node.requestedAmount > 0 && node.leftAmount == 0) {
             drawStackSize(g, node.requestedAmount, p.x, p.y, true);
@@ -655,13 +657,13 @@ public final class CraftingTreeScreen extends Screen {
         }
     }
 
-    private void drawStackSize(GuiGraphicsExtractor g, long amount, int x, int y, boolean resolved) {
+    private void drawStackSize(GuiGraphics g, long amount, int x, int y, boolean resolved) {
         TreeDraw.overlayText(g, font, ReadableNumber.amount(amount), x + (SLOT - 16) / 2, y + (SLOT - 16) / 2, 16, 16,
             resolved ? 0x55FF55 : 0xFFFFFF, TreeDraw.Align.BOTTOM_RIGHT);
     }
 
     /** A recipe type's icon in a 16 x 16 box (NEI's handler image or item; the little hammer when there is none). */
-    private void drawHandlerIcon(GuiGraphicsExtractor g, String handler, int x, int y) {
+    private void drawHandlerIcon(GuiGraphics g, String handler, int x, int y) {
         IDrawable icon = TreeRecipes.info(handler)
             .icon();
         if (icon == null) {
@@ -670,7 +672,7 @@ public final class CraftingTreeScreen extends Screen {
         }
         int size = Math.max(icon.getWidth(), icon.getHeight());
         if (size > 16) {
-            Matrix3x2fStack pose = g.pose();
+            Pose pose = Pose.of(g);
             pose.pushMatrix();
             pose.translate(x, y);
             pose.scale(16f / size, 16f / size);
@@ -681,27 +683,29 @@ public final class CraftingTreeScreen extends Screen {
         }
     }
 
-    private void drawBadge(GuiGraphicsExtractor g, TreeSlot node, int x, int y) {
+    private void drawBadge(GuiGraphics g, TreeSlot node, int x, int y) {
         float size = badgeSize();
-        Matrix3x2fStack pose = g.pose();
+        Pose pose = Pose.of(g);
         pose.pushMatrix();
+        pose.translateZ(Pose.OVER);
         pose.translate(x - size / 2 + 1, y - size / 2 + 1);
         pose.scale(BADGE_SCALE, BADGE_SCALE);
         drawHandlerIcon(g, TreeStats.handlerOf(node.prefItem.recipeId), 0, 0);
         pose.popMatrix();
     }
 
-    private void drawDeleteButton(GuiGraphicsExtractor g, int x, int y) {
+    private void drawDeleteButton(GuiGraphics g, int x, int y) {
         float size = badgeSize();
-        Matrix3x2fStack pose = g.pose();
+        Pose pose = Pose.of(g);
         pose.pushMatrix();
+        pose.translateZ(Pose.OVER);
         pose.translate(x - size / 2 + 1, y - size / 2 + 1);
         pose.scale(BADGE_SCALE, BADGE_SCALE);
         TreeDraw.draw(g, TreeDraw.ICON_REMOVE, 0, 0);
         pose.popMatrix();
     }
 
-    private void drawCollapseIcon(GuiGraphicsExtractor g, TreeSlot node, boolean hover) {
+    private void drawCollapseIcon(GuiGraphics g, TreeSlot node, boolean hover) {
         if (!hasArrow(node)) return;
         TreeDraw.Sprite icon = ui.collapsedItems.contains(node.ingrItem) ? (hover ? TreeDraw.ICON_COLLAPSED_HOVER : TreeDraw.ICON_COLLAPSED)
             : (hover ? TreeDraw.ICON_EXPANDED_HOVER : TreeDraw.ICON_EXPANDED);
@@ -709,7 +713,7 @@ public final class CraftingTreeScreen extends Screen {
         TreeDraw.draw(g, icon, p.x + SLOT / 2 - icon.w() - 1, p.y + SLOT + 1);
     }
 
-    private void drawScrollbars(GuiGraphicsExtractor g) {
+    private void drawScrollbars(GuiGraphics g) {
         TreeCamera cam = ui.camera;
         if (canvas.treeWidth <= 0 || canvas.treeHeight <= 0) return;
         float scrollXPct = TreeCamera.clamp(cam.scrollX / canvas.treeWidth, 0f, 1f);
@@ -736,7 +740,7 @@ public final class CraftingTreeScreen extends Screen {
         return row.kind == TreeStats.Kind.HANDLER ? row.handler : new ItemGuid(row.item);
     }
 
-    private void drawStats(GuiGraphicsExtractor g, int mx, int my) {
+    private void drawStats(GuiGraphics g, int mx, int my) {
         TreeDraw.sliced(g, STATS_BACKGROUND, 0, 0, 2, 0, statsX, statsY, statsW, statsH);
         boolean scroll = statsCanScroll();
         if (scroll) g.enableScissor(statsX + 1, statsY + 4, statsX + statsW - 1, statsY + statsH - 4);
@@ -746,7 +750,7 @@ public final class CraftingTreeScreen extends Screen {
                 int x = statX(placed);
                 int y = statY(placed);
                 if (placed.index() < 0) {
-                    g.text(font, statLabels.get(placed.section()) + ":", x, y, 0xFFFFFFFF, true);
+                    g.drawString(font, statLabels.get(placed.section()) + ":", x, y, 0xFFFFFFFF, true);
                     continue;
                 }
                 TreeStats.Row row = rowOf(placed);
@@ -759,14 +763,19 @@ public final class CraftingTreeScreen extends Screen {
                     TreeDraw.overlayText(g, font, ReadableNumber.wide(row.recipeCount), x + 1, y + 1, SLOT - 2, SLOT - 2, 0xFFFFFF,
                         TreeDraw.Align.BOTTOM_RIGHT);
                 } else {
-                    g.fakeItem(stackOf(row.item, row.payload), x + 1, y + 1);
+                    g.renderFakeItem(stackOf(row.item, row.payload), x + 1, y + 1);
                     drawStackSize(g, row.amount, x, y, false);
                 }
-                if (hoveredStat == placed) g.fill(x + 1, y + 1, x + SLOT - 1, y + SLOT - 1, STATS_HOVER_COLOR);
+                if (hoveredStat == placed) {
+                    Pose.begin(g, Pose.OVER);
+                    g.fill(x + 1, y + 1, x + SLOT - 1, y + SLOT - 1, STATS_HOVER_COLOR);
+                    Pose.end(g);
+                }
                 if (row.recipeId != null) {
                     float scale = BADGE_SCALE;
-                    Matrix3x2fStack pose = g.pose();
+                    Pose pose = Pose.of(g);
                     pose.pushMatrix();
+                    pose.translateZ(Pose.OVER);
                     pose.translate(x - 6 * scale, y - 6 * scale);
                     pose.scale(scale, scale);
                     drawHandlerIcon(g, TreeStats.handlerOf(row.recipeId), 0, 0);
@@ -824,7 +833,7 @@ public final class CraftingTreeScreen extends Screen {
         };
     }
 
-    private void drawToolbar(GuiGraphicsExtractor g, int mx, int my) {
+    private void drawToolbar(GuiGraphics g, int mx, int my) {
         for (Tool tool : Tool.values()) {
             int x = toolX(tool);
             int y = toolY();
@@ -840,7 +849,7 @@ public final class CraftingTreeScreen extends Screen {
             }
             // NEI draws the 16 x 16 icon at half size in the middle of the button
             TreeDraw.Sprite icon = toolIcon(tool);
-            Matrix3x2fStack pose = g.pose();
+            Pose pose = Pose.of(g);
             pose.pushMatrix();
             pose.translate(x + (BUTTON - icon.w() / 2) / 2f, y + (BUTTON - icon.h() / 2) / 2f);
             pose.scale(0.5f, 0.5f);
@@ -863,7 +872,7 @@ public final class CraftingTreeScreen extends Screen {
         menuOpen = true;
     }
 
-    private void drawMenu(GuiGraphicsExtractor g, int mx, int my) {
+    private void drawMenu(GuiGraphics g, int mx, int my) {
         if (!menuOpen) return;
         StatsSection[] sections = StatsSection.values();
         for (int i = 0; i < sections.length; i++) {
@@ -879,7 +888,7 @@ public final class CraftingTreeScreen extends Screen {
             }
             String label = sectionLabel(sections[i]);
             int color = hover ? 0xFFFFFFA0 : checked ? 0xFFE0E0E0 : 0xFFA0A0A0;
-            g.text(font, label, menuX + (menuW - font.width(label)) / 2, rowY + (MENU_ROW - 8) / 2, color, true);
+            g.drawString(font, label, menuX + (menuW - font.width(label)) / 2, rowY + (MENU_ROW - 8) / 2, color, true);
         }
     }
 
@@ -899,7 +908,7 @@ public final class CraftingTreeScreen extends Screen {
         return Component.literal("§7" + text);
     }
 
-    private void show(GuiGraphicsExtractor g, int mx, int my, List<Component> lines, List<TreeDraw.IconLine> icons, IRecipeLayoutDrawable<?> picture) {
+    private void show(GuiGraphics g, int mx, int my, List<Component> lines, List<TreeDraw.IconLine> icons, IRecipeLayoutDrawable<?> picture) {
         List<FormattedCharSequence> seqs = new ArrayList<>();
         for (Component line : lines) seqs.add(line.getVisualOrderText());
         int pw = 0;
@@ -915,7 +924,7 @@ public final class CraftingTreeScreen extends Screen {
         });
     }
 
-    private void drawTooltips(GuiGraphicsExtractor g, int mx, int my) {
+    private void drawTooltips(GuiGraphics g, int mx, int my) {
         if (menuOpen && in(mx, my, menuX, menuY, menuW, menuH)) return;
         Tool tool = toolAt(mx, my);
         if (tool != null) {
@@ -941,7 +950,7 @@ public final class CraftingTreeScreen extends Screen {
         return k;
     }
 
-    private void drawNodeTooltip(GuiGraphicsExtractor g, int mx, int my) {
+    private void drawNodeTooltip(GuiGraphics g, int mx, int my) {
         TreeSlot node = hoveredNode;
         ItemStack stack = stackOf(node);
         List<Component> lines = itemLines(stack);
@@ -981,7 +990,7 @@ public final class CraftingTreeScreen extends Screen {
         return new TreeDraw.IconLine("§7" + tr("accepts"), stacks, List.of(), active - start);
     }
 
-    private void drawStatTooltip(GuiGraphicsExtractor g, int mx, int my) {
+    private void drawStatTooltip(GuiGraphics g, int mx, int my) {
         TreeStats.Row row = rowOf(hoveredStat);
         if (row.kind == TreeStats.Kind.HANDLER) {
             List<Component> lines = new ArrayList<>();
@@ -1018,9 +1027,9 @@ public final class CraftingTreeScreen extends Screen {
     }
 
     /** NEI's RecipeTooltipLineHandler (the recipe drawn in the tooltip) and, with Shift, RecipeItemsTooltipLineHandler. */
-    private void drawRecipeTooltip(GuiGraphicsExtractor g, int mx, int my, String recipeId, long multiplier, List<Component> head,
+    private void drawRecipeTooltip(GuiGraphics g, int mx, int my, String recipeId, long multiplier, List<Component> head,
         ItemStack hint) {
-        if (Minecraft.getInstance().hasShiftDown()) {
+        if (McCompat.shift()) {
             drawRecipeItemsTooltip(g, mx, my, recipeId, multiplier);
             return;
         }
@@ -1047,7 +1056,7 @@ public final class CraftingTreeScreen extends Screen {
         return null;
     }
 
-    private void drawRecipeItemsTooltip(GuiGraphicsExtractor g, int mx, int my, String recipeId, long multiplier) {
+    private void drawRecipeItemsTooltip(GuiGraphics g, int mx, int my, String recipeId, long multiplier) {
         Map<String, Long> results = new LinkedHashMap<>();
         Map<String, Long> ingredients = new LinkedHashMap<>();
         Map<String, Object> payloads = new HashMap<>();
@@ -1109,7 +1118,7 @@ public final class CraftingTreeScreen extends Screen {
         String name = stack.getHoverName()
             .getString()
             .toLowerCase(java.util.Locale.ROOT);
-        Identifier id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
         for (String word : query.toLowerCase(java.util.Locale.ROOT)
             .trim()
             .split("\\s+")) {
@@ -1240,7 +1249,7 @@ public final class CraftingTreeScreen extends Screen {
                 rebuildTree(null);
             }
         }
-        Minecraft.getInstance().gui.setScreen(this);
+        McCompat.setScreen(this);
     }
 
     private void lookup(ItemStack stack, boolean usages) {
@@ -1265,10 +1274,7 @@ public final class CraftingTreeScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        double mx = event.x();
-        double my = event.y();
-        int button = event.button();
+    public boolean mouseClicked(double mx, double my, int button) {
 
         if (overSearch(mx, my)) {
             if (button == 1) {
@@ -1276,7 +1282,7 @@ public final class CraftingTreeScreen extends Screen {
                 onSearchTextChanged();
             } else {
                 search.setFocused(true);
-                search.mouseClicked(event, doubleClick);
+                search.mouseClicked(mx, my, button);
             }
             return true;
         }
@@ -1322,7 +1328,7 @@ public final class CraftingTreeScreen extends Screen {
             lookup(stack, button == 1);
             return true;
         }
-        return super.mouseClicked(event, doubleClick);
+        return super.mouseClicked(mx, my, button);
     }
 
     /** NEI's handleWidgetClick: a click on a stats slot highlights what it stands for in the tree. */
@@ -1344,7 +1350,7 @@ public final class CraftingTreeScreen extends Screen {
                 ui.searchStatsResult = new SearchResult(guid);
                 updateSearchStatsMatches();
             }
-            searchGoTo(ui.searchStatsResult, !Minecraft.getInstance().hasShiftDown());
+            searchGoTo(ui.searchStatsResult, !McCompat.shift());
             return true;
         }
         return false;
@@ -1356,7 +1362,7 @@ public final class CraftingTreeScreen extends Screen {
         TreeSlot node = deleteTarget != null ? null : nodeAt(mx, my);
 
         if (node != null) {
-            if (Minecraft.getInstance().hasAltDown() && node.prefItem != null) {
+            if (McCompat.alt() && node.prefItem != null) {
                 clickSound();
                 Bookmarks.toggleCollapsedRecipe(page, gid, node.prefItem.recipeId);
                 rebuildTree(node);
@@ -1382,21 +1388,21 @@ public final class CraftingTreeScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
-        if (event.button() != 0) return super.mouseDragged(event, dx, dy);
+    public boolean mouseDragged(double mx, double my, int button, double dx, double dy) {
+        if (button != 0) return super.mouseDragged(mx, my, button, dx, dy);
         if (statsGrab >= 0) {
-            barDrag(event.x());
+            barDrag(mx);
             return true;
         }
-        ui.camera.drag(event.x(), event.y());
+        ui.camera.drag(mx, my);
         return true;
     }
 
     @Override
-    public boolean mouseReleased(MouseButtonEvent event) {
+    public boolean mouseReleased(double mx, double my, int button) {
         statsGrab = -1;
         ui.camera.endDrag();
-        return super.mouseReleased(event);
+        return super.mouseReleased(mx, my, button);
     }
 
     @Override
@@ -1404,9 +1410,9 @@ public final class CraftingTreeScreen extends Screen {
         int direction = scrollY > 0 ? 1 : scrollY < 0 ? -1 : 0;
         if (direction == 0) return super.mouseScrolled(mx, my, scrollX, scrollY);
         Minecraft mc = Minecraft.getInstance();
-        boolean shift = mc.hasShiftDown();
-        boolean ctrl = mc.hasControlDown();
-        boolean alt = mc.hasAltDown();
+        boolean shift = McCompat.shift();
+        boolean ctrl = McCompat.ctrl();
+        boolean alt = McCompat.alt();
 
         // NEI handleItemWheel: over the stats panel the wheel scrolls it; anywhere outside the tree nothing happens
         if (statsVisible && in(mx, my, statsX, statsY, statsW, statsH)) {
@@ -1438,8 +1444,7 @@ public final class CraftingTreeScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(KeyEvent event) {
-        int code = event.key();
+    public boolean keyPressed(int code, int scanCode, int modifiers) {
         if (code == GLFW.GLFW_KEY_ESCAPE) {
             onClose();
             return true;
@@ -1447,10 +1452,10 @@ public final class CraftingTreeScreen extends Screen {
         if (search.isFocused()) {
             if (code == GLFW.GLFW_KEY_ENTER || code == GLFW.GLFW_KEY_KP_ENTER) {
                 if (ui.searchItemResult == null) onSearchTextChanged();
-                else searchGoTo(ui.searchItemResult, !Minecraft.getInstance().hasShiftDown());
+                else searchGoTo(ui.searchItemResult, !McCompat.shift());
                 return true;
             }
-            search.keyPressed(event);
+            search.keyPressed(code, scanCode, modifiers);
             return true;
         }
         InputConstants.Key key = InputConstants.Type.KEYSYM.getOrCreate(code);
@@ -1459,7 +1464,7 @@ public final class CraftingTreeScreen extends Screen {
             return true;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (!mc.hasControlDown() && (code == GLFW.GLFW_KEY_R || code == GLFW.GLFW_KEY_U)) {
+        if (!McCompat.ctrl() && (code == GLFW.GLFW_KEY_R || code == GLFW.GLFW_KEY_U)) {
             // NEI recipe.recipe / recipe.usage over an item of the tree or the stats panel; over a crafting slot of the
             // stats panel R opens the recipe's result
             ItemStack stack = hoveredStack();
@@ -1472,15 +1477,15 @@ public final class CraftingTreeScreen extends Screen {
                 return true;
             }
         }
-        return super.keyPressed(event);
+        return super.keyPressed(code, scanCode, modifiers);
     }
 
     @Override
-    public boolean charTyped(CharacterEvent event) {
+    public boolean charTyped(char codePoint, int modifiers) {
         if (search.isFocused()) {
-            search.charTyped(event);
+            search.charTyped(codePoint, modifiers);
             return true;
         }
-        return super.charTyped(event);
+        return super.charTyped(codePoint, modifiers);
     }
 }

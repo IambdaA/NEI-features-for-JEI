@@ -9,10 +9,10 @@ import neiaddon.chain.ChainMath;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.ResultSlot;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
@@ -55,7 +55,7 @@ public final class AutoCraft {
     /** The open screen's menu when it has a crafting result slot (inventory, crafting table...), else null. */
     private static AbstractContainerMenu craftingMenu() {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || Calculator.runtime == null || !(mc.gui.screen() instanceof AbstractContainerScreen<?> screen)) return null;
+        if (mc.player == null || Calculator.runtime == null || !(McCompat.screen() instanceof AbstractContainerScreen<?> screen)) return null;
         AbstractContainerMenu open = screen.getMenu();
         return resultSlot(open) != null && mc.player.containerMenu == open ? open : null;
     }
@@ -156,7 +156,7 @@ public final class AutoCraft {
         ItemStack hint = ItemStack.EMPTY;
         for (ChainItem item : math.recipeResults) {
             if (recipeId.equals(item.recipeId)) {
-                Optional<Item> found = BuiltInRegistries.ITEM.getOptional(Identifier.parse(item.item));
+                Optional<Item> found = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(item.item));
                 if (found.isPresent()) hint = new ItemStack(found.get());
                 break;
             }
@@ -191,7 +191,7 @@ public final class AutoCraft {
             }
             case WAIT_RESULT -> {
                 if (result.hasItem()) {
-                    mc.gameMode.handleContainerInput(menu.containerId, result.index, 0, ContainerInput.QUICK_MOVE, mc.player);
+                    mc.gameMode.handleInventoryMouseClick(menu.containerId, result.index, 0, ClickType.QUICK_MOVE, mc.player);
                     phase = Phase.WAIT_CLEAR;
                     waited = 0;
                 } else if (++waited > TIMEOUT) {
