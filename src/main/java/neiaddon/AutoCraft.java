@@ -9,18 +9,18 @@ import neiaddon.chain.ChainMath;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.ResultSlot;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.event.TickEvent;
 
 /**
  * NEI's autocrafting (Shift + C): works through a crafting chain recipe by recipe. For each craft it has JEI's recipe
@@ -32,7 +32,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * one step is done per client tick and the next waits for the result slot to fill (and later to empty). It stops when
  * the screen closes or another container opens, or when the result cannot be moved (inventory full).
  */
-@EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
 public final class AutoCraft {
 
     /** Ticks to wait for the server before giving up on a craft. */
@@ -55,7 +55,7 @@ public final class AutoCraft {
     /** The open screen's menu when it has a crafting result slot (inventory, crafting table...), else null. */
     private static AbstractContainerMenu craftingMenu() {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || Calculator.runtime == null || !(mc.gui.screen() instanceof AbstractContainerScreen<?> screen)) return null;
+        if (mc.player == null || Calculator.runtime == null || !(McCompat.screen() instanceof AbstractContainerScreen<?> screen)) return null;
         AbstractContainerMenu open = screen.getMenu();
         return resultSlot(open) != null && mc.player.containerMenu == open ? open : null;
     }
@@ -156,7 +156,7 @@ public final class AutoCraft {
         ItemStack hint = ItemStack.EMPTY;
         for (ChainItem item : math.recipeResults) {
             if (recipeId.equals(item.recipeId)) {
-                Optional<Item> found = BuiltInRegistries.ITEM.getOptional(Identifier.parse(item.item));
+                Optional<Item> found = BuiltInRegistries.ITEM.getOptional(new ResourceLocation(item.item));
                 if (found.isPresent()) hint = new ItemStack(found.get());
                 break;
             }
@@ -165,7 +165,8 @@ public final class AutoCraft {
     }
 
     @SubscribeEvent
-    static void onTick(ClientTickEvent.Post event) {
+    static void onTick(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) return;
         if (walker == null) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.gameMode == null || craftingMenu() != menu) {
@@ -191,7 +192,7 @@ public final class AutoCraft {
             }
             case WAIT_RESULT -> {
                 if (result.hasItem()) {
-                    mc.gameMode.handleContainerInput(menu.containerId, result.index, 0, ContainerInput.QUICK_MOVE, mc.player);
+                    mc.gameMode.handleInventoryMouseClick(menu.containerId, result.index, 0, ClickType.QUICK_MOVE, mc.player);
                     phase = Phase.WAIT_CLEAR;
                     waited = 0;
                 } else if (++waited > TIMEOUT) {

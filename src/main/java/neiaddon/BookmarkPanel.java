@@ -18,23 +18,22 @@ import neiaddon.chain.ChainItem;
 import neiaddon.chain.ChainMath;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.EventPriority;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ScreenEvent;
-import org.joml.Matrix3x2fStack;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.eventbus.api.EventPriority;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.client.event.ScreenEvent;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -56,7 +55,7 @@ import org.lwjgl.glfw.GLFW;
  * <li>Bottom: {@code < n/N >} switch bookmark page, {@code +} adds a page.</li>
  * </ul>
  */
-@EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
 public final class BookmarkPanel {
 
     private static final int SLOT = 18;
@@ -131,7 +130,7 @@ public final class BookmarkPanel {
 
     private static void layout(Screen screen) {
         // the JEI recipe window is centred and about half the screen wide
-        int left = screen instanceof AbstractContainerScreen<?> c ? c.getLeftPos() : (int) (screen.width * 0.26);
+        int left = screen instanceof AbstractContainerScreen<?> c ? c.getGuiLeft() : (int) (screen.width * 0.26);
         int free = left - PAD * 2;
         cols = (free - STRIP) / SLOT;
         px = PAD;
@@ -353,7 +352,7 @@ public final class BookmarkPanel {
 
     /** The screen area this panel occupies, for JEI's "avoid this area" handler. */
     public static List<Rect2i> extraAreas() {
-        Screen s = Minecraft.getInstance().gui.screen();
+        Screen s = McCompat.screen();
         if (applies(s)) {
             Screen screen = s;
             layout(screen);
@@ -364,7 +363,7 @@ public final class BookmarkPanel {
 
     /** The bookmarked item under the mouse (for Ctrl+C / Ctrl+X), or empty. */
     public static ItemStack hoveredStack() {
-        Screen s = Minecraft.getInstance().gui.screen();
+        Screen s = McCompat.screen();
         if (s == null || !applies(s)) return ItemStack.EMPTY;
         layout(s);
         if (!active || !inPanel(lastMx, lastMy)) return ItemStack.EMPTY;
@@ -462,17 +461,17 @@ public final class BookmarkPanel {
     // ---------------------------------------------------------------- drawing
 
     @SubscribeEvent(priority = EventPriority.LOW)
-    static void onForeground(ScreenEvent.Render.Foreground event) {
+    static void onForeground(ScreenEvent.Render.Post event) {
         Screen screen = event.getScreen();
         if (!applies(screen)) return;
         Bookmarks.ensureLoaded();
         layout(screen);
         if (!active) return;
-        GuiGraphicsExtractor g = event.getGuiGraphics();
-        g.nextStratum();
-        Matrix3x2fStack pose = g.pose();
+        GuiGraphics g = event.getGuiGraphics();
+        Pose pose = Pose.of(g);
         pose.pushMatrix();
         pose.identity();
+        pose.translateZ(PANEL_Z);
         try {
             draw(g, event.getMouseX(), event.getMouseY());
         } finally {
@@ -480,15 +479,18 @@ public final class BookmarkPanel {
         }
     }
 
-    static void button(GuiGraphicsExtractor g, Font font, int x, int y, int w, int h, String label, boolean over) {
+    static void button(GuiGraphics g, Font font, int x, int y, int w, int h, String label, boolean over) {
         g.fill(x, y, x + w, y + h, 0xFF000000);
         g.fill(x + 1, y + 1, x + w - 1, y + h - 1, over ? 0xFF7A8CC8 : 0xFF8B8B8B);
         g.fill(x + 1, y + 1, x + w - 1, y + 2, 0xFFFFFFFF);
         g.fill(x + 1, y + 1, x + 2, y + h - 1, 0xFFFFFFFF);
         g.fill(x + 1, y + h - 2, x + w - 1, y + h - 1, 0xFF555555);
         g.fill(x + w - 2, y + 1, x + w - 1, y + h - 1, 0xFF555555);
-        g.text(font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2, over ? 0xFFFFFFA0 : 0xFFE0E0E0, true);
+        g.drawString(font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2, over ? 0xFFFFFFA0 : 0xFFE0E0E0, true);
     }
+
+    /** 1.21.1 draws with a depth test: the panel sits in front of the container's own items. */
+    private static final float PANEL_Z = 100f;
 
     private static boolean in(double mx, double my, int x, int y, int w, int h) {
         return mx >= x && mx < x + w && my >= y && my < y + h;
@@ -539,7 +541,7 @@ public final class BookmarkPanel {
         return Pull.available() && !page.entries.isEmpty() && pullX() + BTN <= px + pw;
     }
 
-    private static void draw(GuiGraphicsExtractor g, int mx, int my) {
+    private static void draw(GuiGraphics g, int mx, int my) {
         Font font = Minecraft.getInstance().font;
         lastMx = mx;
         lastMy = my;
@@ -562,7 +564,7 @@ public final class BookmarkPanel {
             button(g, font, hdrNextX(), hdrY(), BTN, BTN, ">", overNext);
             String label = isChain(page, Bookmarks.NO_GROUP) ? "§2[§r" + (gridPage + 1) + "/" + pages + "§2]§r"
                 : (gridPage + 1) + "/" + pages;
-            g.text(font, label, labX + (labW - font.width(label)) / 2, hdrY() + 4, 0xFFFFFFFF, true);
+            g.drawString(font, label, labX + (labW - font.width(label)) / 2, hdrY() + 4, 0xFFFFFFFF, true);
         }
         if (overLabel && !page.entries.isEmpty()) {
             groupTip = groupTip(page, Bookmarks.NO_GROUP, true);
@@ -574,7 +576,7 @@ public final class BookmarkPanel {
         button(g, font, nsPrevX(), footY, BTN, BTN, "<", overNsPrev);
         button(g, font, nsNextX(), footY, BTN, BTN, ">", overNsNext);
         String ns = (Bookmarks.activePage + 1) + "/" + Bookmarks.pageCount();
-        g.text(font, ns, nsCenter() - font.width(ns) / 2, footY + 4, 0xFFFFFFFF, true);
+        g.drawString(font, ns, nsCenter() - font.width(ns) / 2, footY + 4, 0xFFFFFFFF, true);
         if (overNsPrev || overNsNext) tip = List.of("Bookmark page " + ns, "§7Scroll: switch page");
         boolean overPull = pullShown(page) && in(mx, my, pullX(), footY, BTN, BTN);
         if (pullShown(page)) button(g, font, pullX(), footY, BTN, BTN, "P", overPull);
@@ -636,8 +638,8 @@ public final class BookmarkPanel {
             boolean hovered = c == hover || (reorder != null && c.entry() == reorder);
             if (hovered) g.fill(x, y, x + SLOT, y + SLOT, HIGHLIGHT);
             ItemStack stack = c.entry().key.sample;
-            g.fakeItem(stack, x + 1, y + 1);
-            g.itemDecorations(font, stack, x + 1, y + 1, null);
+            g.renderFakeItem(stack, x + 1, y + 1);
+            g.renderItemDecorations(font, stack, x + 1, y + 1, null);
             // NEI: amounts are drawn small (half size) bottom right, only when above 0
             long amount = amountOf(c);
             if (amount > 0) {
@@ -659,8 +661,9 @@ public final class BookmarkPanel {
 
         // tooltips
         if (reorder != null) {
-            g.nextStratum();
-            g.fakeItem(reorder.key.sample, mx - 8, my - 8);
+            Pose.begin(g, Pose.OVER);
+            g.renderFakeItem(reorder.key.sample, mx - 8, my - 8);
+            Pose.end(g);
         } else if (!tipStack.isEmpty() && dragMode == 0) {
             itemTooltip(g, font, tipStack, hover, mx, my);
         } else if (groupTip != null && dragMode == 0 && tip == null) {
@@ -668,12 +671,12 @@ public final class BookmarkPanel {
         } else if (tip != null && dragMode == 0) {
             List<FormattedCharSequence> lines = new ArrayList<>();
             for (String s : tip) lines.add(Component.literal(s).getVisualOrderText());
-            g.setTooltipForNextFrame(font, lines, mx, my);
+            g.renderTooltip(font, lines, mx, my);
         }
     }
 
     /** NEI's slot borders: a box around the slots of a collapsed group or a collapsed recipe. */
-    private static void drawBorders(GuiGraphicsExtractor g, Bookmarks.Page page, int first, int last) {
+    private static void drawBorders(GuiGraphics g, Bookmarks.Page page, int first, int last) {
         for (Cell c : cells) {
             if (c.row() < first || c.row() >= last) continue;
             String id = borderIds.get(c.slot());
@@ -688,7 +691,7 @@ public final class BookmarkPanel {
         }
     }
 
-    private static void drawBracket(GuiGraphicsExtractor g, int top, int height, boolean startsHere, boolean endsHere,
+    private static void drawBracket(GuiGraphics g, int top, int height, boolean startsHere, boolean endsHere,
         int color) {
         int half = STRIP / 2;
         int pad = SLOT / 4;
@@ -708,12 +711,13 @@ public final class BookmarkPanel {
     }
 
     /** Text at half size ({@code scale 0.5}) with its top left corner at (x, y), like NEI's {@code drawNEIOverlayText}. */
-    private static void drawSmall(GuiGraphicsExtractor g, Font font, String text, float x, float y, int color) {
-        Matrix3x2fStack pose = g.pose();
+    private static void drawSmall(GuiGraphics g, Font font, String text, float x, float y, int color) {
+        Pose pose = Pose.of(g);
         pose.pushMatrix();
+        pose.translateZ(Pose.OVER);
         pose.translate(x, y);
         pose.scale(0.5f, 0.5f);
-        g.text(font, text, 0, 0, color, true);
+        g.drawString(font, text, 0, 0, color, true);
         pose.popMatrix();
     }
 
@@ -839,14 +843,14 @@ public final class BookmarkPanel {
     }
 
     /** A group tooltip: its lines are plain strings. */
-    private static void drawGroupTip(GuiGraphicsExtractor g, Font font, GroupTip tip, int mx, int my) {
+    private static void drawGroupTip(GuiGraphics g, Font font, GroupTip tip, int mx, int my) {
         List<FormattedCharSequence> lines = new ArrayList<>();
         for (String line : tip.lines()) lines.add(Component.literal(line).getVisualOrderText());
         drawTip(g, font, lines, tip.sections(), mx, my);
     }
 
     /** Draws the tooltip by hand because it holds item icons. Layout numbers from NEI's ItemsTooltipLineHandler. */
-    private static void drawTip(GuiGraphicsExtractor g, Font font, List<FormattedCharSequence> tipLines, List<Section> sections, int mx, int my) {
+    private static void drawTip(GuiGraphics g, Font font, List<FormattedCharSequence> tipLines, List<Section> sections, int mx, int my) {
         int width = 0;
         for (FormattedCharSequence line : tipLines) width = Math.max(width, font.width(line));
         int height = tipLines.size() * 10 + (tipLines.size() > 1 ? 2 : 0);
@@ -864,7 +868,7 @@ public final class BookmarkPanel {
         y = Math.max(y, 6);
         x = Math.max(x, 6);
 
-        g.nextStratum();
+        Pose.begin(g, Pose.TOOLTIP);
         g.fill(x - 3, y - 4, x + width + 3, y + height + 4, 0xF0100010);
         g.fill(x - 4, y - 3, x + width + 4, y + height + 3, 0xF0100010);
         g.fill(x - 3, y - 3, x + width + 3, y - 2, 0xF0280070);
@@ -873,36 +877,39 @@ public final class BookmarkPanel {
         g.fill(x + width + 2, y - 3, x + width + 3, y + height + 3, 0xF0280070);
         int ty = y;
         for (int i = 0; i < tipLines.size(); i++) {
-            g.text(font, tipLines.get(i), x, ty, 0xFFFFFFFF);
+            g.drawString(font, tipLines.get(i), x, ty, 0xFFFFFFFF);
             ty += i == 0 ? 12 : 10;
         }
         for (int i = 0; i < sections.size(); i++) {
             Section sec = sections.get(i);
             SectionLayout layout = layouts.get(i);
             ty += 2;
-            g.text(font, Component.literal("§7" + sec.label() + ":").getVisualOrderText(), x, ty, 0xFFFFFFFF);
+            g.drawString(font, Component.literal("§7" + sec.label() + ":").getVisualOrderText(), x, ty, 0xFFFFFFFF);
             ty += 11;
             for (int n = 0; n < layout.count(); n++) {
                 int index = layout.shift() + n;
                 int sx = x + (n % layout.columns()) * TIP_SLOT;
                 int sy = ty + (n / layout.columns()) * TIP_SLOT;
                 if (index == sec.active()) g.fill(sx, sy, sx + TIP_SLOT, sy + TIP_SLOT, 0x66555555);
-                g.fakeItem(sec.stacks().get(index), sx + 1, sy + 1);
+                g.renderFakeItem(sec.stacks().get(index), sx + 1, sy + 1);
                 if (!sec.amounts().isEmpty()) {
                     String amount = format(sec.amounts().get(index));
-                    g.text(font, amount, sx + 17 - font.width(amount), sy + 9, 0xFFFFFFFF, true);
+                    Pose.begin(g, Pose.OVER);
+                    g.drawString(font, amount, sx + 17 - font.width(amount), sy + 9, 0xFFFFFFFF, true);
+                    Pose.end(g);
                 }
             }
             int hidden = sec.stacks().size() - layout.count();
             if (hidden > 0) {
                 String more = "§7+" + hidden;
-                g.text(font, more, x + layout.width() - font.width(more) - 2, ty + (layout.rows() - 1) * TIP_SLOT + 5, 0xFFFFFFFF, true);
+                g.drawString(font, more, x + layout.width() - font.width(more) - 2, ty + (layout.rows() - 1) * TIP_SLOT + 5, 0xFFFFFFFF, true);
             }
             ty += layout.rows() * TIP_SLOT;
         }
+        Pose.end(g);
     }
 
-    private static void itemTooltip(GuiGraphicsExtractor g, Font font, ItemStack stack, Cell cell, int mx, int my) {
+    private static void itemTooltip(GuiGraphics g, Font font, ItemStack stack, Cell cell, int mx, int my) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
         Bookmarks.Page page = Bookmarks.page();
@@ -910,7 +917,7 @@ public final class BookmarkPanel {
         List<Component> body;
         HotkeyTips.building = true;
         try {
-            body = new ArrayList<>(stack.getTooltipLines(Item.TooltipContext.of(mc.level), mc.player, TooltipFlag.Default.NORMAL));
+            body = new ArrayList<>(stack.getTooltipLines(mc.player, TooltipFlag.Default.NORMAL));
         } finally {
             HotkeyTips.building = false;
         }
@@ -936,7 +943,7 @@ public final class BookmarkPanel {
             int active = 0;
             for (String id : entry.options) {
                 try {
-                    Optional<Item> item = BuiltInRegistries.ITEM.getOptional(Identifier.parse(id));
+                    Optional<Item> item = BuiltInRegistries.ITEM.getOptional(new ResourceLocation(id));
                     if (item.isEmpty()) continue;
                     if (id.equals(entry.itemId())) active = accepted.size();
                     accepted.add(new ItemStack(item.get()));
@@ -949,7 +956,7 @@ public final class BookmarkPanel {
                 return;
             }
         }
-        g.setTooltipForNextFrame(font, lines, mx, my);
+        g.renderTooltip(font, lines, mx, my);
     }
 
     // ---------------------------------------------------------------- input
@@ -957,20 +964,20 @@ public final class BookmarkPanel {
     private static boolean inPanel(double mx, double my) {
         if (!active || !in(mx, my, px, py, pw, footY + BTN - py)) return false;
         // JEI's own button row (bookmarks / history) at the bottom left stays JEI's
-        Screen s = Minecraft.getInstance().gui.screen();
+        Screen s = McCompat.screen();
         return s == null || !JeiButtons.overButtonRow(mx, my, s.height);
     }
 
     private static boolean ctrl() {
-        return Minecraft.getInstance().hasControlDown();
+        return McCompat.ctrl();
     }
 
     private static boolean alt() {
-        return Minecraft.getInstance().hasAltDown();
+        return McCompat.alt();
     }
 
     private static boolean shift() {
-        return Minecraft.getInstance().hasShiftDown();
+        return McCompat.shift();
     }
 
     @SubscribeEvent(priority = EventPriority.HIGH)
@@ -1223,7 +1230,7 @@ public final class BookmarkPanel {
         double mx = event.getMouseX();
         double my = event.getMouseY();
         if (!inPanel(mx, my)) return;
-        int dir = (int) Math.signum(event.getScrollDeltaY());
+        int dir = (int) Math.signum(event.getScrollDelta());
         if (dir == 0) return;
         Bookmarks.Page page = Bookmarks.page();
         buildCells(page);

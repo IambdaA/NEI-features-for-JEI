@@ -1,7 +1,7 @@
 # NEI Features for JEI
 
 An unofficial port of features from [GTNH NotEnoughItems](https://github.com/GTNewHorizons/NotEnoughItems) to
-[Just Enough Items](https://github.com/mezz/JustEnoughItems), for **Minecraft 26.2 / NeoForge**. Not affiliated with the
+[Just Enough Items](https://github.com/mezz/JustEnoughItems), for **Minecraft 1.20.1 / Forge** (this branch; other versions have their own builds). Not affiliated with the
 NotEnoughItems authors.
 
 ## Features
@@ -17,8 +17,8 @@ See [BUILDING.md](BUILDING.md) for the full list, keys and notes.
 
 ## Requirements
 
-- Minecraft 26.2, NeoForge 26.2.0.90 or newer
-- JEI 30.42 or newer
+- Minecraft 1.20.1, Forge 47
+- JEI 15.38 or newer (15.x)
 
 ## Status
 
@@ -30,10 +30,19 @@ fluids in the chain maths.
 
 ## Building
 
-JDK 25, then `./gradlew build`. The jar is in `build/libs/`. `./gradlew runClient` starts a dev client with JEI.
+JDK 17, then `./gradlew build`. The jar is in `build/libs/`. `./gradlew runClient` starts a dev client with JEI.
 
 ## License
 
 LGPL-3.0-or-later, see [LICENSE.txt](LICENSE.txt). Large parts are ports of GTNH NotEnoughItems (LGPL-3.0-or-later) by
 Chicken-Bones, GTNewHorizons and the NotEnoughItems contributors, and keep that license and credit. The crafting tree
 texture (`craftingtree.png`) is from NotEnoughItems too.
+
+## Versions
+
+| Branch | Minecraft | Loader | JEI | Status |
+| --- | --- | --- | --- | --- |
+| `1.20.1` (this branch) | 1.20.1 | Forge | 15.38+ | launches, still being tested |
+| `26.2` | 26.2 and 26.1.2 | NeoForge | 30.x / 29.x | works in game |
+
+Each branch builds with its own `gradle.properties`; see BUILDING.md. Releases are tagged by Minecraft version, for example `v0.1.0+mc1.21.1`.

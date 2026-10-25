@@ -16,7 +16,7 @@ import mezz.jei.api.gui.ingredient.IRecipeSlotsView;
 import mezz.jei.api.ingredients.ITypedIngredient;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.category.IRecipeCategory;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
 /**
@@ -145,7 +145,7 @@ public final class RecipeShape {
             for (ItemStack s : slot.getItemStacks()
                 .toList()) {
                 if (s.isEmpty()) continue;
-                if (seen.add(RecipeData.idOf(s))) alts.add(new Alt(s.copyWithCount(1), Math.max(1, s.getCount())));
+                if (seen.add(RecipeData.idOf(s))) alts.add(new Alt(McCompat.copyWithCount(s, 1), Math.max(1, s.getCount())));
             }
             if (alts.isEmpty()) continue;
             (role == RecipeIngredientRole.INPUT ? shape.inputs : shape.outputs).add(new Slot(alts));
@@ -167,9 +167,9 @@ public final class RecipeShape {
         String type = category.getRecipeType()
             .getUid()
             .toString();
-        Identifier identifier = null;
+        ResourceLocation identifier = null;
         try {
-            identifier = category.getIdentifier(recipe);
+            identifier = category.getRegistryName(recipe);
         } catch (RuntimeException ignored) {}
         if (identifier != null) return type + "|" + identifier;
         return type + "#" + hash(slots);

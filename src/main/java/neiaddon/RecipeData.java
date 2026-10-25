@@ -25,7 +25,7 @@ public final class RecipeData {
         public final List<String> options;
 
         public Part(ItemStack stack, long factor, List<String> options) {
-            this.stack = stack.copyWithCount(1);
+            this.stack = McCompat.copyWithCount(stack, 1);
             this.factor = Math.max(1, factor);
             this.options = options;
         }

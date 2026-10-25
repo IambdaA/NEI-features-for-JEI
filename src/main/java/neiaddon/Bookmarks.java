@@ -18,10 +18,10 @@ import neiaddon.chain.ChainDetails;
 import neiaddon.chain.ChainItem;
 import neiaddon.chain.ChainMath;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.fml.loading.FMLPaths;
+import net.minecraftforge.fml.loading.FMLPaths;
 
 /**
  * NEI-style bookmarks: several pages ("namespaces"), each an ordered list of bookmarked items. Consecutive items
@@ -380,7 +380,7 @@ public final class Bookmarks {
         Entry entry;
         Optional<Item> item;
         try {
-            item = BuiltInRegistries.ITEM.getOptional(Identifier.parse(p[1]));
+            item = BuiltInRegistries.ITEM.getOptional(new ResourceLocation(p[1]));
         } catch (RuntimeException ex) {
             item = Optional.empty();
         }
@@ -827,7 +827,7 @@ public final class Bookmarks {
             if (!recipeItem && !kind.equals("group")) {
                 Optional<Item> item;
                 try {
-                    item = BuiltInRegistries.ITEM.getOptional(Identifier.parse(p[1]));
+                    item = BuiltInRegistries.ITEM.getOptional(new ResourceLocation(p[1]));
                 } catch (RuntimeException ex) {
                     item = Optional.empty();
                 }
@@ -865,7 +865,7 @@ public final class Bookmarks {
         String id = entry.options.get((((at - wheel) % size) + size) % size);
         Optional<Item> item;
         try {
-            item = BuiltInRegistries.ITEM.getOptional(Identifier.parse(id));
+            item = BuiltInRegistries.ITEM.getOptional(new ResourceLocation(id));
         } catch (RuntimeException e) {
             return false;
         }

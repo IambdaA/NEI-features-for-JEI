@@ -1,9 +1,9 @@
 package neiaddon;
 
 import com.mojang.logging.LogUtils;
-import net.neoforged.fml.ModContainer;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.config.ModConfig;
+import net.minecraftforge.fml.ModLoadingContext;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig;
 import org.slf4j.Logger;
 
 /**
@@ -16,7 +16,7 @@ public class NeiAddon {
     public static final String MODID = "neiaddon";
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    public NeiAddon(ModContainer container) {
-        container.registerConfig(ModConfig.Type.CLIENT, AddonConfig.SPEC);
+    public NeiAddon() {
+        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, AddonConfig.SPEC);
     }
 }

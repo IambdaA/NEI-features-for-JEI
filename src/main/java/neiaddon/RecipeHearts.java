@@ -13,18 +13,18 @@ import mezz.jei.api.gui.inputs.RecipeSlotUnderMouse;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.advanced.IRecipeButtonControllerFactory;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.EventPriority;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.eventbus.api.EventPriority;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.client.event.ScreenEvent;
 
 /**
  * The heart (favorite) button on every JEI recipe, like NEI's {@code GuiFavoriteButton}.
@@ -45,7 +45,7 @@ import net.neoforged.neoforge.client.event.ScreenEvent;
  * <p>
  * Ported from GTNH NotEnoughItems (LGPL-3.0-or-later).
  */
-@EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
 public final class RecipeHearts {
 
     private static final String JEI_RECIPES_GUI = "mezz.jei.gui.recipes.RecipesGui";
@@ -98,7 +98,7 @@ public final class RecipeHearts {
         }
 
         @Override
-        public void draw(GuiGraphicsExtractor g, int xOffset, int yOffset) {
+        public void draw(GuiGraphics g, int xOffset, int yOffset) {
             for (int row = 0; row < HEART.length; row++) {
                 String line = HEART[row];
                 int col = 0;
@@ -193,7 +193,7 @@ public final class RecipeHearts {
         }
 
         @Override
-        public void drawExtras(GuiGraphicsExtractor g, Rect2i buttonArea, int mouseX, int mouseY, float partialTicks) {
+        public void drawExtras(GuiGraphics g, Rect2i buttonArea, int mouseX, int mouseY, float partialTicks) {
             long now = System.nanoTime();
             if (mouseX >= buttonArea.getX() && mouseX < buttonArea.getX() + buttonArea.getWidth()
                 && mouseY >= buttonArea.getY() && mouseY < buttonArea.getY() + buttonArea.getHeight()) {
@@ -233,7 +233,7 @@ public final class RecipeHearts {
 
     private static String nameOf(String itemId) {
         try {
-            return BuiltInRegistries.ITEM.getOptional(Identifier.parse(itemId))
+            return BuiltInRegistries.ITEM.getOptional(new ResourceLocation(itemId))
                 .map(i -> i.getDefaultInstance()
                     .getHoverName()
                     .getString())
@@ -246,7 +246,7 @@ public final class RecipeHearts {
     // ---------------------------------------------------------------- keys
 
     private static boolean onRecipesScreen() {
-        Screen s = Minecraft.getInstance().gui.screen();
+        Screen s = McCompat.screen();
         return s != null && s.getClass()
             .getName()
             .equals(JEI_RECIPES_GUI);
@@ -359,7 +359,7 @@ public final class RecipeHearts {
     static void onScroll(ScreenEvent.MouseScrolled.Pre event) {
         Controller heart = fresh(hoverHeart, heartStamp);
         if (heart == null || heart.resultIds.size() <= 1) return;
-        int dir = (int) Math.signum(event.getScrollDeltaY());
+        int dir = (int) Math.signum(event.getScrollDelta());
         if (dir == 0) return;
         heart.cycle(dir);
         event.setCanceled(true);

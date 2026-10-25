@@ -3,15 +3,14 @@ package neiaddon;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.EventPriority;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ScreenEvent;
-import org.joml.Matrix3x2fStack;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.eventbus.api.EventPriority;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.client.event.ScreenEvent;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -19,7 +18,7 @@ import org.lwjgl.glfw.GLFW;
  * actions use and the step of Ctrl+Alt+scroll; 0 shows "One stack" and means a stack of the item. Sits just above JEI's
  * search box in the item list on the right. Wheel over the field: +/-1, Shift 10, Ctrl 64, like NEI.
  */
-@EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
 public final class QuantityField {
 
     private static final int H = 20;
@@ -60,7 +59,7 @@ public final class QuantityField {
 
     // NEI's layout when the search box is not in the row: "-", the field, "+" across the whole item list
     private static int x(Screen s) {
-        int guiLeft = s instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> c ? c.getLeftPos()
+        int guiLeft = s instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> c ? c.getGuiLeft()
             : (int) (s.width * 0.26);
         return s.width - guiLeft + MARGIN;
     }
@@ -76,7 +75,7 @@ public final class QuantityField {
 
     /** The area JEI should keep its item grid out of, or none. */
     public static java.util.List<net.minecraft.client.renderer.Rect2i> extraAreas() {
-        Screen s = Minecraft.getInstance().gui.screen();
+        Screen s = McCompat.screen();
         if (!visible(s)) return java.util.List.of();
         return java.util.List.of(new net.minecraft.client.renderer.Rect2i(x(s), y(s), width(s), H));
     }
@@ -87,7 +86,7 @@ public final class QuantityField {
 
     private static int step() {
         Minecraft mc = Minecraft.getInstance();
-        return mc.hasControlDown() ? 64 : mc.hasShiftDown() ? 10 : 1;
+        return McCompat.ctrl() ? 64 : McCompat.shift() ? 10 : 1;
     }
 
     private static void focus() {
@@ -113,17 +112,17 @@ public final class QuantityField {
     // ---------------------------------------------------------------- drawing
 
     @SubscribeEvent(priority = EventPriority.LOW)
-    static void onForeground(ScreenEvent.Render.Foreground event) {
+    static void onForeground(ScreenEvent.Render.Post event) {
         Screen s = event.getScreen();
         if (!visible(s)) {
             focused = false;
             return;
         }
-        GuiGraphicsExtractor g = event.getGuiGraphics();
-        g.nextStratum();
-        Matrix3x2fStack pose = g.pose();
+        GuiGraphics g = event.getGuiGraphics();
+        Pose pose = Pose.of(g);
         pose.pushMatrix();
         pose.identity();
+        pose.translateZ(100f);
         try {
             draw(g, s, event.getMouseX(), event.getMouseY());
         } finally {
@@ -131,7 +130,7 @@ public final class QuantityField {
         }
     }
 
-    private static void draw(GuiGraphicsExtractor g, Screen s, int mx, int my) {
+    private static void draw(GuiGraphics g, Screen s, int mx, int my) {
         Font font = Minecraft.getInstance().font;
         int x = x(s) + BTN + GAP;
         int w = width(s) - 2 * (BTN + GAP);
@@ -148,7 +147,7 @@ public final class QuantityField {
         } else {
             shown = Integer.toString(quantity());
         }
-        g.text(font, shown, x + (w - font.width(shown)) / 2, y + (H - 8) / 2, color, true);
+        g.drawString(font, shown, x + (w - font.width(shown)) / 2, y + (H - 8) / 2, color, true);
         int less = x(s);
         int more = x(s) + width(s) - BTN;
         BookmarkPanel.button(g, font, less, y, BTN, H, "-", in(mx, my, less, y, BTN, H));
@@ -184,7 +183,7 @@ public final class QuantityField {
     static void onScroll(ScreenEvent.MouseScrolled.Pre event) {
         Screen s = event.getScreen();
         if (!visible(s) || !in(event.getMouseX(), event.getMouseY(), x(s) + BTN + GAP, y(s), width(s) - 2 * (BTN + GAP), H)) return;
-        int dir = (int) Math.signum(event.getScrollDeltaY());
+        int dir = (int) Math.signum(event.getScrollDelta());
         if (dir != 0) {
             set(quantity() + dir * step());
             AddonConfig.ITEM_QUANTITY.save();

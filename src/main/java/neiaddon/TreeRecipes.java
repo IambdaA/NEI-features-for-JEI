@@ -12,23 +12,23 @@ import mezz.jei.api.gui.inputs.IJeiUserInput;
 import mezz.jei.api.recipe.IRecipeManager;
 import mezz.jei.api.recipe.advanced.IRecipeButtonControllerFactory;
 import mezz.jei.api.recipe.category.IRecipeCategory;
-import mezz.jei.api.recipe.types.IRecipeType;
+import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.runtime.IJeiRuntime;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.client.event.ScreenEvent;
 
 /**
  * What the crafting tree needs from JEI: the icon and name of a recipe type (NEI's HandlerInfo), and the "+" button
  * that JEI's recipe screen shows while it was opened from the tree (NEI's TreeOverlayButton): it adds the recipe to the
  * tree's group, replacing the recipe of the node that was clicked.
  */
-@EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
 public final class TreeRecipes {
 
     private static final String JEI_RECIPES_GUI = "mezz.jei.gui.recipes.RecipesGui";
@@ -55,8 +55,8 @@ public final class TreeRecipes {
         IJeiRuntime rt = Calculator.runtime;
         if (rt == null || handlerName == null) return new Info(null, String.valueOf(handlerName));
         try {
-            Optional<IRecipeType<?>> type = rt.getRecipeManager()
-                .getRecipeType(Identifier.parse(handlerName));
+            Optional<RecipeType<?>> type = rt.getRecipeManager()
+                .getRecipeType(new ResourceLocation(handlerName));
             if (type.isPresent()) {
                 IRecipeCategory<?> category = category(rt.getRecipeManager(), type.get());
                 return new Info(
@@ -70,7 +70,7 @@ public final class TreeRecipes {
         return new Info(null, handlerName);
     }
 
-    private static <T> IRecipeCategory<T> category(IRecipeManager manager, IRecipeType<T> type) {
+    private static <T> IRecipeCategory<T> category(IRecipeManager manager, RecipeType<T> type) {
         return manager.getRecipeCategory(type);
     }
 
@@ -114,7 +114,7 @@ public final class TreeRecipes {
         }
 
         @Override
-        public void draw(GuiGraphicsExtractor g, int xOffset, int yOffset) {
+        public void draw(GuiGraphics g, int xOffset, int yOffset) {
             for (int row = 0; row < PLUS.length; row++) {
                 for (int col = 0; col < PLUS[row].length(); col++) {
                     if (PLUS[row].charAt(col) == 'X') g.fill(xOffset + col, yOffset + row, xOffset + col + 1, yOffset + row + 1, 0xFF3FBF3F);

@@ -524,6 +524,10 @@ public class EditBox {
   public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float d) {}
 }
 """)
+f("neiaddon/McCompat.java", """package neiaddon;
+import net.minecraft.client.gui.screens.Screen;
+final class McCompat { static Screen screen() { return null; } static void setScreen(Screen s) {} }
+""")
 f("neiaddon/QuantityField.java", """package neiaddon;
 import net.minecraft.world.item.ItemStack;
 public class QuantityField { public static long scrollMultiplier(ItemStack s) { return 1; } public static boolean focused() { return false; } }

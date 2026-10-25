@@ -11,18 +11,18 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.ModList;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.ModList;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.event.entity.player.ItemTooltipEvent;
 
 /**
  * NEI's hotkey tooltips: an item shows "Hold ALT for hotkeys" and, while Alt is held, the list of keys that work on it.
  * Used by the bookmark panel (see {@link BookmarkPanel}) and, through the item tooltip event, for items of JEI's
  * ingredient list on the right.
  */
-@EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
 public final class HotkeyTips {
 
     /** Set while the bookmark panel builds its own tooltip, so the event below leaves it alone. */
@@ -31,8 +31,7 @@ public final class HotkeyTips {
     private HotkeyTips() {}
 
     public static boolean altDown() {
-        return Minecraft.getInstance()
-            .hasAltDown();
+        return McCompat.alt();
     }
 
     /** NEI's "showHotkeys": "Hold ALT for hotkeys", gray with ALT in gold. */

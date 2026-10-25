@@ -6,26 +6,24 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.network.codec.ByteBufCodecs;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.ItemStackTemplate;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.event.RegisterCommandsEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
-import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
-import net.neoforged.neoforge.network.registration.HandlerThread;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.network.NetworkDirection;
+import net.minecraftforge.network.NetworkEvent;
+import net.minecraftforge.network.NetworkRegistry;
+import net.minecraftforge.network.PacketDistributor;
+import net.minecraftforge.network.simple.SimpleChannel;
 
 /**
  * Ctrl + L chat links, the networking half (NEI: NEISPH SEND_CHAT_ITEM_LINK, NEIServerUtils.sendChatItemLink and
@@ -38,54 +36,57 @@ import net.neoforged.neoforge.network.registration.HandlerThread;
  * Common code: it loads on a dedicated server too, so nothing from the client may be touched here. The channel is
  * optional, so players without the addon (or a server without it) can still connect.
  */
-@EventBusSubscriber(modid = NeiAddon.MODID)
+@Mod.EventBusSubscriber(modid = NeiAddon.MODID)
 public final class Share {
 
     public static final String COMMAND = "neiaddon_bookmark";
     /** Longest payload text the channel accepts (a string field holds 32767 characters). */
     public static final int MAX_LENGTH = 30000;
 
+    private static final String PROTOCOL = "1";
+    /** Accepts any version (and a missing channel), so the channel is optional on either side. */
+    static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
+        new ResourceLocation(NeiAddon.MODID, "main"), () -> PROTOCOL, v -> true, v -> true);
+
     /** Client to server: share this payload. */
-    public record ShareRequest(String payload) implements CustomPacketPayload {
+    public record ShareRequest(String payload) {
 
-        public static final Type<ShareRequest> TYPE = new Type<>(Identifier.fromNamespaceAndPath(NeiAddon.MODID, "share_request"));
-        public static final StreamCodec<RegistryFriendlyByteBuf, ShareRequest> STREAM_CODEC = StreamCodec
-            .composite(ByteBufCodecs.STRING_UTF8, ShareRequest::payload, ShareRequest::new);
+        static void encode(ShareRequest m, FriendlyByteBuf buf) {
+            buf.writeUtf(m.payload, 32767);
+        }
 
-        @Override
-        public Type<ShareRequest> type() {
-            return TYPE;
+        static ShareRequest decode(FriendlyByteBuf buf) {
+            return new ShareRequest(buf.readUtf(32767));
         }
     }
 
     /** Server to every client: keep this payload under this id until someone clicks the link. */
-    public record SharedPayload(String id, String payload) implements CustomPacketPayload {
+    public record SharedPayload(String id, String payload) {
 
-        public static final Type<SharedPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath(NeiAddon.MODID, "shared_payload"));
-        public static final StreamCodec<RegistryFriendlyByteBuf, SharedPayload> STREAM_CODEC = StreamCodec.composite(
-            ByteBufCodecs.STRING_UTF8,
-            SharedPayload::id,
-            ByteBufCodecs.STRING_UTF8,
-            SharedPayload::payload,
-            SharedPayload::new);
+        static void encode(SharedPayload m, FriendlyByteBuf buf) {
+            buf.writeUtf(m.id, 32767);
+            buf.writeUtf(m.payload, 32767);
+        }
 
-        @Override
-        public Type<SharedPayload> type() {
-            return TYPE;
+        static SharedPayload decode(FriendlyByteBuf buf) {
+            return new SharedPayload(buf.readUtf(32767), buf.readUtf(32767));
         }
     }
 
     /** Server to one client: import the payload you kept under this id (the player clicked the chat link). */
-    public record ImportRequest(String id) implements CustomPacketPayload {
+    public record ImportRequest(String id) {
 
-        public static final Type<ImportRequest> TYPE = new Type<>(Identifier.fromNamespaceAndPath(NeiAddon.MODID, "import_request"));
-        public static final StreamCodec<RegistryFriendlyByteBuf, ImportRequest> STREAM_CODEC = StreamCodec
-            .composite(ByteBufCodecs.STRING_UTF8, ImportRequest::id, ImportRequest::new);
-
-        @Override
-        public Type<ImportRequest> type() {
-            return TYPE;
+        static void encode(ImportRequest m, FriendlyByteBuf buf) {
+            buf.writeUtf(m.id, 32767);
         }
+
+        static ImportRequest decode(FriendlyByteBuf buf) {
+            return new ImportRequest(buf.readUtf(32767));
+        }
+    }
+
+    static void sendToPlayer(ServerPlayer player, Object message) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), message);
     }
 
     private Share() {}
@@ -102,7 +103,7 @@ public final class Share {
                 Commands.literal(COMMAND)
                     .executes(context -> {
                         // no id: import the newest link the client kept (a way in when clicking the chat link does not work)
-                        PacketDistributor.sendToPlayer(context.getSource().getPlayerOrException(), new ImportRequest(""));
+                        sendToPlayer(context.getSource().getPlayerOrException(), new ImportRequest(""));
                         return 1;
                     })
                     .then(
@@ -112,28 +113,30 @@ public final class Share {
                                     .getPlayerOrException();
                                 String id = StringArgumentType.getString(context, "id");
                                 NeiAddon.LOGGER.info("Chat link command from {}: {}", player.getName().getString(), id);
-                                PacketDistributor.sendToPlayer(player, new ImportRequest(id));
+                                sendToPlayer(player, new ImportRequest(id));
                                 return 1;
                             })));
     }
 
-    @SubscribeEvent
-    static void register(RegisterPayloadHandlersEvent event) {
-        event.registrar("1")
-            .executesOn(HandlerThread.MAIN)
-            .optional()
-            .playToServer(
-                ShareRequest.TYPE,
-                ShareRequest.STREAM_CODEC,
-                (packet, context) -> context.enqueueWork(() -> broadcast((ServerPlayer) context.player(), packet.payload())))
-            .playToClient(
-                SharedPayload.TYPE,
-                SharedPayload.STREAM_CODEC,
-                (packet, context) -> context.enqueueWork(() -> ShareClient.keep(packet.id(), packet.payload())))
-            .playToClient(
-                ImportRequest.TYPE,
-                ImportRequest.STREAM_CODEC,
-                (packet, context) -> context.enqueueWork(() -> ShareClient.open(packet.id())));
+    static void register() {
+        CHANNEL.registerMessage(0, ShareRequest.class, ShareRequest::encode, ShareRequest::decode, (packet, ctx) -> {
+            NetworkEvent.Context c = ctx.get();
+            ServerPlayer sender = c.getSender();
+            c.enqueueWork(() -> {
+                if (sender != null) broadcast(sender, packet.payload());
+            });
+            c.setPacketHandled(true);
+        }, java.util.Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(1, SharedPayload.class, SharedPayload::encode, SharedPayload::decode, (packet, ctx) -> {
+            NetworkEvent.Context c = ctx.get();
+            c.enqueueWork(() -> ShareClient.keep(packet.id(), packet.payload()));
+            c.setPacketHandled(true);
+        }, java.util.Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        CHANNEL.registerMessage(2, ImportRequest.class, ImportRequest::encode, ImportRequest::decode, (packet, ctx) -> {
+            NetworkEvent.Context c = ctx.get();
+            c.enqueueWork(() -> ShareClient.open(packet.id()));
+            c.setPacketHandled(true);
+        }, java.util.Optional.of(NetworkDirection.PLAY_TO_CLIENT));
     }
 
     /** NEIServerUtils.sendChatItemLink. */
@@ -150,12 +153,12 @@ public final class Share {
         MutableComponent clickable = null;
         if (lines.length > 1 && lines[1].startsWith("target\t")) {
             try {
-                Optional<Item> item = BuiltInRegistries.ITEM.getOptional(Identifier.parse(lines[1].substring(7)));
+                Optional<Item> item = BuiltInRegistries.ITEM.getOptional(new ResourceLocation(lines[1].substring(7)));
                 if (item.isPresent()) {
                     // built like JEI's own item chat links: plain text carrying the click and the item hover
                     ItemStack stack = new ItemStack(item.get());
                     clickable = Component.literal("[" + stack.getHoverName().getString() + "]")
-                        .withStyle(style -> style.withColor(ChatFormatting.AQUA).withHoverEvent(new HoverEvent.ShowItem(ItemStackTemplate.fromNonEmptyStack(stack))));
+                        .withStyle(style -> style.withColor(ChatFormatting.AQUA).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_ITEM, new HoverEvent.ItemStackInfo(stack))));
                 }
             } catch (RuntimeException ignored) {
                 // unreadable item id: fall back to the plain label
@@ -164,19 +167,18 @@ public final class Share {
         if (clickable == null) {
             clickable = Component.literal("[Bookmark " + (kind.equals("group") ? "Group" : kind.equals("recipe") ? "Recipe" : "Item") + "]");
         }
-        clickable.withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(COMMAND + " " + id)));
+        clickable.withStyle(style -> style.withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/" + COMMAND + " " + id)));
         NeiAddon.LOGGER.info("Sharing a {} link from {} as {} ({} characters)", kind, sender.getName().getString(), id, payload.length());
         Component message = Component.literal("<")
             .append(sender.getDisplayName())
             .append("> §6Click to add bookmark: ")
             .append(clickable);
 
-        MinecraftServer server = sender.level()
-            .getServer();
+        MinecraftServer server = sender.getServer();
         SharedPayload cache = new SharedPayload(id, payload);
         for (ServerPlayer player : server.getPlayerList()
             .getPlayers()) {
-            PacketDistributor.sendToPlayer(player, cache);
+            sendToPlayer(player, cache);
             player.sendSystemMessage(message);
         }
     }

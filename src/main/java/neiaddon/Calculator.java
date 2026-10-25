@@ -19,7 +19,8 @@ import mezz.jei.api.recipe.IRecipeManager;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import mezz.jei.api.runtime.IJeiRuntime;
-import net.minecraft.core.component.DataComponentPatch;
+import java.util.Objects;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
@@ -29,27 +30,28 @@ import net.minecraft.world.item.ItemStack;
  */
 public final class Calculator {
 
-    /** Identity of an item with its components, ignoring count. */
+    /** Identity of an item with its NBT tag, ignoring count. */
     public static final class StackKey {
 
         public final Item item;
-        public final DataComponentPatch patch;
+        public final CompoundTag patch;
         public final ItemStack sample;
 
         public StackKey(ItemStack stack) {
             this.item = stack.getItem();
-            this.patch = stack.getComponentsPatch();
-            this.sample = stack.copyWithCount(1);
+            this.patch = stack.getTag() == null ? null : stack.getTag().copy();
+            this.sample = stack.copy();
+            this.sample.setCount(1);
         }
 
         @Override
         public boolean equals(Object o) {
-            return o instanceof StackKey k && k.item == item && k.patch.equals(patch);
+            return o instanceof StackKey k && k.item == item && Objects.equals(k.patch, patch);
         }
 
         @Override
         public int hashCode() {
-            return 31 * item.hashCode() + patch.hashCode();
+            return 31 * item.hashCode() + Objects.hashCode(patch);
         }
     }
 
@@ -104,7 +106,7 @@ public final class Calculator {
     // ------------------------------------------------------------------ recipe lookup
 
     private static boolean sameItem(ItemStack a, ItemStack b) {
-        return ItemStack.isSameItemSameComponents(a, b);
+        return ItemStack.isSameItemSameTags(a, b);
     }
 
     public static List<Option> options(StackKey key) {

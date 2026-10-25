@@ -8,7 +8,7 @@ import neiaddon.chain.ChainMath;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.ContainerScreen;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
@@ -30,7 +30,7 @@ public final class Pull {
     /** NEI: BookmarkContainerInfo.getBookmarkContainerHandler(gui) != null. */
     public static boolean available() {
         Minecraft mc = Minecraft.getInstance();
-        return mc.player != null && mc.gameMode != null && mc.gui.screen() instanceof ContainerScreen screen
+        return mc.player != null && mc.gameMode != null && McCompat.screen() instanceof ContainerScreen screen
             && screen.getMenu().slots.size() > PLAYER_SLOTS;
     }
 
@@ -41,7 +41,7 @@ public final class Pull {
     public static boolean pull(ChainMath math, boolean shift) {
         if (math == null || !available()) return false;
         Minecraft mc = Minecraft.getInstance();
-        AbstractContainerMenu menu = ((ContainerScreen) mc.gui.screen()).getMenu();
+        AbstractContainerMenu menu = ((ContainerScreen) McCompat.screen()).getMenu();
         int storage = menu.slots.size() - PLAYER_SLOTS;
 
         Map<String, Long> inventory = shift ? count(menu, storage, menu.slots.size()) : Map.of();
@@ -71,7 +71,7 @@ public final class Pull {
             .isEmpty()) {
             NeiAddon.LOGGER.info("Pulling items: {}", wanted);
             for (Map.Entry<String, Long> entry : wanted.entrySet()) take(menu, storage, entry.getKey(), entry.getValue());
-            if (held != -1) click(menu, held, 0, ContainerInput.PICKUP);
+            if (held != -1) click(menu, held, 0, ClickType.PICKUP);
         }
         return true;
     }
@@ -108,7 +108,7 @@ public final class Pull {
         for (int i = storage; i < menu.slots.size(); i++) {
             Slot slot = menu.slots.get(i);
             if (!slot.hasItem() && slot.mayPlace(carried)) {
-                click(menu, i, 0, ContainerInput.PICKUP);
+                click(menu, i, 0, ClickType.PICKUP);
                 if (menu.getCarried()
                     .isEmpty()) return i;
             }
@@ -139,18 +139,18 @@ public final class Pull {
         if (count >= menu.slots.get(from)
             .getItem()
             .getCount()) {
-            click(menu, from, 0, ContainerInput.QUICK_MOVE);
+            click(menu, from, 0, ClickType.QUICK_MOVE);
             return;
         }
-        click(menu, from, 0, ContainerInput.PICKUP);
+        click(menu, from, 0, ClickType.PICKUP);
         ItemStack held = menu.getCarried();
         if (held.isEmpty()) return;
         for (int placed = 0; placed < count; placed++) {
             int to = destination(menu, storage, menu.getCarried());
             if (to == -1) break;
-            click(menu, to, 1, ContainerInput.PICKUP);
+            click(menu, to, 1, ClickType.PICKUP);
         }
-        click(menu, from, 0, ContainerInput.PICKUP);
+        click(menu, from, 0, ClickType.PICKUP);
     }
 
     /**
@@ -161,7 +161,7 @@ public final class Pull {
         for (int i = menu.slots.size() - 1; i >= storage; i--) {
             Slot slot = menu.slots.get(i);
             ItemStack stack = slot.getItem();
-            if (!stack.isEmpty() && ItemStack.isSameItemSameComponents(stack, held)
+            if (!stack.isEmpty() && ItemStack.isSameItemSameTags(stack, held)
                 && stack.getCount() < Math.min(slot.getMaxStackSize(held), stack.getMaxStackSize())) return i;
         }
         for (int i = menu.slots.size() - 1; i >= storage; i--) {
@@ -171,8 +171,8 @@ public final class Pull {
         return -1;
     }
 
-    private static void click(AbstractContainerMenu menu, int slot, int button, ContainerInput input) {
+    private static void click(AbstractContainerMenu menu, int slot, int button, ClickType input) {
         Minecraft mc = Minecraft.getInstance();
-        mc.gameMode.handleContainerInput(menu.containerId, slot, button, input, mc.player);
+        mc.gameMode.handleInventoryMouseClick(menu.containerId, slot, button, input, mc.player);
     }
 }

@@ -16,7 +16,7 @@ import java.util.WeakHashMap;
 import neiaddon.chain.ChainItem;
 import neiaddon.chain.TreeCamera;
 import neiaddon.chain.TreeSlot;
-import net.neoforged.fml.loading.FMLPaths;
+import net.minecraftforge.fml.loading.FMLPaths;
 
 /**
  * NEI's {@code CraftingTreeState}. The settings the toolbar changes are saved ({@code config/neiaddon/crafting_tree

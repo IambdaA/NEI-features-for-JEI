@@ -2,7 +2,7 @@ package neiaddon;
 
 import java.util.List;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
@@ -23,17 +23,17 @@ public final class HudPositionScreen extends Screen {
     }
 
     public static void open() {
-        Minecraft.getInstance().gui.setScreen(new HudPositionScreen());
+        McCompat.setScreen(new HudPositionScreen());
     }
 
     @Override
-    public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
-        super.extractRenderState(g, mouseX, mouseY, delta);
+    public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
+        super.render(g, mouseX, mouseY, delta);
         var font = Minecraft.getInstance().font;
         List<String> lines = List.of("Sample");
         int[] b = HighlightTips.box(font, lines, AddonConfig.HUD_X.get(), AddonConfig.HUD_Y.get(), width, height);
 
-        boolean down = GLFW.glfwGetMouseButton(Minecraft.getInstance().getWindow().handle(), GLFW.GLFW_MOUSE_BUTTON_LEFT)
+        boolean down = GLFW.glfwGetMouseButton(Minecraft.getInstance().getWindow().getWindow(), GLFW.GLFW_MOUSE_BUTTON_LEFT)
             == GLFW.GLFW_PRESS;
         if (down && !dragging && mouseX >= b[0] && mouseX < b[0] + b[2] && mouseY >= b[1] && mouseY < b[1] + b[3]) {
             dragging = true;
@@ -53,6 +53,6 @@ public final class HudPositionScreen extends Screen {
 
         HighlightTips.draw(g, font, new ItemStack(Items.DIAMOND_BLOCK), lines, AddonConfig.HUD_X.get(), AddonConfig.HUD_Y.get());
         String hint = "Drag the box to move it. Esc to close.";
-        g.text(font, hint, (width - font.width(hint)) / 2, height - 20, 0xFFFFFFFF, true);
+        g.drawString(font, hint, (width - font.width(hint)) / 2, height - 20, 0xFFFFFFFF, true);
     }
 }

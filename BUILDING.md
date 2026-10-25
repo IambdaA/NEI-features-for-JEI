@@ -1,15 +1,22 @@
-# NEI Features for JEI (NeoForge 26.2) - build notes
+# NEI Features for JEI (Forge 1.20.1) - build notes
 
 Status: an early version built and loaded in game. Everything added since (NEI-style bookmark panel, highlight tips, info pages, the recipe tree) has NOT been compiled against the real game: the authoring environment cannot download Minecraft/NeoForge/Gradle, so only this addon's own logic was checked (see `tools/`). Expect a few compile errors on the first build and send back any lines starting with `error:`.
 
 ## Build
-1. JDK 25. 2. `./gradlew clean build` (Windows: `gradlew.bat clean build`). 3. `./gradlew runClient` starts a dev client with JEI included.
-`neo_version` (gradle.properties) came from the official 26.2 template; `jei_version` is 30.42.0.237. Change either if the build can't resolve them.
+1. JDK 17. 2. `./gradlew clean build` (Windows: `gradlew.bat clean build`). 3. `./gradlew runClient` starts a dev client with JEI included.
+Upload the jar from `build/libs/` (the legacy Forge plugin reobfuscates it automatically). `forge_version` and `jei_version` are in gradle.properties
+(`jei_version=15.+` takes the newest JEI 15.x); change them if the build can't resolve them.
 Send back any lines starting with `error:`.
+
+## This is the Minecraft 1.20.1 (Forge 47) build
+Converted from the 1.21.1 copy: Forge events and `@Mod.EventBusSubscriber`, a `SimpleChannel` instead of payloads for the chat links, `ForgeConfigSpec`,
+`IGuiOverlay` instead of GUI layers (highlight tips), `TickEvent.ClientTickEvent`, NBT tags instead of data components, and `mods.toml`.
+JEI's API is the same as on 1.21.1. Item tag filters in the info pages default to the `forge:` namespace instead of `c:`.
+Not tried in game yet: expect a few compile errors on the first build.
 
 ## Features
 - **Highlight tips** (as NEI's HUDRenderer): a tooltip-style box with the item and name of the BLOCK under the crosshair (not entities). Off by default; Numpad 0 toggles it, the player-list key (Tab) hides it. Position `hudX`/`hudY` (0..10000, NEI defaults 5000/100) in `neiaddon-client.toml`; bind "Move Highlight Tooltips" in Controls to open NEI's drag-to-position screen. Extras not in NEI (off by default): `hudShowMod`, `hudShowId`.
-- **Item info pages**: `config/neiaddon/informationpages.cfg` (created on first start), NEI's `filter = text` format. Filters: `namespace:path` (with `*`), `$namespace:tag` (NEI's `$oredict`; `$name` means `c:name`), `@modid`. Lines starting with `#` are comments, as in NEI. Shown in JEI on the item's recipe page.
+- **Item info pages**: `config/neiaddon/informationpages.cfg` (created on first start), NEI's `filter = text` format. Filters: `namespace:path` (with `*`), `$namespace:tag` (NEI's `$oredict`; `$name` means `forge:name` here (`c:name` on newer versions)), `@modid`. Lines starting with `#` are comments, as in NEI. Shown in JEI on the item's recipe page.
 - **Bookmarks (modelled on GTNH NotEnoughItems' BookmarkPanel)**: a grid of item slots on the left of container screens and JEI's recipe screen. Drag items in from JEI's list.
   - Group strip (7px, left of the slots): drag with the left button to create a group or extend the one you start in, right button to exclude rows. A plain click on a group: LMB = toggle group mode (todo list: one item per row), RMB = toggle crafting chain (green bracket), Alt+LMB = collapse. Shift+LMB drag = move the group. Ctrl+scroll = change the quantity of the whole group (Ctrl+Alt = multiplier 64).
   - Slot: LMB = recipes, RMB = uses, Shift+LMB drag = move (a recipe item moves its whole recipe), Ctrl+scroll = amount (Ctrl+Alt = stack size; on a recipe item it changes how often the whole recipe runs), Alt+LMB re-expands a collapsed group; in a crafting chain it collapses/expands the slot's recipe into one merged block (the recipe's results, then what it and the recipes it feeds on need; boxed in purple). Shift+scroll on an ingredient that accepts several items (tag) switches the item. Alt+LMB on the page label collapses the ungrouped items. Amounts are drawn at half size bottom right (only when above 0).
