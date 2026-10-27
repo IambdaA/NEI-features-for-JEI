@@ -53,8 +53,8 @@ import org.lwjgl.glfw.GLFW;
  * CraftingTreeMath, Canvas, Camera and StatsPanel layout); this class is the window around them.
  *
  * <p>
- * Not ported: the screenshot button, NEI's search language (a simple name / @mod / id search instead), container items,
- * drop chances and fluids (the chain maths leaves them out too).
+ * Not ported: the screenshot button, NEI's search language (a simple name / @mod / id search instead), drop chances and
+ * fluids (the chain maths leaves them out too).
  *
  * <p>
  * Ported from GTNH NotEnoughItems (LGPL-3.0-or-later).
@@ -84,7 +84,8 @@ public final class CraftingTreeScreen extends Screen {
         COLLAPSE,
         STATS,
         SECTIONS,
-        LINK
+        LINK,
+        SCREENSHOT
     }
 
     private final Screen prev;
@@ -130,7 +131,7 @@ public final class CraftingTreeScreen extends Screen {
 
     public static void open(Bookmarks.Page page, int gid) {
         Minecraft mc = Minecraft.getInstance();
-        mc.gui.setScreen(new CraftingTreeScreen(mc.gui.screen(), page, gid));
+        McCompat.setScreen(new CraftingTreeScreen(McCompat.screen(), page, gid));
     }
 
     private static String tr(String key, Object... args) {
@@ -178,7 +179,7 @@ public final class CraftingTreeScreen extends Screen {
     protected void init() {
         // the group can go while a recipe screen opened from the tree is shown
         if (!Bookmarks.groupExists(page, gid)) {
-            Minecraft.getInstance().gui.setScreen(prev);
+            McCompat.setScreen(prev);
             return;
         }
         TreeRecipes.stopWaiting();
@@ -207,7 +208,7 @@ public final class CraftingTreeScreen extends Screen {
 
     @Override
     public void onClose() {
-        Minecraft.getInstance().gui.setScreen(prev);
+        McCompat.setScreen(prev);
     }
 
     /** What the player has: every slot of the open menu except a result slot (NEI's getInventoryItems). */
@@ -533,6 +534,14 @@ public final class CraftingTreeScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float delta) {
         super.extractRenderState(g, mx, my, delta);
+        if (TreeShot.running(this)) {
+            // saving the tree as a picture: just the tree, one screenful at a time, nothing hovered
+            updateHover(-10000, -10000);
+            g.fill(0, 0, width, height, 0xFFC6C6C6);
+            TreeShot.prepare(this);
+            drawCanvas(g, -10000, -10000);
+            return;
+        }
         lastMouseX = mx;
         lastMouseY = my;
         updateHover(mx, my);
@@ -563,7 +572,7 @@ public final class CraftingTreeScreen extends Screen {
 
     private void drawCanvas(GuiGraphicsExtractor g, int mx, int my) {
         TreeCamera cam = ui.camera;
-        cam.clampToBounds(canvas.treeWidth, canvas.treeHeight);
+        if (!TreeShot.running(this)) cam.clampToBounds(canvas.treeWidth, canvas.treeHeight);
         float zScrollX = cam.scrollX * cam.zoomLevel;
         float zScrollY = cam.scrollY * cam.zoomLevel;
         int cropXMin = (int) ((zScrollX - 32) / cam.zoomLevel);
@@ -598,7 +607,7 @@ public final class CraftingTreeScreen extends Screen {
             pose.popMatrix();
             g.disableScissor();
         }
-        drawScrollbars(g);
+        if (!TreeShot.running(this)) drawScrollbars(g);
     }
 
     private void drawParentLine(GuiGraphicsExtractor g, TreeSlot node) {
@@ -647,17 +656,24 @@ public final class CraftingTreeScreen extends Screen {
         g.fakeItem(stackOf(node), p.x + (SLOT - 16) / 2, p.y + (SLOT - 16) / 2);
 
         if (node.requestedAmount > 0 && node.leftAmount == 0) {
-            drawStackSize(g, node.requestedAmount, p.x, p.y, true);
+            drawStackSize(g, node.requestedAmount, p.x, p.y, true, node.isContainerItem);
         } else if (node.requestedAmount > 0 && node.leftAmount > 0) {
             long amount = hovered && node.prefItem != null && canvas.graph.roots.contains(node)
                 && canvas.collapsedRecipes.contains(node.prefItem.recipeId) && ctrl ? node.currentRequestedAmount : node.requestedAmount;
-            drawStackSize(g, amount, p.x, p.y, false);
+            drawStackSize(g, amount, p.x, p.y, false, node.isContainerItem);
         }
     }
 
-    private void drawStackSize(GuiGraphicsExtractor g, long amount, int x, int y, boolean resolved) {
-        TreeDraw.overlayText(g, font, ReadableNumber.amount(amount), x + (SLOT - 16) / 2, y + (SLOT - 16) / 2, 16, 16,
-            resolved ? 0x55FF55 : 0xFFFFFF, TreeDraw.Align.BOTTOM_RIGHT);
+    /** {@code estimate}: NEI draws a tool that comes back worn from a craft as "~amount" in orange. */
+    private void drawStackSize(GuiGraphicsExtractor g, long amount, int x, int y, boolean resolved, boolean estimate) {
+        String text = ReadableNumber.amount(amount);
+        int color = 0xFFFFFF;
+        if (estimate) {
+            text = "~" + text;
+            color = 0xFFAA00;
+        }
+        if (resolved) color = 0x55FF55;
+        TreeDraw.overlayText(g, font, text, x + (SLOT - 16) / 2, y + (SLOT - 16) / 2, 16, 16, color, TreeDraw.Align.BOTTOM_RIGHT);
     }
 
     /** A recipe type's icon in a 16 x 16 box (NEI's handler image or item; the little hammer when there is none). */
@@ -760,7 +776,7 @@ public final class CraftingTreeScreen extends Screen {
                         TreeDraw.Align.BOTTOM_RIGHT);
                 } else {
                     g.fakeItem(stackOf(row.item, row.payload), x + 1, y + 1);
-                    drawStackSize(g, row.amount, x, y, false);
+                    drawStackSize(g, row.amount, x, y, false, false);
                 }
                 if (hoveredStat == placed) g.fill(x + 1, y + 1, x + SLOT - 1, y + SLOT - 1, STATS_HOVER_COLOR);
                 if (row.recipeId != null) {
@@ -797,6 +813,7 @@ public final class CraftingTreeScreen extends Screen {
                 .size() == StatsSection.values().length ? new TreeDraw.Sprite(2, 66, 16, 16) : new TreeDraw.Sprite(20, 66, 16, 16);
             case SECTIONS -> new TreeDraw.Sprite(164, 66, 16, 16);
             case LINK -> new TreeDraw.Sprite(74, 66, 16, 16);
+            case SCREENSHOT -> new TreeDraw.Sprite(146, 66, 16, 16);
         };
     }
 
@@ -821,6 +838,7 @@ public final class CraftingTreeScreen extends Screen {
             case STATS -> tr(TreeState.statsPanelVisible() ? "toolbar.stats_on" : "toolbar.stats_off");
             case SECTIONS -> tr("toolbar.stats_sections");
             case LINK -> tr("toolbar.link");
+            case SCREENSHOT -> tr("toolbar.screenshot");
         };
     }
 
@@ -1103,36 +1121,17 @@ public final class CraftingTreeScreen extends Screen {
         }
     }
 
-    /** Every word has to be in the item's name or id; {@code @mod} matches the mod, {@code $tag} a tag. */
+    private static String lastQuery;
+    private static neiaddon.search.SearchQuery.Node lastNode;
+
+    /** NEI's search language (see {@link neiaddon.search.SearchQuery}): and, or, not, groups, quotes, regex, @mod #tooltip $tag &id. */
     static boolean matches(String query, ItemStack stack) {
         if (stack.isEmpty()) return false;
-        String name = stack.getHoverName()
-            .getString()
-            .toLowerCase(java.util.Locale.ROOT);
-        Identifier id = BuiltInRegistries.ITEM.getKey(stack.getItem());
-        for (String word : query.toLowerCase(java.util.Locale.ROOT)
-            .trim()
-            .split("\\s+")) {
-            if (word.isEmpty()) continue;
-            boolean ok;
-            if (word.startsWith("@")) {
-                ok = id.getNamespace()
-                    .contains(word.substring(1));
-            } else if (word.startsWith("$")) {
-                String tag = word.substring(1);
-                ok = BuiltInRegistries.ITEM.wrapAsHolder(stack.getItem())
-                    .tags()
-                    .anyMatch(
-                        t -> t.location()
-                            .toString()
-                            .contains(tag));
-            } else {
-                ok = name.contains(word) || id.getPath()
-                    .contains(word);
-            }
-            if (!ok) return false;
+        if (!query.equals(lastQuery)) {
+            lastQuery = query;
+            lastNode = neiaddon.search.SearchQuery.parse(query);
         }
-        return true;
+        return lastNode.matches(SearchItem.of(stack));
     }
 
     private void updateSearchItemMatches() {
@@ -1211,6 +1210,9 @@ public final class CraftingTreeScreen extends Screen {
                 String payload = Bookmarks.shareGroup(page, gid);
                 if (payload != null) ShareClient.send(payload);
             }
+            case SCREENSHOT -> {
+                if (!math.outputRecipes.isEmpty()) TreeShot.start(this, ui.camera, canvas.treeWidth, canvas.treeHeight);
+            }
             case COLLAPSE -> {
                 TreeState.cycleCollapseMode();
                 updateCollapsedItems();
@@ -1240,7 +1242,7 @@ public final class CraftingTreeScreen extends Screen {
                 rebuildTree(null);
             }
         }
-        Minecraft.getInstance().gui.setScreen(this);
+        McCompat.setScreen(this);
     }
 
     private void lookup(ItemStack stack, boolean usages) {
@@ -1266,6 +1268,7 @@ public final class CraftingTreeScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (TreeShot.running(this)) return true;
         double mx = event.x();
         double my = event.y();
         int button = event.button();

@@ -46,6 +46,9 @@ public class ItemStack {
   public boolean isEmpty() { return item == null; }
   public Item getItem() { return item; }
   public ItemStack copyWithCount(int n) { return new ItemStack(item, n); }
+  public ItemStack copy() { return new ItemStack(item, count); }
+  public boolean isDamageableItem() { return false; }
+  public void setDamageValue(int v) {}
   public int getCount() { return count; }
   public static boolean isSameItemSameComponents(ItemStack a, ItemStack b) { return a.item == b.item; }
   public Component getHoverName() { return Component.literal(""); }
@@ -523,6 +526,10 @@ public class EditBox {
   public boolean mouseClicked(MouseButtonEvent e, boolean d) { return false; }
   public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float d) {}
 }
+""")
+f("neiaddon/McCompat.java", """package neiaddon;
+import net.minecraft.client.gui.screens.Screen;
+final class McCompat { static Screen screen() { return null; } static void setScreen(Screen s) {} }
 """)
 f("neiaddon/QuantityField.java", """package neiaddon;
 import net.minecraft.world.item.ItemStack;

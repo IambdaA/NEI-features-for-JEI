@@ -56,7 +56,33 @@ public class TreeMath extends ChainMath {
             this.items.add(slot);
             this.lastItem = slot;
         } else {
-            final TreeSlot slot = new TreeSlot(ingrItem, 0, requestedAmount, produced, containerAmount, prefItem);
+            final ContainerOps ops = containerOps;
+            boolean isContainerItem = false;
+            final Object stack = ops != null ? ops.stackOf(prefItem != null ? prefItem : ingrItem) : null;
+
+            if (stack != null) {
+                // NEI's ItemTreeSlot.isContainerItem: the item comes back as itself (a tool)
+                if (ops.hasContainerItem(stack)) {
+                    final Object back = ops.remainder(stack);
+                    isContainerItem = back != null && ops.sameItem(stack, back);
+                }
+
+                if (prefItem != null && hasContainerItem(stack)) {
+                    if (requestedAmount > 1) {
+                        final long requestedSteps = getToolsContainerItems(ops.copy(stack), requestedAmount).leftSteps;
+                        requestedAmount = (long) Math
+                            .ceil((double) requestedAmount / Math.max(1, requestedAmount - requestedSteps));
+                    }
+
+                    if (containerAmount > 1) {
+                        final long containerSteps = getToolsContainerItems(ops.copy(stack), containerAmount).leftSteps;
+                        containerAmount = (long) Math
+                            .ceil((double) containerAmount / Math.max(1, containerAmount - containerSteps));
+                    }
+                }
+            }
+
+            final TreeSlot slot = new TreeSlot(ingrItem, 0, requestedAmount, produced, containerAmount, prefItem, isContainerItem);
             this.items.add(slot);
             this.parentOf.put(slot, peek());
             this.childrenOf.computeIfAbsent(peek(), k -> new ArrayList<>())

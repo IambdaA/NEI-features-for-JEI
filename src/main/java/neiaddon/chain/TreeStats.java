@@ -132,6 +132,17 @@ public final class TreeStats {
                 payloads.putIfAbsent(item.item, item.payload);
             }
         }
+        final ContainerOps ops = ChainMath.containerOps;
+        if (ops != null) {
+            for (List<ContainerOps.Held> held : List.of(math.containerItemsInventory, math.containerItemsCrafting)) {
+                for (ContainerOps.Held h : held) {
+                    if (h.stack == null) continue;
+                    final String id = ops.idOf(h.stack);
+                    amounts.merge(id, h.count, Long::sum);
+                    payloads.putIfAbsent(id, h.stack);
+                }
+            }
+        }
         return merged(Kind.REMAINDER, amounts, payloads);
     }
 

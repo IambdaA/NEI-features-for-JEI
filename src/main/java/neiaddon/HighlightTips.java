@@ -54,7 +54,7 @@ public final class HighlightTips implements GuiLayer {
         Minecraft mc = Minecraft.getInstance();
         // NEI: only without a screen, in a world, while the player list key is not held, and only for blocks
         if (!AddonConfig.HUD_ENABLED.get() || mc.level == null || mc.player == null) return;
-        if (mc.gui.screen() != null || mc.options.keyPlayerList.isDown()) return;
+        if (McCompat.screen() != null || mc.options.keyPlayerList.isDown()) return;
         if (!(mc.hitResult instanceof BlockHitResult block) || block.getType() != HitResult.Type.BLOCK) return;
 
         BlockPos pos = block.getBlockPos();

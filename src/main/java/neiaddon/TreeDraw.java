@@ -205,7 +205,7 @@ final class TreeDraw {
         }
     }
 
-    /** A string with legacy colour codes (section sign) as drawable text. */
+    /** A string with legacy color codes (section sign) as drawable text. */
     static FormattedCharSequence seq(String text) {
         return Component.literal(text)
             .getVisualOrderText();

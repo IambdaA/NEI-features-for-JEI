@@ -51,7 +51,7 @@ public class CalculatorScreen extends Screen {
     }
 
     public static void open(Bookmarks.Group group) {
-        Minecraft.getInstance().gui.setScreen(new CalculatorScreen(group));
+        McCompat.setScreen(new CalculatorScreen(group));
     }
 
     private void invalidate() {

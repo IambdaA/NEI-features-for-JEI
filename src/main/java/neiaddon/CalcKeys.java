@@ -24,7 +24,7 @@ import org.lwjgl.glfw.GLFW;
 @EventBusSubscriber(modid = NeiAddon.MODID, value = Dist.CLIENT)
 public final class CalcKeys {
 
-    private static final KeyMapping.Category CATEGORY = new KeyMapping.Category(Identifier.fromNamespaceAndPath(NeiAddon.MODID, "main"));
+    static final KeyMapping.Category CATEGORY = new KeyMapping.Category(Identifier.fromNamespaceAndPath(NeiAddon.MODID, "main"));
 
     // NEI's defaults: bookmark.add = A, bookmark.open_crafting_tree = T, bookmark.hide = B
     public static final KeyMapping ADD = new KeyMapping("key.neiaddon.bookmark_add", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_A, CATEGORY);
@@ -62,6 +62,10 @@ public final class CalcKeys {
         event.register(HIDE);
         event.register(HUD_TOGGLE);
         event.register(HUD_POSITION);
+        event.register(ItemZoom.TOGGLE);
+        event.register(ItemZoom.HOLD);
+        event.register(ItemZoom.ZOOM_IN);
+        event.register(ItemZoom.ZOOM_OUT);
     }
 
     /**
@@ -97,7 +101,7 @@ public final class CalcKeys {
         }
     }
 
-    private static boolean typing() {
+    static boolean typing() {
         return QuantityField.focused() || Calculator.runtime != null && Calculator.runtime.getIngredientListOverlay()
             .hasKeyboardFocus();
     }
@@ -153,7 +157,8 @@ public final class CalcKeys {
         if (shift && CRAFT.isActiveAndMatches(key)) {
             // NEI runAutoCrafting over an item that has a favorite recipe; Ctrl keeps what the inventory already holds
             ItemStack stack = hoveredStack(screen);
-            if (!stack.isEmpty() && RecipeHearts.autocraftFavorite(stack, !Minecraft.getInstance().hasControlDown())) {
+            if (!stack.isEmpty() && (CraftablesPanel.autocraft(stack, !Minecraft.getInstance().hasControlDown())
+                || RecipeHearts.autocraftFavorite(stack, !Minecraft.getInstance().hasControlDown()))) {
                 event.setCanceled(true);
                 return;
             }
@@ -205,9 +210,22 @@ public final class CalcKeys {
             .collect(java.util.stream.Collectors.joining(","));
     }
 
+    /** What the zoom may show: the bookmark panel, the craftables panel and the JEI item list (no inventory slots, no recipes). */
+    static ItemStack hoveredStack(Screen screen, boolean overlaysOnly) {
+        if (!overlaysOnly) return hoveredStack(screen);
+        ItemStack fromPanel = BookmarkPanel.hoveredStack();
+        if (!fromPanel.isEmpty()) return fromPanel;
+        ItemStack fromCraftables = CraftablesPanel.hoveredStack();
+        if (!fromCraftables.isEmpty()) return fromCraftables;
+        return HotkeyTips.hoveredInList()
+            .orElse(ItemStack.EMPTY);
+    }
+
     private static ItemStack hoveredStack(Screen screen) {
         ItemStack fromPanel = BookmarkPanel.hoveredStack();
         if (!fromPanel.isEmpty()) return fromPanel;
+        ItemStack fromCraftables = CraftablesPanel.hoveredStack();
+        if (!fromCraftables.isEmpty()) return fromCraftables;
         if (screen instanceof CraftingTreeScreen tree) return tree.hoveredStack();
         if (Calculator.runtime != null) {
             Optional<ItemStack> fromList = Calculator.runtime.getIngredientListOverlay()

@@ -23,7 +23,7 @@ public final class HudPositionScreen extends Screen {
     }
 
     public static void open() {
-        Minecraft.getInstance().gui.setScreen(new HudPositionScreen());
+        McCompat.setScreen(new HudPositionScreen());
     }
 
     @Override

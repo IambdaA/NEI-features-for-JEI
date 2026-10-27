@@ -6,8 +6,8 @@
  * NotEnoughItems contributors. Licensed under the GNU Lesser General Public License, version 3 or (at your option)
  * any later version.
  *
- * Left out on purpose (NEI handles them, this addon does not): container items (buckets, damageable tools), drop
- * chances, fluids, collapsing recipes inside a chain.
+ * Left out on purpose (NEI handles them, this addon does not): drop chances and fluids (JEI gives no chance data on a
+ * recipe slot, and the addon only knows items), GregTech's tool durability ({@code GT.ToolStats}).
  */
 package neiaddon.chain;
 
@@ -20,6 +20,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import neiaddon.chain.ContainerOps.Held;
+import neiaddon.chain.ContainerOps.Use;
 
 /**
  * Works out how many times every recipe of one crafting group has to run so that the top recipes get everything they
@@ -45,6 +47,15 @@ public class ChainMath {
 
     /** Result/ingredient/plain item -> how much of it the chain needs. */
     public final Map<ChainItem, Long> requiredAmount = new HashMap<>();
+
+    /** The game side of container items; null (the default in tests) means no item leaves anything behind. */
+    public static ContainerOps containerOps;
+
+    /** Leftovers of the crafts (empty buckets, worn tools) and of the items the player already has. */
+    public final List<Held> containerItemsCrafting = new ArrayList<>();
+    public final List<Held> containerItemsInventory = new ArrayList<>();
+
+    private final List<Object> containerItemsBlacklist = new ArrayList<>();
 
     protected ChainMath(List<ChainItem> recipeItems, Set<String> collapsedRecipes) {
         final Map<String, Long> multipliers = new LinkedHashMap<>();
@@ -375,6 +386,9 @@ public class ChainMath {
 
         this.preferredItems.clear();
         this.requiredAmount.clear();
+        this.containerItemsCrafting.clear();
+        this.containerItemsInventory.clear();
+        this.containerItemsBlacklist.clear();
 
         for (String recipeId : this.outputRecipes.keySet()) {
             collectPreferredItems(recipeId, this.preferredItems, new HashSet<>());
@@ -385,12 +399,31 @@ public class ChainMath {
     public ChainMath refresh() {
         resetCalculation();
 
+        final ContainerOps ops = containerOps;
+        if (ops != null && this.outputRecipes.containsKey(ROOT_RECIPE_ID)) {
+            for (ChainItem ingrItem : this.recipeIngredients) {
+                if (ROOT_RECIPE_ID.equals(ingrItem.recipeId)) {
+                    final Object stack = ops.stackOf(ingrItem);
+                    if (stack != null && ops.hasContainerItem(stack)) {
+                        this.containerItemsBlacklist.add(stack);
+                    }
+                }
+            }
+        }
+
         for (String recipeId : getOutputRecipeProcessingOrder()) {
             final long prefMultiplier = this.outputRecipes.get(recipeId);
 
             for (ChainItem prefItem : this.resultsByRecipe.getOrDefault(recipeId, Collections.emptyList())) {
                 if (prefItem.emptyFactor()) {
                     continue;
+                }
+
+                if (ops != null) {
+                    final Object stack = ops.stackOf(prefItem);
+                    if (stack != null && ops.hasContainerItem(stack)) {
+                        this.containerItemsBlacklist.add(stack);
+                    }
                 }
 
                 this.preferredItems.put(prefItem, prefItem);
@@ -414,13 +447,44 @@ public class ChainMath {
         final ChainItem prefItem = this.preferredItems.get(ingrItem);
         long ingrAmount = ingrItem.amount(ingrMultiplier);
         final long requested = ingrAmount;
+        long containerAmount = 0;
         long inventoryAmount = 0;
+
+        // calculate existing containers (a tool an earlier craft left behind is used again)
+        final ContainerOps ops = containerOps;
+        if (ops != null && ingrAmount > 0) {
+            for (String option : ingrItem.options) {
+                final Object stack = option.equals(ingrItem.item) ? firstNonNull(ops.stackOf(ingrItem), ops.stackOf(option))
+                    : ops.stackOf(option);
+                if (stack != null && hasContainerItem(stack)) {
+                    long stackSize = ingrAmount;
+                    long shiftSize = shiftContainerItems(stack, stackSize, this.containerItemsCrafting);
+
+                    if (stackSize != shiftSize) {
+                        containerAmount += ingrAmount - shiftSize;
+                        if ((ingrAmount = shiftSize) == 0) {
+                            break;
+                        }
+                    }
+
+                    stackSize = shiftSize;
+                    shiftSize = shiftContainerItems(stack, stackSize, this.containerItemsInventory);
+
+                    if (stackSize != shiftSize) {
+                        inventoryAmount += ingrAmount - shiftSize;
+                        if ((ingrAmount = shiftSize) == 0) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
 
         // the player's plain items are spent first
         if (ingrAmount > 0) {
             for (ChainItem item : this.initialItems) {
                 if (item.containsItems(ingrItem)) {
-                    final long newIngrAmount = addRequiredAmount(item, ingrAmount, item.amount());
+                    final long newIngrAmount = addRequiredAmount(item, ingrAmount, item.amount(), this.containerItemsInventory);
                     inventoryAmount += ingrAmount - newIngrAmount;
                     ingrAmount = newIngrAmount;
                     if (ingrAmount == 0) {
@@ -432,9 +496,9 @@ public class ChainMath {
 
         final ChainItem producer = prefItem != null ? prefItem : ingrItem;
         final long beforeShift = this.requiredAmount.getOrDefault(producer, 0L);
-        addRequiredAmount(producer, ingrAmount, Long.MAX_VALUE);
+        addRequiredAmount(producer, ingrAmount, Long.MAX_VALUE, this.containerItemsCrafting);
 
-        calculationStepTrigger(ingrItem, prefItem, requested, 0, inventoryAmount, ingrAmount,
+        calculationStepTrigger(ingrItem, prefItem, requested, containerAmount, inventoryAmount, ingrAmount,
             this.requiredAmount.getOrDefault(producer, 0L) - beforeShift);
 
         if (prefItem != null && !isForeignBoxBoundary(ingrItem) && !visited.contains(prefItem.recipeId)) {
@@ -462,17 +526,134 @@ public class ChainMath {
         }
     }
 
-    /** Adds up to {@code maxAmount - alreadyRequired} of {@code ingrAmount} to the item and returns what is left. */
-    private long addRequiredAmount(ChainItem prefItem, long ingrAmount, long maxAmount) {
-        long shiftAmount = this.requiredAmount.getOrDefault(prefItem, 0L);
-        long initAmount = Math.min(ingrAmount, maxAmount - shiftAmount);
+    private static Object firstNonNull(Object a, Object b) {
+        return a != null ? a : b;
+    }
 
-        shiftAmount += initAmount;
-        ingrAmount -= initAmount;
+    /** NEI's hasContainerItem: the item leaves something behind and is not one of the chain's own results. */
+    protected boolean hasContainerItem(Object stack) {
+        final ContainerOps ops = containerOps;
+
+        if (ops != null && ops.hasContainerItem(stack)) {
+            for (Object bStack : this.containerItemsBlacklist) {
+                if (ops.sameForCrafting(stack, bStack)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Adds up to {@code maxAmount - alreadyRequired} of {@code ingrAmount} to the item and returns what is left. An item
+     * that leaves a container behind is counted in uses of the leftovers first.
+     */
+    protected long addRequiredAmount(ChainItem prefItem, long ingrAmount, long maxAmount, List<Held> containerItems) {
+        long shiftAmount = this.requiredAmount.getOrDefault(prefItem, 0L);
+        final ContainerOps ops = containerOps;
+        Object itemStack = ops != null ? ops.stackOf(prefItem) : null;
+
+        if (itemStack != null && hasContainerItem(itemStack)) {
+
+            while (ingrAmount > 0 && shiftAmount < maxAmount) {
+                long multiplier = 1;
+                itemStack = ops.copy(itemStack);
+
+                ingrAmount = shiftContainerItems(itemStack, ingrAmount, containerItems);
+
+                if (ingrAmount > 0) {
+                    long steps = ingrAmount;
+                    final Use result = getToolsContainerItems(itemStack, steps);
+
+                    if (result.stack == null) {
+                        final long stepsPerReplacement = steps - result.leftSteps;
+                        multiplier = Math.min(steps / stepsPerReplacement, maxAmount - shiftAmount);
+                        steps -= multiplier * stepsPerReplacement;
+                    } else {
+                        steps = result.leftSteps;
+                    }
+
+                    if (result.containerItem != null) {
+                        containerItems.add(new Held(result.containerItem, multiplier));
+                    }
+
+                    if (result.stack != null) {
+                        containerItems.add(new Held(result.stack, 1));
+                    }
+
+                    ingrAmount = steps;
+                }
+
+                shiftAmount += multiplier;
+            }
+
+        } else {
+            long initAmount = Math.min(ingrAmount, maxAmount - shiftAmount);
+
+            shiftAmount += initAmount;
+            ingrAmount -= initAmount;
+        }
 
         this.requiredAmount.put(prefItem, shiftAmount);
 
         return ingrAmount;
+    }
+
+    /** NEI's shiftContainerItems: uses up leftovers of the same kind for {@code steps} crafts and returns the steps left. */
+    private long shiftContainerItems(Object aStack, long steps, List<Held> containerItems) {
+        final ContainerOps ops = containerOps;
+        final int initialSize = containerItems.size();
+
+        for (int i = 0; i < initialSize && steps > 0; i++) {
+            final Held bStack = containerItems.get(i);
+
+            if (bStack.stack != null && ops.sameForCrafting(aStack, bStack.stack)) {
+                final Use result = getToolsContainerItems(bStack.stack, steps);
+
+                bStack.stack = result.stack;
+                steps = result.leftSteps;
+
+                if (result.containerItem != null) {
+                    containerItems.add(new Held(result.containerItem, 1));
+                }
+            }
+        }
+
+        containerItems.removeIf(held -> held.stack == null);
+
+        return steps;
+    }
+
+    /** Most uses of one tool worked out one by one; a tool that never wears out stops here instead of looping forever. */
+    private static final long MAX_USES_TRACKED = 1_000_000L;
+
+    /**
+     * NEI's getToolsContainerItems (without the GregTech tool stats): uses the stack once per step. A tool that comes
+     * back as the same item (worn) is used again; one that comes back as another item or not at all ends the loop.
+     */
+    protected Use getToolsContainerItems(Object stack, long steps) {
+        final ContainerOps ops = containerOps;
+        Object aStack = stack;
+        long tracked = 0;
+
+        while (aStack != null && steps > 0) {
+            aStack = ops.remainder(aStack);
+
+            steps--;
+
+            if (aStack != null && !ops.sameItem(stack, aStack)) {
+                return new Use(null, steps, aStack);
+            }
+
+            if (++tracked >= MAX_USES_TRACKED && aStack != null) {
+                return new Use(aStack, 0, null);
+            }
+        }
+
+        return new Use(aStack, steps, null);
     }
 
     private void addShift(String recipeId, long shift) {

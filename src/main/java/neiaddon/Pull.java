@@ -30,7 +30,7 @@ public final class Pull {
     /** NEI: BookmarkContainerInfo.getBookmarkContainerHandler(gui) != null. */
     public static boolean available() {
         Minecraft mc = Minecraft.getInstance();
-        return mc.player != null && mc.gameMode != null && mc.gui.screen() instanceof ContainerScreen screen
+        return mc.player != null && mc.gameMode != null && McCompat.screen() instanceof ContainerScreen screen
             && screen.getMenu().slots.size() > PLAYER_SLOTS;
     }
 
@@ -41,7 +41,7 @@ public final class Pull {
     public static boolean pull(ChainMath math, boolean shift) {
         if (math == null || !available()) return false;
         Minecraft mc = Minecraft.getInstance();
-        AbstractContainerMenu menu = ((ContainerScreen) mc.gui.screen()).getMenu();
+        AbstractContainerMenu menu = ((ContainerScreen) McCompat.screen()).getMenu();
         int storage = menu.slots.size() - PLAYER_SLOTS;
 
         Map<String, Long> inventory = shift ? count(menu, storage, menu.slots.size()) : Map.of();

@@ -7,6 +7,14 @@ Status: an early version built and loaded in game. Everything added since (NEI-s
 `neo_version` (gradle.properties) came from the official 26.2 template; `jei_version` is 30.42.0.237. Change either if the build can't resolve them.
 Send back any lines starting with `error:`.
 
+## Other Minecraft versions
+The Minecraft, NeoForge and JEI versions come from `gradle.properties` and can be overridden on the command line. The jar is
+named `neiaddon-<minecraft version>-<mod version>.jar`.
+
+- 26.2 (default): `./gradlew clean build`
+
+Other Minecraft versions live on their own branches (26.1.x on `26.1.x`).
+
 ## Features
 - **Highlight tips** (as NEI's HUDRenderer): a tooltip-style box with the item and name of the BLOCK under the crosshair (not entities). Off by default; Numpad 0 toggles it, the player-list key (Tab) hides it. Position `hudX`/`hudY` (0..10000, NEI defaults 5000/100) in `neiaddon-client.toml`; bind "Move Highlight Tooltips" in Controls to open NEI's drag-to-position screen. Extras not in NEI (off by default): `hudShowMod`, `hudShowId`.
 - **Item info pages**: `config/neiaddon/informationpages.cfg` (created on first start), NEI's `filter = text` format. Filters: `namespace:path` (with `*`), `$namespace:tag` (NEI's `$oredict`; `$name` means `c:name`), `@modid`. Lines starting with `#` are comments, as in NEI. Shown in JEI on the item's recipe page.
@@ -26,7 +34,7 @@ Send back any lines starting with `error:`.
 - JEI's own bookmark overlay is switched off (it would be a second panel); the panel also appears on JEI's recipe screen. If JEI's internals change and this fails, a warning is logged and JEI's overlay stays.
 
 ## Known limits
-Only the item id is saved for bookmarks (enchantments/potion types are lost on restart). The panel needs room for at least one 18px column left of the GUI; on narrow windows it hides. The creative inventory is no longer excluded. Collapsed groups show the non-ingredient items that fit on one row (as NEI). Not implemented from NEI: the crafting tree's screenshot button, container items / drop chances / fluids in the chain maths, the Shift/Ctrl amount display modes of bookmark slots, auto-generated favorites. JEI's own recipe-bookmark button (next to the heart) still writes into JEI's hidden bookmark list; use the heart / Shift+A instead. Dragging only works on container screens, not JEI's recipe screen. The text calculator has no leftover sharing between crafts and uses each ingredient slot's first alternative; the recipe tree uses the item that has a favorite recipe, else the first. Bookmarks are read from JEI internals by reflection (no public API exists); if a JEI update changes them the import returns nothing and the C key still works.
+Only the item id is saved for bookmarks (enchantments/potion types are lost on restart). The panel needs room for at least one 18px column left of the GUI; on narrow windows it hides. The creative inventory is no longer excluded. Collapsed groups show the non-ingredient items that fit on one row (as NEI). Not implemented from NEI: the crafting tree's screenshot button, drop chances / fluids in the chain maths (container items are in), the Shift/Ctrl amount display modes of bookmark slots, auto-generated favorites. JEI's own recipe-bookmark button (next to the heart) still writes into JEI's hidden bookmark list; use the heart / Shift+A instead. Dragging only works on container screens, not JEI's recipe screen. The text calculator has no leftover sharing between crafts and uses each ingredient slot's first alternative; the recipe tree uses the item that has a favorite recipe, else the first. Bookmarks are read from JEI internals by reflection (no public API exists); if a JEI update changes them the import returns nothing and the C key still works.
 
 ## License
 Author: Iambda. Source: https://github.com/IambdaA/NEI-features-for-JEI
@@ -118,7 +126,7 @@ Port of NEI's `GuiCraftingTree`. The pure parts are in `chain/` (`TreeMath`, `Tr
 - Stats panel: ingredients, crafting, results, handlers; click a slot to highlight it in the tree (Shift = previous,
   RMB clears).
 - Search box: words must be in the item's name or id, `@mod`, `$tag`. NEI's search language is NOT ported.
-- Not ported: the screenshot button, container items, drop chances, fluids.
+- Not ported: the screenshot button, drop chances, fluids. Container items (a bucket left behind, a tool that comes back worn) are in the chain maths and tree: a tool node shows its amount as `~n` in orange, and what is left behind is listed under Remainders in the stats panel. GregTech tool stats are not read.
 - Not checked in game: only compiled against stand-in classes and run through the maths checks. Risks: item and texture
   drawing under the pose scale, the second JEI button factory, the inventory snapshot read from the open menu, the
   recipe picture in the badge tooltip.

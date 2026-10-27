@@ -55,13 +55,13 @@ public final class AutoCraft {
     /** The open screen's menu when it has a crafting result slot (inventory, crafting table...), else null. */
     private static AbstractContainerMenu craftingMenu() {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || Calculator.runtime == null || !(mc.gui.screen() instanceof AbstractContainerScreen<?> screen)) return null;
+        if (mc.player == null || Calculator.runtime == null || !(McCompat.screen() instanceof AbstractContainerScreen<?> screen)) return null;
         AbstractContainerMenu open = screen.getMenu();
         return resultSlot(open) != null && mc.player.containerMenu == open ? open : null;
     }
 
     public static boolean available() {
-        return craftingMenu() != null;
+        return AddonConfig.AUTOCRAFTING.get() && craftingMenu() != null;
     }
 
     public static boolean processing() {
@@ -92,7 +92,7 @@ public final class AutoCraft {
      * inventory already holds it; with Ctrl only what is missing is crafted.
      */
     public static boolean start(ChainMath chain, boolean ignoreInventory) {
-        AbstractContainerMenu open = craftingMenu();
+        AbstractContainerMenu open = AddonConfig.AUTOCRAFTING.get() ? craftingMenu() : null;
         if (chain == null || open == null) {
             NeiAddon.LOGGER.info("Autocrafting not started: chain={} craftingGridOpen={}", chain != null, open != null);
             return false;

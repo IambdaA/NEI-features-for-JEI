@@ -26,6 +26,19 @@ public final class JeiButtons {
 
     private JeiButtons() {}
 
+    /** Left edge and top of this addon's own button, the third one in the row. */
+    public static int configX() {
+        return MARGIN + 2 * (SIZE + GAP);
+    }
+
+    public static int configY(int screenHeight) {
+        return screenHeight - MARGIN - SIZE;
+    }
+
+    public static int size() {
+        return SIZE;
+    }
+
     /** Is the point over the "show bookmarks" button? */
     public static boolean overBookmarkButton(double mx, double my, int screenHeight) {
         return inside(mx, my, MARGIN, screenHeight - MARGIN - SIZE, SIZE, SIZE);
@@ -33,7 +46,7 @@ public final class JeiButtons {
 
     /** Is the point over any of the two buttons (with a little slack)? */
     public static boolean overButtonRow(double mx, double my, int screenHeight) {
-        return inside(mx, my, MARGIN - 2, screenHeight - MARGIN - SIZE - 2, SIZE * 2 + GAP + 4, SIZE + 4);
+        return inside(mx, my, MARGIN - 2, screenHeight - MARGIN - SIZE - 2, SIZE * 4 + GAP * 3 + 4, SIZE + 4);
     }
 
     private static boolean inside(double mx, double my, int x, int y, int w, int h) {

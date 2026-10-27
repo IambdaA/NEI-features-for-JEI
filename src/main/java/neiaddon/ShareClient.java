@@ -80,12 +80,12 @@ public final class ShareClient {
             (int) event.getMouseY());
         boolean restricted = mc.player != null && mc.player.chatAbilities()
             .hasAnyRestrictions();
-        mc.gui.hud.getChat()
+        McCompat.chat()
             .captureClickableText(
                 finder,
                 mc.getWindow()
                     .getGuiScaledHeight(),
-                mc.gui.hud.getGuiTicks(),
+                McCompat.guiTicks(),
                 restricted ? ChatComponent.DisplayMode.FOREGROUND_RESTRICTED : ChatComponent.DisplayMode.FOREGROUND);
         if (finder.result() != null && finder.result()
             .getClickEvent() instanceof ClickEvent.RunCommand(String command) && command.startsWith(Share.COMMAND + " ")) {

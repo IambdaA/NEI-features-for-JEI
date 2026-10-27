@@ -55,6 +55,11 @@ public final class RecipeLookup {
             this.slots = slots;
         }
 
+        /** The recipe type's icon (shown on bookmarks), or null. */
+        public mezz.jei.api.gui.drawable.IDrawable icon() {
+            return category.getIcon();
+        }
+
         /** A drawable copy of the recipe (for tooltips), or null. */
         public IRecipeLayoutDrawable<T> layout() {
             IJeiRuntime rt = Calculator.runtime;

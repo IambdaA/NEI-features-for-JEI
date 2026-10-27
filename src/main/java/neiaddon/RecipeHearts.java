@@ -246,7 +246,7 @@ public final class RecipeHearts {
     // ---------------------------------------------------------------- keys
 
     private static boolean onRecipesScreen() {
-        Screen s = Minecraft.getInstance().gui.screen();
+        Screen s = McCompat.screen();
         return s != null && s.getClass()
             .getName()
             .equals(JEI_RECIPES_GUI);
