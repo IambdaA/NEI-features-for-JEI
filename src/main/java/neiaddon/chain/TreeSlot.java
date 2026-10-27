@@ -26,9 +26,17 @@ public final class TreeSlot {
     public final long leftAmount;
     /** Runs of the producing recipe. */
     public final long multiplier;
+    /** The item comes back (worn) after a craft, like a tool: its amount is only an estimate (NEI draws it with a ~). */
+    public final boolean isContainerItem;
 
     public TreeSlot(ChainItem ingrItem, long ingeritRequestedAmount, long currentRequestedAmount, long producedAmount,
         long containerAmount, ChainItem prefItem) {
+        this(ingrItem, ingeritRequestedAmount, currentRequestedAmount, producedAmount, containerAmount, prefItem, false);
+    }
+
+    public TreeSlot(ChainItem ingrItem, long ingeritRequestedAmount, long currentRequestedAmount, long producedAmount,
+        long containerAmount, ChainItem prefItem, boolean isContainerItem) {
+        this.isContainerItem = isContainerItem;
         this.ingrItem = ingrItem;
         this.ingeritRequestedAmount = ingeritRequestedAmount;
         this.currentRequestedAmount = currentRequestedAmount;

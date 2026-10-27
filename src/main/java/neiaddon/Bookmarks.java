@@ -303,10 +303,14 @@ public final class Bookmarks {
 
     private Bookmarks() {}
 
+    private static Path loadedFile;
+
     private static Path file() {
+        String key = AddonConfig.BM_WORLD_SPECIFIC.get() ? McCompat.worldKey() : null;
+        String name = key == null ? "bookmarks.txt" : "bookmarks-" + key.replaceAll("[^A-Za-z0-9._-]", "_") + ".txt";
         return FMLPaths.CONFIGDIR.get()
             .resolve("neiaddon")
-            .resolve("bookmarks.txt");
+            .resolve(name);
     }
 
     private static String clean(String s) {
@@ -316,9 +320,16 @@ public final class Bookmarks {
     }
 
     public static void ensureLoaded() {
-        if (loaded) return;
-        loaded = true;
         Path file = file();
+        if (loaded && file.equals(loadedFile)) return;
+        if (loaded) {
+            // another world (or the setting changed): start from that list
+            pages.clear();
+            activePage = 0;
+            chainCache.clear();
+        }
+        loaded = true;
+        loadedFile = file;
         try {
             if (Files.exists(file)) {
                 Page current = null;
@@ -411,7 +422,7 @@ public final class Bookmarks {
 
     public static void save() {
         chainCache.clear();
-        Path file = file();
+        Path file = loadedFile != null ? loadedFile : file();
         List<String> lines = new ArrayList<>();
         for (Page page : pages) {
             if (page.isEmpty()) continue;

@@ -12,6 +12,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import mezz.jei.api.constants.VanillaTypes;
+import mezz.jei.api.gui.IRecipeLayoutDrawable;
+import mezz.jei.api.gui.drawable.IDrawable;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import neiaddon.chain.ChainDetails;
 import neiaddon.chain.ChainItem;
@@ -70,6 +72,7 @@ public final class BookmarkPanel {
     private static final int GROUP_CHAIN = 0x6645DA75;
     private static final int SHADOW = 0x66222222;
     private static final int RECIPE_BORDER = 0x99A033A0;
+    private static final int RESULT_BG = 0x4045DA75;
 
     private static final int NEW_GROUP = -1;
     private static final int SPLIT_GROUP = -2;
@@ -120,6 +123,10 @@ public final class BookmarkPanel {
 
     private static boolean applies(Screen s) {
         return supports(s);
+    }
+
+    public static boolean isHidden() {
+        return hidden;
     }
 
     public static void toggleHidden() {
@@ -636,6 +643,9 @@ public final class BookmarkPanel {
             int x = cellX(c);
             int y = cellY(c);
             boolean hovered = c == hover || (reorder != null && c.entry() == reorder);
+            boolean recipeResult = c.recipe() != null && c.entry().type != ChainItem.Type.INGREDIENT;
+            // NEI showRecipeMarkerMode 2: results of a recipe get a tinted background
+            if (recipeResult && !hovered && AddonConfig.BM_MARKER_MODE.get() == 2) g.fill(x, y, x + SLOT, y + SLOT, RESULT_BG);
             if (hovered) g.fill(x, y, x + SLOT, y + SLOT, HIGHLIGHT);
             ItemStack stack = c.entry().key.sample;
             g.renderFakeItem(stack, x + 1, y + 1);
@@ -651,8 +661,9 @@ public final class BookmarkPanel {
                 ChainDetails.Calc calc = c.calc();
                 boolean output = calc != null && Bookmarks.chain(page, c.groupId()).outputRecipes.contains(calc.item.recipeId);
                 long real = calc != null ? calc.realMultiplier : c.entry().multiplier();
-                if (output || real > 1) drawSmall(g, font, "x" + format(real), x + 1, y + 1, 0xFFADADAD);
+                if (output || real > 1) drawSmall(g, font, "x" + format(real), x + 1, y + 1, 0xFF000000 | AddonConfig.BM_MARKER_COLOR.get());
             }
+            if (recipeResult && (c.firstOutput() || AddonConfig.BM_MARKER_MODE.get() == 1)) drawRecipeMarker(g, font, c, x, y);
             if (c == hover) {
                 tipStack = stack;
             }
@@ -710,6 +721,76 @@ public final class BookmarkPanel {
         g.fill(left, lineTop, left + 1, lineBottom, color);
     }
 
+    // ---------------------------------------------------------------- recipe markers and pictures
+
+    private static Object cacheOwner;
+    private static final Map<String, Optional<IDrawable>> icons = new HashMap<>();
+    private static final Map<String, IRecipeLayoutDrawable<?>> pictures = new HashMap<>();
+    private static final java.util.Set<String> noPicture = new java.util.HashSet<>();
+
+    private static void checkCaches() {
+        if (cacheOwner != Calculator.runtime) {
+            cacheOwner = Calculator.runtime;
+            icons.clear();
+            pictures.clear();
+            noPicture.clear();
+        }
+    }
+
+    /** NEI's drawRecipeMarker: the recipe type's icon (when asked for) or an "R", small in the top right corner. */
+    private static void drawRecipeMarker(GuiGraphics g, Font font, Cell c, int x, int y) {
+        checkCaches();
+        IDrawable icon = null;
+        if (AddonConfig.BM_HANDLER_ICON.get()) {
+            icon = icons.computeIfAbsent(c.recipe(), id -> {
+                try {
+                    RecipeLookup.Target<?> target = RecipeLookup.findTarget(id, c.entry().key.sample);
+                    return Optional.ofNullable(target == null ? null : target.icon());
+                } catch (RuntimeException e) {
+                    return Optional.empty();
+                }
+            }).orElse(null);
+        }
+        if (icon != null && icon.getWidth() > 0 && icon.getHeight() > 0) {
+            float f = 6.4f / Math.max(icon.getWidth(), icon.getHeight());
+            Pose pose = Pose.of(g);
+            pose.pushMatrix();
+            pose.translateZ(Pose.OVER);
+            pose.translate(x + 17 - icon.getWidth() * f, y + 1);
+            pose.scale(f, f);
+            icon.draw(g, 0, 0);
+            pose.popMatrix();
+        } else if (AddonConfig.BM_MARKER_MODE.get() == 1) {
+            drawSmall(g, font, "R", x + 17 - font.width("R") * 0.5f, y + 1, 0xFF000000 | AddonConfig.BM_MARKER_COLOR.get());
+        }
+    }
+
+    /** NEI recipeTooltipsMode: 0 never, 1 default view, 2 todo-list view, 3 always. */
+    private static boolean recipePictureWanted(Bookmarks.Page page, Cell cell) {
+        int mode = AddonConfig.BM_TOOLTIP_MODE.get();
+        Bookmarks.GroupMeta meta = page.meta(cell.groupId());
+        boolean todo = meta != null && meta.todo;
+        return cell.recipe() != null && (mode == 3 || mode == 1 && !todo || mode == 2 && todo);
+    }
+
+    private static IRecipeLayoutDrawable<?> picture(String recipeId, ItemStack hint) {
+        checkCaches();
+        if (pictures.containsKey(recipeId)) return pictures.get(recipeId);
+        if (noPicture.contains(recipeId)) return null;
+        try {
+            RecipeLookup.Target<?> target = RecipeLookup.findTarget(recipeId, hint);
+            IRecipeLayoutDrawable<?> layout = target == null ? null : target.layout();
+            if (layout != null) {
+                pictures.put(recipeId, layout);
+                return layout;
+            }
+        } catch (RuntimeException e) {
+            NeiAddon.LOGGER.warn("Could not draw recipe {} in the bookmark tooltip", recipeId, e);
+        }
+        noPicture.add(recipeId);
+        return null;
+    }
+
     /** Text at half size ({@code scale 0.5}) with its top left corner at (x, y), like NEI's {@code drawNEIOverlayText}. */
     private static void drawSmall(GuiGraphics g, Font font, String text, float x, float y, int color) {
         Pose pose = Pose.of(g);
@@ -734,7 +815,7 @@ public final class BookmarkPanel {
      * One icon list of a tooltip (NEI's ItemsTooltipLineHandler): {@code amounts} is empty when no amounts are drawn,
      * {@code active} is the highlighted item (-1 for none).
      */
-    private record Section(String label, List<ItemStack> stacks, List<Long> amounts, int maxRows, int active) {}
+    private record Section(String label, List<ItemStack> stacks, List<Long> amounts, int maxRows, int active, int missing) {}
 
     /** NEI's tooltip over the group strip / page label: "Bookmarks Group", its hotkeys, then the crafting chain. */
     private static GroupTip groupTip(Bookmarks.Page page, int gid, boolean label) {
@@ -770,6 +851,10 @@ public final class BookmarkPanel {
 
     /** NEI's RecipeChainTooltipLineHandler.createLines without Shift: what the chain makes and what it needs. */
     private static List<Section> chainSections(Bookmarks.Page page, int gid) {
+        if (McCompat.shift()) {
+            List<Section> counted = chainSectionsShift(page, gid, McCompat.ctrl());
+            if (!counted.isEmpty()) return counted;
+        }
         ChainDetails details = page.hasRecipes(gid) ? Bookmarks.chain(page, gid) : null;
         if (details == null) return List.of();
         ChainMath math = details.math;
@@ -794,6 +879,132 @@ public final class BookmarkPanel {
         return out;
     }
 
+    // ---- Shift: the chain with the inventory counted (NEI's RecipeChainTooltipLineHandler with the Shift key held)
+
+    private record ShiftCache(Bookmarks.Page page, int gid, boolean ctrl, long at, List<Section> sections) {}
+
+    private static ShiftCache shiftCache;
+
+    /** Everything the open menu holds (no crafting result slot), as item id to count. */
+    private static Map<String, Long> inventoryCounts() {
+        Map<String, Long> have = new LinkedHashMap<>();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return have;
+        for (net.minecraft.world.inventory.Slot slot : mc.player.containerMenu.slots) {
+            if (slot.hasItem() && !(slot instanceof net.minecraft.world.inventory.ResultSlot) && slot.mayPickup(mc.player)) {
+                have.merge(RecipeData.idOf(slot.getItem()), (long) slot.getItem().getCount(), Long::sum);
+            }
+        }
+        return have;
+    }
+
+    private static ItemStack stackFor(ChainItem item) {
+        if (item.payload instanceof Bookmarks.Entry e) return e.key.sample;
+        return BuiltInRegistries.ITEM.getOptional(new ResourceLocation(item.item))
+            .map(ItemStack::new)
+            .orElse(ItemStack.EMPTY);
+    }
+
+    private static void sumInto(Map<String, Object[]> into, ChainItem item, long amount) {
+        ItemStack stack = stackFor(item);
+        if (stack.isEmpty()) return;
+        Object[] slot = into.computeIfAbsent(item.item, k -> new Object[] { stack, 0L });
+        slot[1] = (Long) slot[1] + amount;
+    }
+
+    private static List<Map.Entry<String, Object[]>> byAmount(Map<String, Object[]> items) {
+        List<Map.Entry<String, Object[]>> sorted = new ArrayList<>(items.entrySet());
+        sorted.sort((a, b) -> {
+            int c = Long.compare((Long) b.getValue()[1], (Long) a.getValue()[1]);
+            return c != 0 ? c : a.getKey().compareTo(b.getKey());
+        });
+        return sorted;
+    }
+
+    private static Section sectionOf(String label, List<Map.Entry<String, Object[]>> entries, int missing) {
+        List<ItemStack> stacks = new ArrayList<>();
+        List<Long> amounts = new ArrayList<>();
+        for (Map.Entry<String, Object[]> e : entries) {
+            stacks.add((ItemStack) e.getValue()[0]);
+            amounts.add((Long) e.getValue()[1]);
+        }
+        return new Section(label, stacks, amounts, TIP_ROWS, -1, missing);
+    }
+
+    /** Recomputed twice a second, not every frame. */
+    private static List<Section> chainSectionsShift(Bookmarks.Page page, int gid, boolean ctrl) {
+        long now = System.currentTimeMillis();
+        ShiftCache c = shiftCache;
+        if (c != null && c.page() == page && c.gid() == gid && c.ctrl() == ctrl && now - c.at() < 500) return c.sections();
+        List<Section> result;
+        try {
+            result = computeShift(page, gid, ctrl);
+        } catch (RuntimeException e) {
+            NeiAddon.LOGGER.warn("Chain tooltip with inventory failed", e);
+            result = List.of();
+        }
+        shiftCache = new ShiftCache(page, gid, ctrl, now, result);
+        return result;
+    }
+
+    private static List<Section> computeShift(Bookmarks.Page page, int gid, boolean ctrl) {
+        ChainMath m = page.hasRecipes(gid) ? Bookmarks.autocraftChain(page, gid) : null;
+        if (m == null) return List.of();
+        Map<String, Long> have = inventoryCounts();
+        m.initialItems.clear();
+        if (!ctrl) {
+            // without Ctrl: what the inventory already holds is crafted again on top (as Shift+C does)
+            for (ChainItem item : m.recipeResults) {
+                if (item.emptyFactor() || !m.outputRecipes.containsKey(item.recipeId)) continue;
+                long amount = have.getOrDefault(item.item, 0L);
+                if (amount < item.amount()) continue;
+                long itemAmount = item.amount(m.outputRecipes.get(item.recipeId));
+                if (itemAmount > 0) amount += itemAmount - amount % itemAmount;
+                m.outputRecipes.put(item.recipeId, Math.max(m.outputRecipes.get(item.recipeId), item.multiplierFromAmount(amount)));
+            }
+        }
+        for (Map.Entry<String, Long> e : have.entrySet()) {
+            m.initialItems.add(new ChainItem(e.getKey(), null, ChainItem.Type.ITEM, 1, e.getValue(), null, null));
+        }
+        m.refresh();
+
+        Map<String, Object[]> available = new LinkedHashMap<>();
+        Map<String, Object[]> inputs = new LinkedHashMap<>();
+        Map<String, Object[]> outputs = new LinkedHashMap<>();
+        Map<String, Object[]> remainder = new LinkedHashMap<>();
+        Map<String, Object[]> needed = new LinkedHashMap<>();
+        for (ChainItem item : m.initialItems) {
+            long amount = m.requiredAmount.getOrDefault(item, 0L);
+            if (amount > 0) sumInto(available, item, amount);
+        }
+        for (ChainItem item : m.recipeIngredients) {
+            long amount = m.requiredAmount.containsKey(m.preferredItems.get(item)) ? 0 : m.requiredAmount.getOrDefault(item, item.amount());
+            if (amount > 0) sumInto(inputs, item, amount);
+        }
+        for (ChainItem item : m.recipeResults) {
+            long amount = item.amount() - m.requiredAmount.getOrDefault(item, 0L);
+            if (amount > 0) sumInto(m.outputRecipes.containsKey(item.recipeId) ? outputs : remainder, item, amount);
+        }
+        for (Map.Entry<ChainItem, Long> e : m.requiredAmount.entrySet()) {
+            if (e.getKey().type == ChainItem.Type.RESULT && e.getValue() != 0) sumInto(needed, e.getKey(), e.getValue());
+        }
+
+        // items that are short stay on top of the ingredients, the ones the inventory covers follow
+        List<Map.Entry<String, Object[]>> ingredients = new ArrayList<>(byAmount(inputs));
+        int missing = ingredients.size();
+        for (Map.Entry<String, Object[]> e : byAmount(available)) {
+            if (!inputs.containsKey(e.getKey())) ingredients.add(e);
+        }
+        Map<String, Object[]> results = new LinkedHashMap<>(outputs);
+        remainder.forEach(results::putIfAbsent);
+
+        List<Section> out = new ArrayList<>();
+        if (!results.isEmpty()) out.add(sectionOf("Results", byAmount(results), 0));
+        if (!needed.isEmpty()) out.add(sectionOf("Required Crafts", byAmount(needed), 0));
+        if (!ingredients.isEmpty()) out.add(sectionOf("Ingredients", ingredients, missing));
+        return out;
+    }
+
     private static void sum(Map<String, Object[]> into, ChainItem item, long amount) {
         Object[] slot = into.computeIfAbsent(item.item, k -> new Object[] { ((Bookmarks.Entry) item.payload).key.sample, 0L });
         slot[1] = (Long) slot[1] + amount;
@@ -813,7 +1024,7 @@ public final class BookmarkPanel {
             stacks.add((ItemStack) e.getValue()[0]);
             amounts.add((Long) e.getValue()[1]);
         }
-        out.add(new Section(label, stacks, amounts, TIP_ROWS, -1));
+        out.add(new Section(label, stacks, amounts, TIP_ROWS, -1, 0));
     }
 
     private static final int TIP_SLOT = 18;
@@ -895,7 +1106,7 @@ public final class BookmarkPanel {
                 if (!sec.amounts().isEmpty()) {
                     String amount = format(sec.amounts().get(index));
                     Pose.begin(g, Pose.OVER);
-                    g.drawString(font, amount, sx + 17 - font.width(amount), sy + 9, 0xFFFFFFFF, true);
+                    g.drawString(font, amount, sx + 17 - font.width(amount), sy + 9, index < sec.missing() ? 0xFFFF5555 : 0xFFFFFFFF, true);
                     Pose.end(g);
                 }
             }
@@ -937,6 +1148,18 @@ public final class BookmarkPanel {
         tip.add(HotkeyTips.modName(stack));
         List<FormattedCharSequence> lines = new ArrayList<>();
         for (Component line : tip) lines.addAll(font.split(line, 260));
+        if (recipePictureWanted(page, cell)) {
+            IRecipeLayoutDrawable<?> picture = picture(cell.recipe(), stack);
+            Screen screen = McCompat.screen();
+            if (picture != null && screen != null) {
+                Rect2i r = picture.getRect();
+                TreeDraw.tooltip(g, font, mx, my, screen.width, screen.height, lines, List.of(), r.getWidth(), r.getHeight(), (g2, px2, py2) -> {
+                    picture.setPosition(px2, py2);
+                    picture.drawRecipe(g2, -1000, -1000);
+                });
+                return;
+            }
+        }
         if (single(cell) && Bookmarks.hasOptions(entry)) {
             // NEI AcceptsFollowingTooltipLineHandler: every item the slot accepts, the chosen one highlighted
             List<ItemStack> accepted = new ArrayList<>();
@@ -952,7 +1175,7 @@ public final class BookmarkPanel {
                 }
             }
             if (accepted.size() > 1) {
-                drawTip(g, font, lines, List.of(new Section("Accepts following", accepted, List.of(), 2, active)), mx, my);
+                drawTip(g, font, lines, List.of(new Section("Accepts following", accepted, List.of(), 2, active, 0)), mx, my);
                 return;
             }
         }

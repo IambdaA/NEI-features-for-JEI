@@ -97,6 +97,7 @@ public final class Calculator {
         runtime = rt;
         optionCache.clear();
         RecipeLookup.reset();
+        CraftablesPanel.reset();
     }
 
     public static boolean available() {

@@ -1,9 +1,11 @@
 package neiaddon;
 
 import com.mojang.logging.LogUtils;
+import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.slf4j.Logger;
 
 /**
@@ -18,5 +20,7 @@ public class NeiAddon {
 
     public NeiAddon() {
         ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, AddonConfig.SPEC);
+        neiaddon.chain.ChainMath.containerOps = new ContainerRules();
+        if (FMLEnvironment.dist == Dist.CLIENT) NeiAddonClient.init();
     }
 }

@@ -1,6 +1,6 @@
 # NEI Features for JEI (Forge 1.20.1) - build notes
 
-Status: an early version built and loaded in game. Everything added since (NEI-style bookmark panel, highlight tips, info pages, the recipe tree) has NOT been compiled against the real game: the authoring environment cannot download Minecraft/NeoForge/Gradle, so only this addon's own logic was checked (see `tools/`). Expect a few compile errors on the first build and send back any lines starting with `error:`.
+Status: the first 1.20.1 build launched in game. Everything added since (recipe search in JEI's recipe screen, item zoom, the tree screenshot button, the chain tooltip with your inventory, craftables panel, settings screens, the NEI search language, more NEI options) has NOT been compiled against the real game: the authoring environment cannot download Minecraft/Forge/Gradle, so only syntax and this addon's own logic were checked (see `tools/`). Expect a few compile errors on the first build and send back any lines starting with `error:`.
 
 ## Build
 1. JDK 17. 2. `./gradlew clean build` (Windows: `gradlew.bat clean build`). 3. `./gradlew runClient` starts a dev client with JEI included.
@@ -10,8 +10,10 @@ Send back any lines starting with `error:`.
 
 ## This is the Minecraft 1.20.1 (Forge 47) build
 Converted from the 1.21.1 copy: Forge events and `@Mod.EventBusSubscriber`, a `SimpleChannel` instead of payloads for the chat links, `ForgeConfigSpec`,
-`IGuiOverlay` instead of GUI layers (highlight tips), `TickEvent.ClientTickEvent`, NBT tags instead of data components, and `mods.toml`.
+`IGuiOverlay` instead of GUI layers (highlight tips), `TickEvent.ClientTickEvent` (and `TickEvent.RenderTickEvent` for the tree picture), NBT tags instead of data components, and `mods.toml`.
 JEI's API is the same as on 1.21.1. Item tag filters in the info pages default to the `forge:` namespace instead of `c:`.
+The Mods list "Config" button opens the addon's own settings screen (Forge 1.20.1 has no automatic config screen).
+Newer features since the first 1.20.1 build (recipe search, item zoom, tree picture, chain tooltip with your inventory, craftables panel, settings screens, NEI search language, more NEI options) were merged in from the 1.21.1 copy and are not tried in game.
 Not tried in game yet: expect a few compile errors on the first build.
 
 ## Features
@@ -33,7 +35,7 @@ Not tried in game yet: expect a few compile errors on the first build.
 - JEI's own bookmark overlay is switched off (it would be a second panel); the panel also appears on JEI's recipe screen. If JEI's internals change and this fails, a warning is logged and JEI's overlay stays.
 
 ## Known limits
-Only the item id is saved for bookmarks (enchantments/potion types are lost on restart). The panel needs room for at least one 18px column left of the GUI; on narrow windows it hides. The creative inventory is no longer excluded. Collapsed groups show the non-ingredient items that fit on one row (as NEI). Not implemented from NEI: the crafting tree's screenshot button, container items / drop chances / fluids in the chain maths, the Shift/Ctrl amount display modes of bookmark slots, auto-generated favorites. JEI's own recipe-bookmark button (next to the heart) still writes into JEI's hidden bookmark list; use the heart / Shift+A instead. Dragging only works on container screens, not JEI's recipe screen. The text calculator has no leftover sharing between crafts and uses each ingredient slot's first alternative; the recipe tree uses the item that has a favorite recipe, else the first. Bookmarks are read from JEI internals by reflection (no public API exists); if a JEI update changes them the import returns nothing and the C key still works.
+Only the item id is saved for bookmarks (enchantments/potion types are lost on restart). The panel needs room for at least one 18px column left of the GUI; on narrow windows it hides. The creative inventory is no longer excluded. Collapsed groups show the non-ingredient items that fit on one row (as NEI). Not implemented from NEI: the crafting tree's screenshot button, drop chances / fluids in the chain maths (container items are in), the Shift/Ctrl amount display modes of bookmark slots, auto-generated favorites. JEI's own recipe-bookmark button (next to the heart) still writes into JEI's hidden bookmark list; use the heart / Shift+A instead. Dragging only works on container screens, not JEI's recipe screen. The text calculator has no leftover sharing between crafts and uses each ingredient slot's first alternative; the recipe tree uses the item that has a favorite recipe, else the first. Bookmarks are read from JEI internals by reflection (no public API exists); if a JEI update changes them the import returns nothing and the C key still works.
 
 ## License
 Author: Iambda. Source: https://github.com/IambdaA/NEI-features-for-JEI
@@ -125,7 +127,7 @@ Port of NEI's `GuiCraftingTree`. The pure parts are in `chain/` (`TreeMath`, `Tr
 - Stats panel: ingredients, crafting, results, handlers; click a slot to highlight it in the tree (Shift = previous,
   RMB clears).
 - Search box: words must be in the item's name or id, `@mod`, `$tag`. NEI's search language is NOT ported.
-- Not ported: the screenshot button, container items, drop chances, fluids.
+- Not ported: the screenshot button, drop chances, fluids. Container items (a bucket left behind, a tool that comes back worn) are in the chain maths and tree: a tool node shows its amount as `~n` in orange, and what is left behind is listed under Remainders in the stats panel. GregTech tool stats are not read.
 - Not checked in game: only compiled against stand-in classes and run through the maths checks. Risks: item and texture
   drawing under the pose scale, the second JEI button factory, the inventory snapshot read from the open menu, the
   recipe picture in the badge tooltip.

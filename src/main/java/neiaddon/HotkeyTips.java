@@ -87,7 +87,7 @@ public final class HotkeyTips {
 
     /** The lines to put right after the name: the hint, or the formatted list while Alt is held. */
     public static List<String> hotkeyLines(Map<String, String> hotkeys) {
-        if (hotkeys.isEmpty()) return List.of();
+        if (hotkeys.isEmpty() || !altDown() && !AddonConfig.HOTKEYS_HELP.get()) return List.of();
         return altDown() ? format(hotkeys) : List.of(HOLD_ALT);
     }
 
