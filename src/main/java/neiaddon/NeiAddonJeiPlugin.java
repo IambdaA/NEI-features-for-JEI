@@ -75,6 +75,7 @@ public class NeiAddonJeiPlugin implements IModPlugin {
             public Collection<Rect2i> getGuiExtraAreas() {
                 List<Rect2i> areas = new ArrayList<>(BookmarkPanel.extraAreas());
                 areas.addAll(QuantityField.extraAreas());
+                areas.addAll(CraftablesPanel.extraAreas());
                 return areas;
             }
         });

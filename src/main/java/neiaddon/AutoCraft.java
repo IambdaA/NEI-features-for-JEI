@@ -61,7 +61,7 @@ public final class AutoCraft {
     }
 
     public static boolean available() {
-        return craftingMenu() != null;
+        return AddonConfig.AUTOCRAFTING.get() && craftingMenu() != null;
     }
 
     public static boolean processing() {
@@ -92,7 +92,7 @@ public final class AutoCraft {
      * inventory already holds it; with Ctrl only what is missing is crafted.
      */
     public static boolean start(ChainMath chain, boolean ignoreInventory) {
-        AbstractContainerMenu open = craftingMenu();
+        AbstractContainerMenu open = AddonConfig.AUTOCRAFTING.get() ? craftingMenu() : null;
         if (chain == null || open == null) {
             NeiAddon.LOGGER.info("Autocrafting not started: chain={} craftingGridOpen={}", chain != null, open != null);
             return false;

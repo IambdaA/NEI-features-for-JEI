@@ -18,5 +18,6 @@ public class NeiAddon {
 
     public NeiAddon(ModContainer container) {
         container.registerConfig(ModConfig.Type.CLIENT, AddonConfig.SPEC);
+        neiaddon.chain.ChainMath.containerOps = new ContainerRules();
     }
 }

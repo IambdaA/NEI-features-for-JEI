@@ -51,24 +51,32 @@ public final class QuantityField {
         AddonConfig.ITEM_QUANTITY.set(Math.max(0, value));
     }
 
-    private static boolean visible(Screen s) {
-        return s != null && BookmarkPanel.supports(s) && width(s) >= MIN_WIDTH && Calculator.runtime != null
+    static boolean visible(Screen s) {
+        return s != null && AddonConfig.QUANTITY_WIDGET.get() && BookmarkPanel.supports(s) && width(s) >= MIN_WIDTH && Calculator.runtime != null
             && Calculator.runtime.getIngredientListOverlay()
                 .isListDisplayed();
     }
 
     // NEI's layout when the search box is not in the row: "-", the field, "+" across the whole item list
-    private static int x(Screen s) {
+    static int x(Screen s) {
+        net.minecraft.client.renderer.Rect2i list = JeiAreas.list();
+        if (list != null) return list.getX();
         int guiLeft = s instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> c ? c.getGuiLeft()
             : (int) (s.width * 0.26);
         return s.width - guiLeft + MARGIN;
     }
 
-    private static int width(Screen s) {
+    static int width(Screen s) {
+        net.minecraft.client.renderer.Rect2i list = JeiAreas.list();
+        if (list != null) return list.getWidth();
         return s.width - MARGIN - x(s);
     }
 
-    private static int y(Screen s) {
+    static int y(Screen s) {
+        // JEI's history band (when shown) fills the space above the search row; the bar goes above it so JEI never has to
+        // push the history around our areas
+        int history = JeiAreas.historyHeight();
+        if (history > 0) return s.height - (JeiButtons.searchCentered() ? 0 : MARGIN + H) - history - 4 - H;
         // NEI: the bottom row of the item list; with JEI's search box there (the default) it goes just above it
         return s.height - MARGIN - H - (JeiButtons.searchCentered() ? 0 : 2 + H);
     }
@@ -118,6 +126,7 @@ public final class QuantityField {
             focused = false;
             return;
         }
+        if (AddonConfig.HISTORY_MATCH_LIST.get()) JeiAreas.matchHistoryWidth();
         GuiGraphics g = event.getGuiGraphics();
         Pose pose = Pose.of(g);
         pose.pushMatrix();
