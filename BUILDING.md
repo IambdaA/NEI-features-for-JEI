@@ -1,19 +1,19 @@
-# NEI Features for JEI (NeoForge 26.2) - build notes
+# NEI Features for JEI (NeoForge 26.1.x) - build notes
 
 Status: an early version built and loaded in game. Everything added since (NEI-style bookmark panel, highlight tips, info pages, the recipe tree) has NOT been compiled against the real game: the authoring environment cannot download Minecraft/NeoForge/Gradle, so only this addon's own logic was checked (see `tools/`). Expect a few compile errors on the first build and send back any lines starting with `error:`.
 
 ## Build
 1. JDK 25. 2. `./gradlew clean build` (Windows: `gradlew.bat clean build`). 3. `./gradlew runClient` starts a dev client with JEI included.
-`neo_version` (gradle.properties) came from the official 26.2 template; `jei_version` is 30.42.0.237. Change either if the build can't resolve them.
+`neo_version` and `jei_version` are in gradle.properties (26.1.2.122 and 29.47.0.111). Change either if the build can't resolve them.
 Send back any lines starting with `error:`.
 
 ## Other Minecraft versions
 The Minecraft, NeoForge and JEI versions come from `gradle.properties` and can be overridden on the command line. The jar is
 named `neiaddon-<minecraft version>-<mod version>.jar`.
 
-- 26.2 (default): `./gradlew clean build`
+- 26.1, 26.1.1 and 26.1.2 (default in this zip, JEI 29.x): `./gradlew clean build`. One jar, `neiaddon-26.1.x-<mod version>.jar`, compiled against 26.1.2, accepting Minecraft [26.1,26.2), NeoForge [26.1,26.2), JEI [29,30).
 
-Other Minecraft versions live on their own branches (26.1.x on `26.1.x`).
+Minecraft 26.2 lives on its own branch (`26.2`, JEI 30.x). This jar has not been tried in game: the sources were written against 26.2 and JEI 30.42, so it may need small fixes, and 26.1 / 26.1.1 have not been checked separately from 26.1.2.
 
 ## Features
 - **Highlight tips** (as NEI's HUDRenderer): a tooltip-style box with the item and name of the BLOCK under the crosshair (not entities). Off by default; Numpad 0 toggles it, the player-list key (Tab) hides it. Position `hudX`/`hudY` (0..10000, NEI defaults 5000/100) in `neiaddon-client.toml`; bind "Move Highlight Tooltips" in Controls to open NEI's drag-to-position screen. Extras not in NEI (off by default): `hudShowMod`, `hudShowId`.

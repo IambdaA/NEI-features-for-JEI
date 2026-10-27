@@ -1,7 +1,7 @@
 # NEI Features for JEI
 
 An unofficial port of features from [GTNH NotEnoughItems](https://github.com/GTNewHorizons/NotEnoughItems) to
-[Just Enough Items](https://github.com/mezz/JustEnoughItems), for **Minecraft 26.2 / NeoForge**. Not affiliated with the
+[Just Enough Items](https://github.com/mezz/JustEnoughItems), for **Minecraft 26.1, 26.1.1 and 26.1.2 / NeoForge**. Not affiliated with the
 NotEnoughItems authors.
 
 ## Features
@@ -22,7 +22,7 @@ See [BUILDING.md](BUILDING.md) for the full list, keys and notes.
 
 ## Requirements
 
-- Minecraft 26.2, NeoForge 26.2.0.90 or newer, JEI 30.42 or newer
+- Minecraft 26.1, 26.1.1 or 26.1.2, NeoForge 26.1.x, JEI 29.x (not tested in game yet)
 
 ## Status
 
@@ -46,7 +46,7 @@ texture (`craftingtree.png`) is from NotEnoughItems too.
 
 | Branch | Minecraft | Loader | JEI | Status |
 | --- | --- | --- | --- | --- |
-| `26.2` (this branch) | 26.2 | NeoForge | 30.x | works in game |
+| `26.1.x` (this branch) | 26.1, 26.1.1, 26.1.2 | NeoForge | 29.x | one jar, not tested in game yet |
 | `1.21.1` | 1.21.1 | NeoForge | 19.x | works in game |
 | `1.20.1` | 1.20.1 | Forge | 15.38+ | launches, still being tested |
 
