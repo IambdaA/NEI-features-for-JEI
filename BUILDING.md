@@ -1,15 +1,21 @@
-# NEI Features for JEI (Forge 1.20.1) - build notes
+# NEI Features for JEI (1.20.1, Forge and Fabric) - build notes
 
 Status: the first 1.20.1 build launched in game. Everything added since (recipe search in JEI's recipe screen, item zoom, the tree screenshot button, the chain tooltip with your inventory, craftables panel, settings screens, the NEI search language, more NEI options) has NOT been compiled against the real game: the authoring environment cannot download Minecraft/Forge/Gradle, so only syntax and this addon's own logic were checked (see `tools/`). Expect a few compile errors on the first build and send back any lines starting with `error:`.
 
 ## Build
-1. JDK 17. 2. `./gradlew clean build` (Windows: `gradlew.bat clean build`). 3. `./gradlew runClient` starts a dev client with JEI included.
-Upload the jar from `build/libs/` (the legacy Forge plugin reobfuscates it automatically). `forge_version` and `jei_version` are in gradle.properties
-(`jei_version=15.+` takes the newest JEI 15.x); change them if the build can't resolve them.
-Send back any lines starting with `error:`.
+1. Gradle itself runs on JDK 25 (Loom 1.18 needs it; `gradle/gradle-daemon-jvm.properties` makes Gradle find or download one, and the mod is still compiled for Java 17). If that download fails, point `JAVA_HOME` at a JDK 25. 2. `./gradlew clean build` (Windows: `gradlew.bat clean build`), or `./gradlew :forge:build` / `./gradlew :fabric:build` for one loader. 3. `./gradlew :forge:runClient` or `./gradlew :fabric:runClient` starts a dev client with JEI included.
+Jars: `forge/build/libs/neiaddon-forge-1.20.1-<version>.jar` (the legacy Forge plugin reobfuscates it automatically), `fabric/build/libs/neiaddon-fabric-1.20.1-<version>.jar`.
+The versions are in gradle.properties: `forge_version` 47.4.23, `jei_version` 15.+, and for Fabric `loom_version` 1.18-SNAPSHOT, `fabric_loader_version` 0.19.4, `fabric_api_version` 0.92.11+1.20.1 (the versions JEI itself is built with; JEI also needs its `mezz_config` library, `mezz_config_version` 0.6.6, in the dev client). Change any of them if the build can't resolve it. The Gradle wrapper is 9.7.0 (what Loom 1.18.4 asks for). If Gradle says it cannot find the plugin `net.fabricmc.fabric-loom-remap`, use `fabric-loom` instead in the root `build.gradle` and `fabric/build.gradle`.
+
+## Layout (multiloader)
+- `common/` - all the shared code and assets, plain folders: both loader projects compile `common/src/main/java` into their own jar, so each jar is complete. It uses only vanilla and JEI API classes (no `net.minecraftforge`, no `net.fabricmc`).
+- `forge/` - `NeiAddonForge` (the `@Mod` entry point), `ForgeClient`, `ForgeEvents` (hooks Forge's screen, tick and tooltip events to the addon's bus, one listener per priority so the order against JEI's listeners is Forge's), `ForgeNetwork` (the chat link `SimpleChannel`), `ForgePlatform`, `ForgeClientPlatform`, `mods.toml`.
+- `fabric/` - `NeiAddonFabric` / `NeiAddonFabricClient` (entry points, chat link channel as plain packets), `FabricEvents` (the same hooks on Fabric API's per-screen events, in phases ordered like Forge's priorities), three small mixins (typed characters, a screen opening, the container screen's size and hovered slot), `fabric.mod.json` (JEI plugin entry point `jei_mod_plugin`).
+- What the shared code needs from a loader is in `neiaddon.platform` (config folder, mod names, a crafting remainder, the optional chat link channel, a container screen's bounds and hovered slot). The handler classes use the addon's own `neiaddon.event` (`@SubscribeEvent`, `EventPriority`, `ScreenEvent`..., same names and getters as Forge's, run by `Bus`), and the settings are `neiaddon.config.ConfigSpec`, which reads and writes `config/neiaddon-client.toml` (the file Forge wrote before, so settings carry over).
+- Fabric differences to know: the settings screen opens from the gear button on container screens (there is no Mod Menu entry), and dragging (bookmarks, the colour picker) is followed once per frame because Fabric has no drag event. Both loaders build and start in game with JEI; only the first look has been done, so not every feature has been tried on Fabric.
 
 ## This is the Minecraft 1.20.1 (Forge 47) build
-Converted from the 1.21.1 copy: Forge events and `@Mod.EventBusSubscriber`, a `SimpleChannel` instead of payloads for the chat links, `ForgeConfigSpec`,
+Converted from the 1.21.1 copy: Forge's events (now run through the addon's own bus), a `SimpleChannel` instead of payloads for the chat links,
 `IGuiOverlay` instead of GUI layers (highlight tips), `TickEvent.ClientTickEvent` (and `TickEvent.RenderTickEvent` for the tree picture), NBT tags instead of data components, and `mods.toml`.
 JEI's API is the same as on 1.21.1. Item tag filters in the info pages default to the `forge:` namespace instead of `c:`.
 The Mods list "Config" button opens the addon's own settings screen (Forge 1.20.1 has no automatic config screen).

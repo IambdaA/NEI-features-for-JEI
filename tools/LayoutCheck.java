@@ -11,7 +11,7 @@ import net.minecraft.world.item.ItemStack;
 
 /**
  * Checks the panel's NEI layout rules (brief section 7) through reflection, against stand-in Minecraft classes. See
- * ModelCheck for how to compile (add src/main/java/neiaddon/BookmarkPanel.java and tools/LayoutCheck.java).
+ * ModelCheck for how to compile (add common/src/main/java/neiaddon/BookmarkPanel.java and tools/LayoutCheck.java).
  */
 public class LayoutCheck {
 

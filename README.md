@@ -1,7 +1,7 @@
 # NEI Features for JEI
 
 An unofficial port of features from [GTNH NotEnoughItems](https://github.com/GTNewHorizons/NotEnoughItems) to
-[Just Enough Items](https://github.com/mezz/JustEnoughItems), for **Minecraft 1.20.1 / Forge** (this branch; other versions have their own builds). Not affiliated with the
+[Just Enough Items](https://github.com/mezz/JustEnoughItems), for **Minecraft 1.20.1 on Forge and on Fabric** (this branch, one project with two jars; other versions have their own builds). Not affiliated with the
 NotEnoughItems authors.
 
 ## Features
@@ -22,7 +22,7 @@ See [BUILDING.md](BUILDING.md) for the full list, keys and notes.
 
 ## Requirements
 
-- Minecraft 1.20.1, Forge 47
+- Minecraft 1.20.1 with Forge 47, or Fabric (loader 0.16+ and Fabric API)
 - JEI 15.38 or newer (15.x)
 
 ## Status
@@ -35,7 +35,8 @@ chain maths (JEI gives no chance data on recipe slots, and the addon only knows 
 
 ## Building
 
-JDK 17, then `./gradlew build`. The jar is in `build/libs/`. `./gradlew runClient` starts a dev client with JEI.
+A JDK that can start Gradle (Gradle itself then runs on JDK 25, which it downloads if missing; the mod is compiled for Java 17), then `./gradlew build`. The jars are `forge/build/libs/neiaddon-forge-1.20.1-*.jar` and `fabric/build/libs/neiaddon-fabric-1.20.1-*.jar`.
+`./gradlew :forge:runClient` or `./gradlew :fabric:runClient` starts a dev client with JEI. The shared code is in `common/`.
 
 ## License
 
@@ -47,8 +48,8 @@ texture (`craftingtree.png`) is from NotEnoughItems too.
 
 | Branch | Minecraft | Loader | JEI | Status |
 | --- | --- | --- | --- | --- |
-| `1.20.1` (this branch) | 1.20.1 | Forge | 15.38+ | runs in game |
-| `1.21.1` | 1.21.1 | NeoForge | 19.x | runs in game |
+| `1.20.1` (this branch) | 1.20.1 | Forge, Fabric | 15.38+ | runs in game on both |
+| `1.21.1` | 1.21.1 | NeoForge, Fabric | 19.x | runs in game on both |
 | `26.2` | 26.2 | NeoForge | 30.x | works in game |
 | `26.1.x` | 26.1, 26.1.1, 26.1.2 | NeoForge | 29.x | one jar, not tested in game yet |
 

@@ -15,7 +15,7 @@ import neiaddon.chain.ChainMath;
  * {@link ChainAutocraft}.
  *
  * <pre>
- * javac -d /tmp/acheck src/main/java/neiaddon/chain/*.java tools/AutoCraftCheck.java
+ * javac -d /tmp/acheck common/src/main/java/neiaddon/chain/*.java tools/AutoCraftCheck.java
  * java -cp /tmp/acheck AutoCraftCheck
  * </pre>
  */

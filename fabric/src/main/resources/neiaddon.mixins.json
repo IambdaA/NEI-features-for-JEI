@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "neiaddon.fabric.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "client": [
+    "AbstractContainerScreenAccessor",
+    "KeyboardHandlerMixin",
+    "MinecraftMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

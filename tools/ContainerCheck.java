@@ -13,7 +13,7 @@ import neiaddon.chain.TreeSlot;
  * Regression test for the container item part of the chain maths. Plain Java:
  *
  * <pre>
- * javac -d /tmp/containercheck src/main/java/neiaddon/chain/*.java tools/ContainerCheck.java
+ * javac -d /tmp/containercheck common/src/main/java/neiaddon/chain/*.java tools/ContainerCheck.java
  * java -cp /tmp/containercheck ContainerCheck
  * </pre>
  *
