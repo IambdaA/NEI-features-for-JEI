@@ -4,8 +4,8 @@ Writes tiny stand-ins for the Minecraft / NeoForge / JEI classes the model code 
 addon's own logic (generics, typos, missing imports) without the real game jars:
 
     python3 tools/make_stubs.py /tmp/stubcheck/src
-    javac -d /tmp/stubcheck/out $(find /tmp/stubcheck/src -name '*.java') src/main/java/neiaddon/chain/*.java \
-        src/main/java/neiaddon/{Bookmarks,RecipeData,RecipeShape,RecipeTree,RecipeLookup,RecipeHearts,Favorites}.java
+    javac -d /tmp/stubcheck/out $(find /tmp/stubcheck/src -name '*.java') common/src/main/java/neiaddon/chain/*.java \
+        common/src/main/java/neiaddon/{Bookmarks,RecipeData,RecipeShape,RecipeTree,RecipeLookup,RecipeHearts,Favorites}.java
 
 The signatures mirror the real ones (JEI ones were copied from the JEI 30.42 API sources). This is NOT a substitute for
 the real build; it only catches mistakes in our own code.

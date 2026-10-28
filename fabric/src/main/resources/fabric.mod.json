@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "${mod_id}",
+  "version": "${mod_version}",
+  "name": "${mod_name}",
+  "description": "An unofficial port of GTNH NotEnoughItems features to Just Enough Items: bookmark groups and recipe chains, the crafting tree window, favorite recipes, autocrafting, pulling items from chests, chat links, highlight tips and a crafting calculator. Not affiliated with the NotEnoughItems authors.",
+  "authors": [ "Iambda" ],
+  "contact": {
+    "homepage": "https://github.com/IambdaA/NEI-features-for-JEI",
+    "issues": "https://github.com/IambdaA/NEI-features-for-JEI/issues",
+    "sources": "https://github.com/IambdaA/NEI-features-for-JEI"
+  },
+  "license": "${mod_license}",
+  "icon": "logo.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [ "neiaddon.fabric.NeiAddonFabric" ],
+    "client": [ "neiaddon.fabric.NeiAddonFabricClient" ],
+    "jei_mod_plugin": [ "neiaddon.NeiAddonJeiPlugin" ]
+  },
+  "mixins": [
+    {
+      "config": "neiaddon.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${fabric_loader_version}",
+    "minecraft": "${minecraft_version}",
+    "java": ">=21",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "jei": ">=19"
+  },
+  "custom": {
+    "credits": "Recipe tree, favorites, crafting-chain maths and the bookmark layout are ported from GTNH NotEnoughItems (https://github.com/GTNewHorizons/NotEnoughItems, LGPL-3.0-or-later) by Chicken-Bones, GTNewHorizons and the NotEnoughItems contributors; the crafting tree texture (craftingtree.png) is from NotEnoughItems too"
+  }
+}

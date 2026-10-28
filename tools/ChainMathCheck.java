@@ -11,7 +11,7 @@ import neiaddon.chain.ChainItem.Type;
  * Regression test for the chain maths (brief section 6). Plain Java, no Minecraft classes:
  *
  * <pre>
- * javac -d /tmp/chaincheck src/main/java/neiaddon/chain/*.java tools/ChainMathCheck.java
+ * javac -d /tmp/chaincheck common/src/main/java/neiaddon/chain/*.java tools/ChainMathCheck.java
  * java -cp /tmp/chaincheck ChainMathCheck
  * </pre>
  *

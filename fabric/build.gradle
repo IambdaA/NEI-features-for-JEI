@@ -1,0 +1,61 @@
+plugins {
+    id 'java-library'
+    id 'net.fabricmc.fabric-loom-remap'
+}
+
+version = mod_version
+group = mod_group_id
+
+// The shared code and assets come from ../common (compiled into this jar, so it holds everything).
+sourceSets.main.java.srcDir '../common/src/main/java'
+sourceSets.main.resources.srcDir '../common/src/main/resources'
+
+repositories {
+    maven {
+        name = 'BlameJared'
+        url = 'https://maven.blamejared.com/'
+    }
+}
+
+base {
+    archivesName = "${mod_id}-fabric-${minecraft_version}"
+}
+
+// Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+dependencies {
+    minecraft "com.mojang:minecraft:${minecraft_version}"
+    // the shared code is written with Mojang's names, so Fabric uses them too
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
+
+    // JEI API at compile time, full JEI at runtime (so the dev client has it). JEI is an optional dependency of this mod.
+    modCompileOnly "mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"
+    modCompileOnly "mezz.jei:jei-${minecraft_version}-fabric-api:${jei_version}"
+    modLocalRuntime "mezz.jei:jei-${minecraft_version}-fabric:${jei_version}"
+    modLocalRuntime "net.mezzdev.config:mezz_config-${minecraft_version}-fabric:${mezz_config_version}"
+}
+
+// Expands the properties in fabric.mod.json (and nothing else: the shared resources are copied as they are).
+processResources {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            fabric_loader_version  : fabric_loader_version,
+            jei_version            : jei_version,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+    ]
+    inputs.properties replaceProperties
+    filesMatching('fabric.mod.json') {
+        expand replaceProperties
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+}

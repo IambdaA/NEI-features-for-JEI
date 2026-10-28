@@ -11,7 +11,7 @@ import neiaddon.chain.ChainItem.Type;
  * Collapsed recipes (NEI's collapsedRecipes / recipeRelations) without Minecraft.
  *
  * <pre>
- * javac -d /tmp/ccheck src/main/java/neiaddon/chain/*.java tools/CollapseCheck.java
+ * javac -d /tmp/ccheck common/src/main/java/neiaddon/chain/*.java tools/CollapseCheck.java
  * java -cp /tmp/ccheck CollapseCheck
  * </pre>
  */

@@ -1,17 +1,26 @@
-# NEI Features for JEI (NeoForge 1.21.1) - build notes
+# NEI Features for JEI (1.21.1, NeoForge and Fabric) - build notes
 
 Status: the earlier 1.21.1 build works in game. Everything added since (recipe search in JEI's recipe screen, item zoom, the tree screenshot button, the chain tooltip with your inventory, craftables panel, settings screens, the NEI search language, more NEI options) was converted from the 26.x code and has NOT been compiled against the real game: the authoring environment cannot download Minecraft/NeoForge/Gradle, so only syntax and this addon's own logic were checked (see `tools/`). Expect a few compile errors on the first build and send back any lines starting with `error:`.
 
 ## Build
-1. JDK 21. 2. `./gradlew clean build` (Windows: `gradlew.bat clean build`). 3. `./gradlew runClient` starts a dev client with JEI included.
-`neo_version` and `jei_version` are in gradle.properties (21.1.264 and 19.69.0.457). Change either if the build can't resolve them.
+1. Gradle itself runs on JDK 25 (Loom 1.18 needs it; `gradle/gradle-daemon-jvm.properties` makes Gradle find or download one, and the mod is still compiled for Java 21). If that download fails, point `JAVA_HOME` at a JDK 25. 2. `./gradlew clean build` (Windows: `gradlew.bat clean build`), or `./gradlew :neoforge:build` / `./gradlew :fabric:build` for one loader. 3. `./gradlew :neoforge:runClient` or `./gradlew :fabric:runClient` starts a dev client with JEI included.
+Jars: `neoforge/build/libs/neiaddon-neoforge-1.21.1-<version>.jar`, `fabric/build/libs/neiaddon-fabric-1.21.1-<version>.jar`.
+The versions are in gradle.properties: `neo_version` 21.1.264, `jei_version` 19.69.0.457, and for Fabric `loom_version` 1.18-SNAPSHOT (JEI's Fabric jar was built with Loom 1.18.2, and Loom refuses mods built with a newer Loom than its own), `fabric_loader_version` 0.19.5, `fabric_api_version` 0.116.17+1.21.1 (the versions JEI 19.69 itself is built with; JEI needs Fabric API 0.116.5+ and its `mezz_config` library, `mezz_config_version` 0.6.6, in the dev client). Change any of them if the build can't resolve it (the three Fabric ones were not checked against the Fabric maven when this was written).
+The Gradle wrapper is 9.7.0 for Loom 1.18.4; if Loom says it needs another Gradle, run `./gradlew wrapper --gradle-version <that version>`.
+If Gradle says it cannot find the plugin `net.fabricmc.fabric-loom-remap`, use `fabric-loom` instead in the root `build.gradle` and `fabric/build.gradle`.
+
+## Layout (multiloader)
+- `common/` - all the shared code and assets, plain folders: both loader projects compile `common/src/main/java` into their own jar, so each jar is complete. It uses only vanilla and JEI API classes (no `net.neoforged`, no `net.fabricmc`).
+- `neoforge/` - `NeiAddonNeoForge` / `NeiAddonNeoForgeClient` (the `@Mod` entry points), `NeoEvents` (hooks NeoForge's screen, tick and tooltip events to the addon's bus, one listener per priority so the order against JEI's listeners is NeoForge's), `NeoPlatform`, `NeoClientPlatform`, `neoforge.mods.toml`.
+- `fabric/` - `NeiAddonFabric` / `NeiAddonFabricClient` (entry points), `FabricEvents` (the same hooks on Fabric API's per-screen events, in phases ordered like NeoForge's priorities), three small mixins (typed characters, a screen opening, the container screen's size and hovered slot), `fabric.mod.json` (JEI plugin entry point `jei_mod_plugin`).
+- What the shared code needs from a loader is in `neiaddon.platform` (config folder, mod names, a crafting remainder, the optional chat link channel, a container screen's bounds and hovered slot). The handler classes use the addon's own `neiaddon.event` (`@SubscribeEvent`, `EventPriority`, `ScreenEvent`..., same names and getters as NeoForge's, run by `Bus`), and the settings are `neiaddon.config.ConfigSpec`, which reads and writes `config/neiaddon-client.toml` (the file NeoForge wrote before, so settings carry over).
+- Fabric differences to know: the settings screen opens from the gear button on container screens (there is no Mod Menu entry), and dragging (bookmarks, the colour picker) is followed once per frame because Fabric has no drag event. Fabric builds and starts in game with JEI; only the first look at it has been done, so not every feature has been tried there.
 
 ## This is the Minecraft 1.21.1 build
 Same features as the 26.x builds, converted to the 1.21.1 / NeoForge 21.1 APIs (JEI 19.x). Other Minecraft versions have their own branches.
 What differs from the 26.x code: drawing uses `GuiGraphics` (1.21.1 draws with a depth test, so everything drawn in front of an
 item goes through `Pose.over` / `Pose.begin`, or a `Pose.translateZ`), screens use the old `render` / `mouseClicked(double, double, int)`
-methods, ids are `ResourceLocation`s, chat link click and hover events are the 1.21.1 ones, the mod-bus events are in `ClientModEvents` and
-`CommonModEvents`, and `ScreenEvent.Render.Post` stands in for 26.x's `Render.Foreground`. The text calculator window (not reachable
+methods, ids are `ResourceLocation`s, chat link click and hover events are the 1.21.1 ones, the loader hooks are in the `neoforge/` and `fabric/` modules, and `ScreenEvent.Render.Post` stands in for 26.x's `Render.Foreground`. The text calculator window (not reachable
 since the tree replaced it) is not part of this build. NativeImage pixels are read with `getPixelRGBA` / `setPixelRGBA`.
 Not tried in game yet: expect a few compile errors on the first build and some draw order problems.
 
