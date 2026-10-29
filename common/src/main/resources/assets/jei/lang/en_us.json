@@ -1,0 +1,7 @@
+{
+  "jei.tooltip.bookmarks.enable": "Show Bookmarks",
+  "jei.tooltip.bookmarks.disable": "Hide Bookmarks",
+  "jei.tooltip.bookmarks.not.enough.space": "Shows or hides the NEI-style bookmark panel on the left.",
+  "jei.tooltip.bookmarks.usage.key": "Shows or hides the NEI-style bookmark panel on the left.",
+  "jei.tooltip.bookmarks.usage.nokey": "Shows or hides the NEI-style bookmark panel on the left."
+}
