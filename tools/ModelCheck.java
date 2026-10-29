@@ -19,9 +19,9 @@ import net.minecraft.world.item.ItemStack;
  *
  * <pre>
  * python3 tools/make_stubs.py /tmp/stubcheck/src
- * javac -d /tmp/stubcheck/out $(find /tmp/stubcheck/src -name '*.java') src/main/java/neiaddon/chain/*.java \
- *   src/main/java/neiaddon/{Bookmarks,RecipeData,RecipeShape,RecipeTree,RecipeLookup,Favorites}.java \
- *   src/main/java/neiaddon/RecipeHearts.java tools/ModelCheck.java
+ * javac -d /tmp/stubcheck/out $(find /tmp/stubcheck/src -name '*.java') common/src/main/java/neiaddon/chain/*.java \
+ *   common/src/main/java/neiaddon/{Bookmarks,RecipeData,RecipeShape,RecipeTree,RecipeLookup,Favorites}.java \
+ *   common/src/main/java/neiaddon/RecipeHearts.java tools/ModelCheck.java
  * java -cp /tmp/stubcheck/out ModelCheck
  * </pre>
  */

@@ -12,7 +12,7 @@ import neiaddon.chain.ChainPull;
  * What pulling items takes out of a chest, without Minecraft.
  *
  * <pre>
- * javac -d /tmp/pcheck src/main/java/neiaddon/chain/*.java tools/PullCheck.java
+ * javac -d /tmp/pcheck common/src/main/java/neiaddon/chain/*.java tools/PullCheck.java
  * java -cp /tmp/pcheck PullCheck
  * </pre>
  */

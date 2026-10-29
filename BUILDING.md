@@ -1,19 +1,19 @@
-# NEI Features for JEI (NeoForge 26.1.x) - build notes
+# NEI Features for JEI (26.1.2, NeoForge and Fabric) - build notes
 
-Status: an early version built and loaded in game. Everything added since (NEI-style bookmark panel, highlight tips, info pages, the recipe tree) has NOT been compiled against the real game: the authoring environment cannot download Minecraft/NeoForge/Gradle, so only this addon's own logic was checked (see `tools/`). Expect a few compile errors on the first build and send back any lines starting with `error:`.
+Status: the layout here (common + neoforge + fabric) is new and has NOT been compiled against the real game: the authoring environment cannot download Minecraft, NeoForge, Fabric or Gradle, so only syntax and this addon's own logic were checked (see `tools/`). Expect a few compile errors on the first build and send back any lines starting with `error:`. The Fabric module is the least certain part (Fabric API names for screen events, HUD and networking were taken from docs and from JEI's and NeoForge's sources, not from a build).
 
 ## Build
-1. JDK 25. 2. `./gradlew clean build` (Windows: `gradlew.bat clean build`). 3. `./gradlew runClient` starts a dev client with JEI included.
-`neo_version` and `jei_version` are in gradle.properties (26.1.2.122 and 29.47.0.111). Change either if the build can't resolve them.
-Send back any lines starting with `error:`.
+1. JDK 25 (Gradle itself runs on it; `gradle/gradle-daemon-jvm.properties` makes Gradle find or download one, otherwise point `JAVA_HOME` at a JDK 25). 2. `./gradlew clean build` (Windows: `gradlew.bat clean build`), or `./gradlew :neoforge:build` / `./gradlew :fabric:build` for one loader. 3. `./gradlew :neoforge:runClient` or `./gradlew :fabric:runClient` starts a dev client with JEI included.
+Jars: `neoforge/build/libs/neiaddon-neoforge-26.1.2-<version>.jar`, `fabric/build/libs/neiaddon-fabric-26.1.2-<version>.jar`.
+Versions are in gradle.properties: `neo_version`, `jei_version`, and for Fabric `loom_version` (1.18-SNAPSHOT), `fabric_loader_version`, `fabric_api_version`, `mezz_config_version` (JEI's config library, needed in the Fabric dev client). Change any of them if the build can't resolve it.
+If Loom says it needs another Gradle, run `./gradlew wrapper --gradle-version <that version>` (the wrapper is 9.7.0).
 
-## Other Minecraft versions
-The Minecraft, NeoForge and JEI versions come from `gradle.properties` and can be overridden on the command line. The jar is
-named `neiaddon-<minecraft version>-<mod version>.jar`.
-
-- 26.1, 26.1.1 and 26.1.2 (default in this zip, JEI 29.x): `./gradlew clean build`. One jar, `neiaddon-26.1.x-<mod version>.jar`, compiled against 26.1.2, accepting Minecraft [26.1,26.2), NeoForge [26.1,26.2), JEI [29,30).
-
-Minecraft 26.2 lives on its own branch (`26.2`, JEI 30.x). This jar has not been tried in game: the sources were written against 26.2 and JEI 30.42, so it may need small fixes, and 26.1 / 26.1.1 have not been checked separately from 26.1.2.
+## Layout (multiloader)
+- `common/` - the shared code and assets, plain folders: both loader projects compile `common/src/main/java` and `common/src/mc26_1/java` (the few classes that differ between Minecraft versions, `McCompat`) into their own jar, so each jar is complete. It uses only vanilla and JEI API classes (no `net.neoforged`, no `net.fabricmc`).
+- `neoforge/` - `NeiAddonNeoForge` / `NeiAddonNeoForgeClient` (the `@Mod` entry points), `NeoEvents` (hooks NeoForge's screen, tick and tooltip events to the addon's bus, one listener per priority), `NeoPlatform`, `NeoClientPlatform`, `neoforge.mods.toml`.
+- `fabric/` - `NeiAddonFabric` / `NeiAddonFabricClient` (entry points), `FabricEvents` (the same hooks on Fabric API's per-screen events, in phases ordered like NeoForge's priorities), four small mixins (typed characters, screen drawing, container screen drawing, end of frame), an access widener (container screen size and hovered slot), `fabric.mod.json` (JEI plugin entry point `jei_mod_plugin`).
+- What the shared code needs from a loader is in `neiaddon.platform` (config folder, mod names, the optional chat link channel, a container screen's bounds and hovered slot). The handler classes use the addon's own `neiaddon.event` (`@SubscribeEvent`, `EventPriority`, `ScreenEvent`..., same names and getters as NeoForge's, run by `Bus`), and the settings are `neiaddon.config.ConfigSpec`, which reads and writes `config/neiaddon-client.toml`.
+- Fabric differences: the settings screen opens from the gear button on container screens (no Mod Menu entry), and the highlight tips HUD is not hidden by F1.
 
 ## Features
 - **Highlight tips** (as NEI's HUDRenderer): a tooltip-style box with the item and name of the BLOCK under the crosshair (not entities). Off by default; Numpad 0 toggles it, the player-list key (Tab) hides it. Position `hudX`/`hudY` (0..10000, NEI defaults 5000/100) in `neiaddon-client.toml`; bind "Move Highlight Tooltips" in Controls to open NEI's drag-to-position screen. Extras not in NEI (off by default): `hudShowMod`, `hudShowId`.
@@ -34,7 +34,7 @@ Minecraft 26.2 lives on its own branch (`26.2`, JEI 30.x). This jar has not been
 - JEI's own bookmark overlay is switched off (it would be a second panel); the panel also appears on JEI's recipe screen. If JEI's internals change and this fails, a warning is logged and JEI's overlay stays.
 
 ## Known limits
-Only the item id is saved for bookmarks (enchantments/potion types are lost on restart). The panel needs room for at least one 18px column left of the GUI; on narrow windows it hides. The creative inventory is no longer excluded. Collapsed groups show the non-ingredient items that fit on one row (as NEI). Not implemented from NEI: the crafting tree's screenshot button, drop chances / fluids in the chain maths (container items are in), the Shift/Ctrl amount display modes of bookmark slots, auto-generated favorites. JEI's own recipe-bookmark button (next to the heart) still writes into JEI's hidden bookmark list; use the heart / Shift+A instead. Dragging only works on container screens, not JEI's recipe screen. The text calculator has no leftover sharing between crafts and uses each ingredient slot's first alternative; the recipe tree uses the item that has a favorite recipe, else the first. Bookmarks are read from JEI internals by reflection (no public API exists); if a JEI update changes them the import returns nothing and the C key still works.
+Only the item id is saved for bookmarks (enchantments/potion types are lost on restart). The panel needs room for at least one 18px column left of the GUI; on narrow windows it hides. The creative inventory is no longer excluded. Collapsed groups show the non-ingredient items that fit on one row (as NEI). Not implemented from NEI: drop chances / fluids in the chain maths (container items are in), the Shift/Ctrl amount display modes of bookmark slots, auto-generated favorites. JEI's own recipe-bookmark button (next to the heart) still writes into JEI's hidden bookmark list; use the heart / Shift+A instead. Dragging only works on container screens, not JEI's recipe screen. The text calculator has no leftover sharing between crafts and uses each ingredient slot's first alternative; the recipe tree uses the item that has a favorite recipe, else the first. Bookmarks are read from JEI internals by reflection (no public API exists); if a JEI update changes them the import returns nothing and the C key still works.
 
 ## License
 Author: Iambda. Source: https://github.com/IambdaA/NEI-features-for-JEI
@@ -126,7 +126,7 @@ Port of NEI's `GuiCraftingTree`. The pure parts are in `chain/` (`TreeMath`, `Tr
 - Stats panel: ingredients, crafting, results, handlers; click a slot to highlight it in the tree (Shift = previous,
   RMB clears).
 - Search box: words must be in the item's name or id, `@mod`, `$tag`. NEI's search language is NOT ported.
-- Not ported: the screenshot button, drop chances, fluids. Container items (a bucket left behind, a tool that comes back worn) are in the chain maths and tree: a tool node shows its amount as `~n` in orange, and what is left behind is listed under Remainders in the stats panel. GregTech tool stats are not read.
+- Not ported: drop chances, fluids. Container items (a bucket left behind, a tool that comes back worn) are in the chain maths and tree: a tool node shows its amount as `~n` in orange, and what is left behind is listed under Remainders in the stats panel. GregTech tool stats are not read.
 - Not checked in game: only compiled against stand-in classes and run through the maths checks. Risks: item and texture
   drawing under the pose scale, the second JEI button factory, the inventory snapshot read from the open menu, the
   recipe picture in the badge tooltip.

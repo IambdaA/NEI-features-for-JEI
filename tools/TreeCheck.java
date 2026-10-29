@@ -15,7 +15,7 @@ import neiaddon.chain.TreeStatsLayout;
  * The crafting tree maths and layout (NEI's CraftingTreeMath / CraftingTreeCanvas) without Minecraft.
  *
  * <pre>
- * javac -d /tmp/tcheck src/main/java/neiaddon/chain/*.java tools/TreeCheck.java
+ * javac -d /tmp/tcheck common/src/main/java/neiaddon/chain/*.java tools/TreeCheck.java
  * java -cp /tmp/tcheck TreeCheck
  * </pre>
  */

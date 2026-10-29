@@ -1,7 +1,7 @@
 # NEI Features for JEI
 
 An unofficial port of features from [GTNH NotEnoughItems](https://github.com/GTNewHorizons/NotEnoughItems) to
-[Just Enough Items](https://github.com/mezz/JustEnoughItems), for **Minecraft 26.1, 26.1.1 and 26.1.2 / NeoForge**. Not affiliated with the
+[Just Enough Items](https://github.com/mezz/JustEnoughItems), for **Minecraft 26.1.2 on NeoForge and on Fabric** (one project, two jars). Not affiliated with the
 NotEnoughItems authors.
 
 ## Features
@@ -22,7 +22,8 @@ See [BUILDING.md](BUILDING.md) for the full list, keys and notes.
 
 ## Requirements
 
-- Minecraft 26.1, 26.1.1 or 26.1.2, NeoForge 26.1.x, JEI 29.x (not tested in game yet)
+- Minecraft 26.1.2 only, with NeoForge 26.1.2.x (built against 26.1.2.122), or Fabric (loader 0.19+ and Fabric API 0.155+)
+- JEI 29.x
 
 ## Status
 
@@ -34,7 +35,8 @@ chain maths (JEI gives no chance data on recipe slots, and the addon only knows 
 
 ## Building
 
-JDK 25, then `./gradlew build`. The jar is in `build/libs/`. `./gradlew runClient` starts a dev client with JEI.
+JDK 25, then `./gradlew build`. The jars are `neoforge/build/libs/neiaddon-neoforge-26.1.2-*.jar` and `fabric/build/libs/neiaddon-fabric-26.1.2-*.jar`.
+`./gradlew :neoforge:runClient` or `./gradlew :fabric:runClient` starts a dev client with JEI. The shared code is in `common/`.
 
 ## License
 
@@ -46,8 +48,9 @@ texture (`craftingtree.png`) is from NotEnoughItems too.
 
 | Branch | Minecraft | Loader | JEI | Status |
 | --- | --- | --- | --- | --- |
-| `26.1.x` (this branch) | 26.1, 26.1.1, 26.1.2 | NeoForge | 29.x | one jar, not tested in game yet |
-| `1.21.1` | 1.21.1 | NeoForge | 19.x | works in game |
-| `1.20.1` | 1.20.1 | Forge | 15.38+ | launches, still being tested |
+| `26.2` | 26.2 | NeoForge, Fabric | 30.x | NeoForge: the earlier single-loader build worked; the multiloader layout and Fabric have not been built in game yet |
+| `26.1.2` | 26.1.2 only | NeoForge, Fabric | 29.x | not tried in game yet |
+| `1.21.1` | 1.21.1 | NeoForge, Fabric | 19.x | runs in game on both |
+| `1.20.1` | 1.20.1 | Forge, Fabric | 15.38+ | runs in game on both |
 
 Each branch builds with its own `gradle.properties`; see BUILDING.md. Releases are tagged by Minecraft version, for example `v0.1.0+mc1.21.1`.
