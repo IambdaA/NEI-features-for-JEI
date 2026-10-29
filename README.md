@@ -48,8 +48,8 @@ texture (`craftingtree.png`) is from NotEnoughItems too.
 
 | Branch | Minecraft | Loader | JEI | Status |
 | --- | --- | --- | --- | --- |
-| `26.2` | 26.2 | NeoForge, Fabric | 30.x | NeoForge: the earlier single-loader build worked; the multiloader layout and Fabric have not been built in game yet |
-| `26.1.2` | 26.1.2 only | NeoForge, Fabric | 29.x | not tried in game yet |
+| `26.2` | 26.2 | NeoForge, Fabric | 30.x | runs in game on both |
+| `26.1.x` | 26.1, 26.1.1, 26.1.2 | NeoForge, Fabric | 29.x | runs in game on both |
 | `1.21.1` | 1.21.1 | NeoForge, Fabric | 19.x | runs in game on both |
 | `1.20.1` | 1.20.1 | Forge, Fabric | 15.38+ | runs in game on both |
 
