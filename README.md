@@ -1,7 +1,7 @@
 # NEI Features for JEI
 
 An unofficial port of features from [GTNH NotEnoughItems](https://github.com/GTNewHorizons/NotEnoughItems) to
-[Just Enough Items](https://github.com/mezz/JustEnoughItems), for **Minecraft 26.2 / NeoForge**. Not affiliated with the
+[Just Enough Items](https://github.com/mezz/JustEnoughItems), for **Minecraft 26.2 on NeoForge and on Fabric** (one project, two jars). Not affiliated with the
 NotEnoughItems authors.
 
 ## Features
@@ -22,7 +22,8 @@ See [BUILDING.md](BUILDING.md) for the full list, keys and notes.
 
 ## Requirements
 
-- Minecraft 26.2, NeoForge 26.2.0.90 or newer, JEI 30.42 or newer
+- Minecraft 26.2 with NeoForge 26.2.0.90 or newer, or Fabric (loader 0.19+ and Fabric API 0.158+)
+- JEI 30.42 or newer
 
 ## Status
 
@@ -34,7 +35,8 @@ chain maths (JEI gives no chance data on recipe slots, and the addon only knows 
 
 ## Building
 
-JDK 25, then `./gradlew build`. The jar is in `build/libs/`. `./gradlew runClient` starts a dev client with JEI.
+JDK 25, then `./gradlew build`. The jars are `neoforge/build/libs/neiaddon-neoforge-26.2-*.jar` and `fabric/build/libs/neiaddon-fabric-26.2-*.jar`.
+`./gradlew :neoforge:runClient` or `./gradlew :fabric:runClient` starts a dev client with JEI. The shared code is in `common/`.
 
 ## License
 
@@ -46,8 +48,9 @@ texture (`craftingtree.png`) is from NotEnoughItems too.
 
 | Branch | Minecraft | Loader | JEI | Status |
 | --- | --- | --- | --- | --- |
-| `26.2` (this branch) | 26.2 | NeoForge | 30.x | works in game |
-| `1.21.1` | 1.21.1 | NeoForge | 19.x | works in game |
-| `1.20.1` | 1.20.1 | Forge | 15.38+ | launches, still being tested |
+| `26.2` | 26.2 | NeoForge, Fabric | 30.x | runs in game on both |
+| `26.1.x` | 26.1, 26.1.1, 26.1.2 | NeoForge, Fabric | 29.x | runs in game on both |
+| `1.21.1` | 1.21.1 | NeoForge, Fabric | 19.x | runs in game on both |
+| `1.20.1` | 1.20.1 | Forge, Fabric | 15.38+ | runs in game on both |
 
 Each branch builds with its own `gradle.properties`; see BUILDING.md. Releases are tagged by Minecraft version, for example `v0.1.0+mc1.21.1`.

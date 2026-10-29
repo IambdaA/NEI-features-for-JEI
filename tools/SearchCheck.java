@@ -7,7 +7,7 @@ import neiaddon.search.SearchQuery.Item;
  * Checks the NEI search language without Minecraft.
  *
  * <pre>
- * javac -d /tmp/scheck src/main/java/neiaddon/search/*.java tools/SearchCheck.java
+ * javac -d /tmp/scheck common/src/main/java/neiaddon/search/*.java tools/SearchCheck.java
  * java -cp /tmp/scheck SearchCheck
  * </pre>
  */
