@@ -24,8 +24,8 @@ import net.minecraft.resources.Identifier;
 
 /**
  * Hooks Fabric's events to the addon's own bus. Fabric's input events belong to one screen, so they are registered when
- * a screen is set up; one listener per priority that has handlers, in phases ordered like NeoForge's priorities (the
- * default phase is NORMAL, which is where JEI's listeners are). Fabric has no typed-character event, no foreground or
+ * a screen is set up; one listener per priority that has handlers, in phases ordered like NeoForge's priorities (JEI's listeners are in the
+ * default phase, between NORMAL and LOW). Fabric has no typed-character event, no foreground or
  * after-the-screen draw event and no frame event: those come from mixins ({@code KeyboardHandlerMixin},
  * {@code ScreenMixin}, {@code AbstractContainerScreenMixin}, {@code MinecraftMixin}). A screen opening or closing is
  * noticed on the next tick.
@@ -33,7 +33,12 @@ import net.minecraft.resources.Identifier;
 final class FabricEvents {
 
     private static final Identifier TRACK = id("track");
-    private static final Identifier[] PHASE = { id("highest"), id("high"), Event.DEFAULT_PHASE, id("low"), id("lowest") };
+    /**
+     * One phase per priority. Fabric's default phase is where JEI registers its own screen listeners (before ours, as it
+     * does it earlier), so NORMAL gets a phase of its own just BEFORE the default one: like on NeoForge, the addon's
+     * normal handlers see a key or click before JEI does.
+     */
+    private static final Identifier[] PHASE = { id("highest"), id("high"), id("normal"), id("low"), id("lowest") };
 
     /** The newest listener set of every screen: older ones (a screen is set up again when it is resized) stand down. */
     private static final Map<Screen, Object> LIVE = new WeakHashMap<>();
@@ -53,6 +58,8 @@ final class FabricEvents {
     private static void order(Event<?> event) {
         event.addPhaseOrdering(TRACK, PHASE[0]);
         for (int i = 0; i + 1 < PHASE.length; i++) event.addPhaseOrdering(PHASE[i], PHASE[i + 1]);
+        event.addPhaseOrdering(PHASE[2], Event.DEFAULT_PHASE);
+        event.addPhaseOrdering(Event.DEFAULT_PHASE, PHASE[3]);
     }
 
     static void install() {
