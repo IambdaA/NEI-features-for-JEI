@@ -59,10 +59,21 @@ public final class RecipeTree {
                         }
 
                         RecipeShape sub = recipeId == null ? null : RecipeLookup.find(recipeId, chosen.stack());
+                        NeiAddon.LOGGER.info(
+                            "Recipe tree: recipe {} slot {} -> {} favorite={} found={}",
+                            recipe.id,
+                            slot.alts.stream()
+                                .map(RecipeShape.Alt::id)
+                                .toList(),
+                            chosen.id(),
+                            recipeId,
+                            sub != null);
                         if (sub == null) {
                             chosen = null;
                         } else {
                             seen.add(chosen.id());
+                            // the result the parent recipe needs comes first in the sub-recipe's row
+                            sub.leadResult = chosen.id();
                             if (depth >= 0) {
                                 result.add(sub);
                                 next.add(sub);

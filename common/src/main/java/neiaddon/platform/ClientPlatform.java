@@ -26,6 +26,12 @@ public interface ClientPlatform {
     /** The slot under the mouse, or null. */
     Slot hoveredSlot(AbstractContainerScreen<?> screen);
 
+    /**
+     * The amount of a JEI fluid ingredient (NeoForge's FluidStack, Fabric's IJeiFluidIngredient), in the loader's own
+     * units (millibuckets on NeoForge, droplets on Fabric: divide by JEI's {@code bucketVolume() / 1000}).
+     */
+    long fluidAmount(Object jeiFluidIngredient);
+
     final class Holder {
 
         private volatile ClientPlatform platform;

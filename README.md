@@ -15,6 +15,7 @@ NotEnoughItems authors.
 - Item zoom: the hovered item drawn large beside the inventory (Shift+Z toggles, NEI options)
 - NEI recipe search: a field under JEI's recipe screen that filters the recipes shown (query like `<iron >rail`), and the same search syntax in the crafting tree search
 - Craftables panel (off by default, `craftablesEnabled` in the config): what the open container can craft from your inventory, above the quantity field
+- Fluid slots of JEI recipes (in millibuckets) in bookmarks, the chain maths and the crafting tree (first version)
 - Highlight tips HUD and item info pages
 - Crafting calculator
 
@@ -30,8 +31,8 @@ See [BUILDING.md](BUILDING.md) for the full list, keys and notes.
 Early version. Parts have been tested in game, but not every feature in every setup. Bug reports are welcome in the
 [issue tracker](../../issues).
 
-Not ported from NEI: collapsible item groups and NC/chance badges (JEI has no API for either), drop chances and fluids in the
-chain maths (JEI gives no chance data on recipe slots, and the addon only knows items).
+Not ported from NEI: collapsible item groups and NC/chance badges (JEI has no API for either), drop chances in the
+chain maths (JEI gives no chance data on recipe slots).
 
 ## Building
 

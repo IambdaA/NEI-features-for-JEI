@@ -103,7 +103,7 @@ public final class CalcKeys {
             // NEI: Ctrl+C copies the item name, Ctrl+X the item id, Ctrl+D the ore dictionary names (here: tags)
             ItemStack copy = hoveredStack(screen);
             if (!copy.isEmpty()) {
-                String text = code == GLFW.GLFW_KEY_C ? copy.getHoverName()
+                String text = code == GLFW.GLFW_KEY_C ? FluidStacks.name(copy)
                     .getString()
                     : code == GLFW.GLFW_KEY_D ? tagsOf(copy)
                         : BuiltInRegistries.ITEM.getKey(copy.getItem())
@@ -131,6 +131,11 @@ public final class CalcKeys {
                     return;
                 }
             }
+        }
+        if (shift && McCompat.matches(FAVORITE, key) && RecipeHearts.onFavoriteResultKey()) {
+            // over a result slot of a recipe: that result's favorite recipe
+            event.setCanceled(true);
+            return;
         }
         if (shift && listed.isPresent() && McCompat.matches(FAVORITE, key)) {
             // NEI saveFavoriteTree: only over the item list; the key is used up even when the item has no favorite

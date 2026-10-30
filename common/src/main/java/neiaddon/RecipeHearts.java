@@ -141,6 +141,10 @@ public final class RecipeHearts {
             return !resultIds.isEmpty() && !shape.inputs.isEmpty();
         }
 
+        private static boolean scrolls() {
+            return AddonConfig.HEART_SCROLL_RESULT.get();
+        }
+
         private boolean isOn() {
             String favorite = Favorites.itemFor(shape.id);
             return favorite != null && !resultIds.isEmpty() && favorite.equals(resultIds.get(selected));
@@ -153,7 +157,9 @@ public final class RecipeHearts {
 
         void toggle() {
             if (!usable()) return;
-            Favorites.set(resultIds.get(selected), isOn() ? null : shape.id);
+            boolean off = isOn();
+            NeiAddon.LOGGER.info("Favorite {} -> {} (results {}, selected {})", resultIds.get(selected), off ? "removed" : shape.id, resultIds, selected);
+            Favorites.set(resultIds.get(selected), off ? null : shape.id);
         }
 
         @Override
@@ -182,7 +188,12 @@ public final class RecipeHearts {
             tooltip.add(Component.translatable(isOn() ? "neiaddon.recipe.unfavorite" : "neiaddon.recipe.favorite"));
             if (resultIds.size() > 1) {
                 tooltip.add(Component.literal("§7" + nameOf(resultIds.get(selected))));
-                tooltip.add(Component.literal("§7Mouse wheel: Change result"));
+                if (!scrolls()) {
+                    tooltip.add(Component.literal("§7Shift+" + CalcKeys.FAVORITE.getTranslatedKeyMessage()
+                        .getString() + " over a result: favorite that one"));
+                } else {
+                    tooltip.add(Component.literal("§7Mouse wheel: Change result"));
+                }
             }
             String key = CalcKeys.ADD.getTranslatedKeyMessage()
                 .getString();
@@ -211,33 +222,31 @@ public final class RecipeHearts {
             }
         }
 
-        /** The result under the mouse if the mouse is over a result slot, else null. */
-        String hoveredResultId() {
+        /** Everything the result slot under the mouse accepts, or an empty list when the mouse is not over a result slot. */
+        List<RecipeShape.Alt> hoveredResultAlts() {
             Optional<RecipeSlotUnderMouse> under = layout.getSlotUnderMouse(hoverX, hoverY);
             if (under.isPresent() && under.get()
                 .slot()
                 .getRole() == RecipeIngredientRole.OUTPUT) {
-                Optional<ItemStack> stack = under.get()
-                    .slot()
-                    .getItemStacks()
-                    .filter(s -> !s.isEmpty())
-                    .findFirst();
-                if (stack.isPresent()) return RecipeData.idOf(stack.get());
+                return RecipeShape.altsOf(
+                    under.get()
+                        .slot());
             }
-            return null;
+            return List.of();
+        }
+
+        /** The result under the mouse if the mouse is over a result slot, else null. */
+        String hoveredResultId() {
+            List<RecipeShape.Alt> alts = hoveredResultAlts();
+            return alts.isEmpty() ? null : alts.get(0)
+                .id();
         }
     }
 
     private static String nameOf(String itemId) {
-        try {
-            return BuiltInRegistries.ITEM.getOptional(Identifier.parse(itemId))
-                .map(i -> i.getDefaultInstance()
-                    .getHoverName()
-                    .getString())
-                .orElse(itemId);
-        } catch (RuntimeException e) {
-            return itemId;
-        }
+        ItemStack stack = FluidStacks.stackOf(itemId);
+        return stack.isEmpty() ? itemId : FluidStacks.name(stack)
+            .getString();
     }
 
     // ---------------------------------------------------------------- keys
@@ -282,6 +291,22 @@ public final class RecipeHearts {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Shift + favorite key over a result slot of a recipe in JEI's recipe screen: makes the recipe the favorite of that
+     * result, or removes it when it already is. Returns true if the key was used.
+     */
+    public static boolean onFavoriteResultKey() {
+        Controller recipe = fresh(hoverLayout, layoutStamp);
+        if (recipe == null || !recipe.usable()) return false;
+        String result = recipe.hoveredResultId();
+        if (result == null || !recipe.resultIds.contains(result)) return false;
+        boolean on = recipe.shape.id.equals(Favorites.recipeFor(result));
+        NeiAddon.LOGGER.info("Favorite {} -> {} (hovered result)", result, on ? "removed" : recipe.shape.id);
+        Favorites.set(result, on ? null : recipe.shape.id);
+        recipe.selected = recipe.resultIds.indexOf(result);
+        return true;
     }
 
     public static boolean hasFavorite(ItemStack stack) {
@@ -355,10 +380,71 @@ public final class RecipeHearts {
     @SubscribeEvent(priority = EventPriority.HIGH)
     static void onScroll(ScreenEvent.MouseScrolled.Pre event) {
         Controller heart = fresh(hoverHeart, heartStamp);
-        if (heart == null || heart.resultIds.size() <= 1) return;
+        if (heart == null || heart.resultIds.size() <= 1 || !Controller.scrolls()) return;
         int dir = (int) Math.signum(event.getScrollDeltaY());
         if (dir == 0) return;
         heart.cycle(dir);
         event.setCanceled(true);
+    }
+
+    /** The hotkey lines for a result slot: the favorite key, as the hint or (with Alt held) the list. */
+    private static List<String> resultHint(Controller recipe, String result) {
+        boolean on = recipe.shape.id.equals(Favorites.recipeFor(result));
+        java.util.Map<String, String> keys = new java.util.HashMap<>();
+        keys.put(HotkeyTips.keys("SHIFT", CalcKeys.FAVORITE.getTranslatedKeyMessage()
+            .getString()), on ? "Remove Favorite Recipe" : "Favorite Recipe for this Result");
+        return HotkeyTips.hotkeyLines(keys);
+    }
+
+    /**
+     * The lines to add to the tooltip of an item while the mouse is over a result slot of a recipe in JEI's recipe screen
+     * ("Hold ALT for hotkeys", or with Alt the keys), so the hint is part of JEI's own tooltip. Empty anywhere else. A
+     * fluid has no item tooltip event; {@link #onRenderHint} covers it.
+     */
+    static List<String> resultTooltipLines(ItemStack stack) {
+        if (!onRecipesScreen()) return List.of();
+        Controller recipe = fresh(hoverLayout, layoutStamp);
+        if (recipe == null || !recipe.usable()) return List.of();
+        List<RecipeShape.Alt> alts = recipe.hoveredResultAlts();
+        if (alts.isEmpty()) return List.of();
+        String shown = RecipeData.idOf(stack);
+        boolean hovered = false;
+        for (RecipeShape.Alt alt : alts) {
+            if (alt.id()
+                .equals(shown)) {
+                hovered = true;
+                break;
+            }
+        }
+        String result = alts.get(0)
+            .id();
+        if (!hovered || !recipe.resultIds.contains(result)) return List.of();
+        return resultHint(recipe, result);
+    }
+
+    /**
+     * The same hint for a fluid result slot, in a small box beside the cursor: JEI's fluid tooltip cannot be added to, so
+     * this is drawn next to it, on the left of the cursor. Items get theirs inside the tooltip ({@link #resultTooltipLines}).
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    static void onRenderHint(ScreenEvent.Render.Post event) {
+        if (!onRecipesScreen()) return;
+        Controller recipe = fresh(hoverLayout, layoutStamp);
+        if (recipe == null || !recipe.usable()) return;
+        if (Math.abs(event.getMouseX() - hoverX) > 1 || Math.abs(event.getMouseY() - hoverY) > 1) return;
+        String result = recipe.hoveredResultId();
+        if (result == null || !FluidStacks.isFluidId(result) || !recipe.resultIds.contains(result)) return;
+        List<net.minecraft.util.FormattedCharSequence> lines = new ArrayList<>();
+        for (String line : resultHint(recipe, result)) {
+            lines.add(Component.literal(line)
+                .getVisualOrderText());
+        }
+        if (lines.isEmpty()) return;
+        net.minecraft.client.gui.Font font = net.minecraft.client.Minecraft.getInstance().font;
+        int width = 0;
+        for (net.minecraft.util.FormattedCharSequence line : lines) width = Math.max(width, font.width(line));
+        // TreeDraw puts the box at mouse + 12, or at mouse - 12 - width when there is no room: ask for the left side
+        TreeDraw.tooltip(event.getGuiGraphics(), font, event.getMouseX() - 24 - width, event.getMouseY(), event.getScreen().width,
+            event.getScreen().height, lines, List.of(), 0, 0, null);
     }
 }

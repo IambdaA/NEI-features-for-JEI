@@ -126,7 +126,7 @@ public class CalculatorScreen extends Screen {
         int y = top + 14;
         for (int i = scrollSteps; i < Math.min(plan.steps().size(), scrollSteps + rowsVisible); i++) {
             Calculator.Step step = plan.steps().get(i);
-            g.fakeItem(step.out.sample, PAD, y);
+            FluidStacks.item(g, step.out.sample, PAD, y);
             String text = "Craft " + step.crafts + "x  -> " + qty(step.out.sample, step.crafts * step.option.outPerCraft()) + "  "
                 + step.out.sample.getHoverName().getString() + "  [" + step.option.category() + " " + (step.optionIndex + 1) + "/"
                 + step.optionCount + "]";
@@ -148,7 +148,7 @@ public class CalculatorScreen extends Screen {
         int ty = top + 14;
         for (var entry : new ArrayList<>(items.entrySet())) {
             Calculator.StackKey key = entry.getKey();
-            g.fakeItem(key.sample, rightX, ty);
+            FluidStacks.item(g, key.sample, rightX, ty);
             String label = entry.getValue() + "x " + key.sample.getHoverName().getString();
             g.text(font, font.plainSubstrByWidth(label, rightW - 22 - 36), rightX + 22, ty + 4, 0xFFFFFFFF, false);
             int bx = rightX + rightW - 36;
@@ -175,7 +175,7 @@ public class CalculatorScreen extends Screen {
         scrollRaw = clampScroll(scrollRaw, raw.size(), rawRows);
         for (int i = scrollRaw; i < Math.min(raw.size(), scrollRaw + rawRows); i++) {
             var e = raw.get(i);
-            g.fakeItem(e.getKey().sample, rightX, ry);
+            FluidStacks.item(g, e.getKey().sample, rightX, ry);
             String text = qty(e.getKey().sample, e.getValue()) + "  " + e.getKey().sample.getHoverName().getString();
             g.text(font, font.plainSubstrByWidth(text, rightW - 22), rightX + 22, ry + 4, 0xFFFFFFFF, false);
             if (mouseX >= rightX && mouseX < rightX + 18 && mouseY >= ry && mouseY < ry + 18) hoveredStack = e.getKey().sample;

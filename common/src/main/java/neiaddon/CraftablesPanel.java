@@ -342,7 +342,7 @@ public final class CraftablesPanel {
                 int y = r.getY() + PAD + row * CELL;
                 ItemStack out = results.get(index).out;
                 if (index == hoverIndex) g.fill(x, y, x + CELL, y + CELL, HIGHLIGHT);
-                g.fakeItem(out, x + 1, y + 1);
+                FluidStacks.item(g, out, x + 1, y + 1);
                 g.itemDecorations(font, out, x + 1, y + 1, null);
             }
         }

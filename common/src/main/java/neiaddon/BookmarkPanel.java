@@ -643,7 +643,7 @@ public final class BookmarkPanel {
             // NEI showRecipeMarkerMode 2: results of a recipe get a tinted background
             if (recipeResult && !hovered && AddonConfig.BM_MARKER_MODE.get() == 2) g.fill(x, y, x + SLOT, y + SLOT, RESULT_BG);
             ItemStack stack = c.entry().key.sample;
-            g.fakeItem(stack, x + 1, y + 1);
+            FluidStacks.item(g, stack, x + 1, y + 1);
             g.itemDecorations(font, stack, x + 1, y + 1, null);
             // NEI: amounts are drawn small (half size) bottom right, only when above 0
             long amount = amountOf(c);
@@ -668,7 +668,7 @@ public final class BookmarkPanel {
         // tooltips
         if (reorder != null) {
             g.nextStratum();
-            g.fakeItem(reorder.key.sample, mx - 8, my - 8);
+            FluidStacks.item(g, reorder.key.sample, mx - 8, my - 8);
         } else if (!tipStack.isEmpty() && dragMode == 0) {
             itemTooltip(g, font, tipStack, hover, mx, my);
         } else if (groupTip != null && dragMode == 0 && tip == null) {
@@ -891,9 +891,7 @@ public final class BookmarkPanel {
 
     private static ItemStack stackFor(ChainItem item) {
         if (item.payload instanceof Bookmarks.Entry e) return e.key.sample;
-        return BuiltInRegistries.ITEM.getOptional(Identifier.parse(item.item))
-            .map(ItemStack::new)
-            .orElse(ItemStack.EMPTY);
+        return FluidStacks.stackOf(item.item);
     }
 
     private static void sumInto(Map<String, Object[]> into, ChainItem item, long amount) {
@@ -1093,7 +1091,7 @@ public final class BookmarkPanel {
                 int sx = x + (n % layout.columns()) * TIP_SLOT;
                 int sy = ty + (n / layout.columns()) * TIP_SLOT;
                 if (index == sec.active()) g.fill(sx, sy, sx + TIP_SLOT, sy + TIP_SLOT, 0x66555555);
-                g.fakeItem(sec.stacks().get(index), sx + 1, sy + 1);
+                FluidStacks.item(g, sec.stacks().get(index), sx + 1, sy + 1);
                 if (!sec.amounts().isEmpty()) {
                     String amount = format(sec.amounts().get(index));
                     g.text(font, amount, sx + 17 - font.width(amount), sy + 9, index < sec.missing() ? 0xFFFF5555 : 0xFFFFFFFF, true);
@@ -1116,12 +1114,12 @@ public final class BookmarkPanel {
         List<Component> body;
         HotkeyTips.building = true;
         try {
-            body = new ArrayList<>(stack.getTooltipLines(Item.TooltipContext.of(mc.level), mc.player, TooltipFlag.Default.NORMAL));
+            body = new ArrayList<>(FluidStacks.tooltip(stack, amountOf(cell), Item.TooltipContext.of(mc.level), mc.player, TooltipFlag.Default.NORMAL));
         } finally {
             HotkeyTips.building = false;
         }
         List<Component> tip = new ArrayList<>();
-        tip.add(body.isEmpty() ? stack.getHoverName() : body.get(0));
+        tip.add(body.isEmpty() ? FluidStacks.name(stack) : body.get(0));
         for (String line : HotkeyTips.hotkeyLines(
             HotkeyTips.panelKeys(page, entry, isCollapsed(page, cell.groupId()), isChain(page, cell.groupId()), single(cell)))) {
             tip.add(Component.literal(line));
@@ -1153,14 +1151,10 @@ public final class BookmarkPanel {
             List<ItemStack> accepted = new ArrayList<>();
             int active = 0;
             for (String id : entry.options) {
-                try {
-                    Optional<Item> item = BuiltInRegistries.ITEM.getOptional(Identifier.parse(id));
-                    if (item.isEmpty()) continue;
-                    if (id.equals(entry.itemId())) active = accepted.size();
-                    accepted.add(new ItemStack(item.get()));
-                } catch (RuntimeException ignored) {
-                    // unreadable id: left out
-                }
+                ItemStack option = FluidStacks.stackOf(id);
+                if (option.isEmpty()) continue;
+                if (id.equals(entry.itemId())) active = accepted.size();
+                accepted.add(option);
             }
             if (accepted.size() > 1) {
                 drawTip(g, font, lines, List.of(new Section("Accepts following", accepted, List.of(), 2, active, 0)), mx, my);
@@ -1295,9 +1289,7 @@ public final class BookmarkPanel {
     static void showRecipes(ItemStack stack, RecipeIngredientRole role) {
         var rt = Calculator.runtime;
         if (rt == null) return;
-        var focus = rt.getJeiHelpers()
-            .getFocusFactory()
-            .createFocus(role, VanillaTypes.ITEM_STACK, stack);
+        var focus = FluidStacks.focus(rt, role, stack);
         rt.getRecipesGui()
             .show(focus);
     }

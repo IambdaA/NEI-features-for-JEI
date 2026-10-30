@@ -132,7 +132,9 @@ public final class NeiSettings extends Screen {
             .color("Name Color", "Color of the item name.", AddonConfig.ZOOM_NAME_COLOR);
         Page recipes = new Page("Recipe Screen")
             .toggle("Recipe Search Field", "A search field under JEI's recipe screen that filters the recipes shown. < ingredient, > result, ^ catalyst, | or, - not, @mod, #tooltip, $tag, &id.",
-                AddonConfig.RECIPE_SEARCH);
+                AddonConfig.RECIPE_SEARCH)
+            .toggle("Scroll To Pick Favorite Result", "Mouse wheel over a recipe's heart picks which of its results to favorite. Off: the heart uses the first result; Shift+F over a result slot favorites that one.",
+                AddonConfig.HEART_SCROLL_RESULT);
         Page history = new Page("History Panel")
             .toggle("History As Wide As Item List", "Keeps JEI's lookup history (right side) as wide as the item list. Overwrites JEI's history column setting.",
                 AddonConfig.HISTORY_MATCH_LIST);

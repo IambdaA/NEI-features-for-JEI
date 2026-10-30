@@ -163,8 +163,7 @@ public final class HotkeyTips {
 
     /** The mod an item comes from, blue and italic like NEI/JEI show it. */
     public static Component modName(ItemStack stack) {
-        String ns = BuiltInRegistries.ITEM.getKey(stack.getItem())
-            .getNamespace();
+        String ns = FluidStacks.namespaceOf(stack);
         String name = ns;
         try {
             name = Platform.get().modDisplayName(ns).orElse(ns);
@@ -189,6 +188,13 @@ public final class HotkeyTips {
     static void onTooltip(ItemTooltipEvent event) {
         if (building) return;
         ItemStack stack = event.getItemStack();
+        List<String> onResult = RecipeHearts.resultTooltipLines(stack);
+        if (!onResult.isEmpty()) {
+            // JEI adds the mod name after this event, so the end of the list is the line right above it
+            for (String line : onResult) event.getToolTip()
+                .add(Component.literal(line));
+            return;
+        }
         Optional<ItemStack> hovered = hoveredInList();
         if (hovered.isEmpty() || hovered.get()
             .getItem() != stack.getItem()) return;
