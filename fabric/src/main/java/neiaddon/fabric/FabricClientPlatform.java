@@ -35,4 +35,9 @@ final class FabricClientPlatform implements ClientPlatform {
     public Slot hoveredSlot(AbstractContainerScreen<?> screen) {
         return ((AbstractContainerScreenAccessor) screen).neiaddon$hoveredSlot();
     }
+
+    @Override
+    public long fluidAmount(Object jeiFluidIngredient) {
+        return jeiFluidIngredient instanceof mezz.jei.api.fabric.ingredients.fluids.IJeiFluidIngredient fluid ? fluid.getAmount() : 0L;
+    }
 }

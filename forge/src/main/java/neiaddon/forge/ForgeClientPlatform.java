@@ -29,4 +29,9 @@ final class ForgeClientPlatform implements ClientPlatform {
     public Slot hoveredSlot(AbstractContainerScreen<?> screen) {
         return screen.getSlotUnderMouse();
     }
+
+    @Override
+    public long fluidAmount(Object jeiFluidIngredient) {
+        return jeiFluidIngredient instanceof net.minecraftforge.fluids.FluidStack fluid ? fluid.getAmount() : 0L;
+    }
 }

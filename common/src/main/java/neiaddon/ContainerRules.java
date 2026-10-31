@@ -31,13 +31,7 @@ final class ContainerRules implements ContainerOps {
     public Object stackOf(String itemId) {
         ItemStack cached = byId.get(itemId);
         if (cached == null) {
-            try {
-                Item item = BuiltInRegistries.ITEM.getOptional(new ResourceLocation(itemId))
-                    .orElse(null);
-                cached = item == null ? ItemStack.EMPTY : McCompat.copyWithCount(item.getDefaultInstance(), 1);
-            } catch (RuntimeException e) {
-                cached = ItemStack.EMPTY;
-            }
+            cached = FluidStacks.stackOf(itemId);
             byId.put(itemId, cached);
         }
         return cached.isEmpty() ? null : cached.copy();

@@ -54,15 +54,14 @@ public final class SearchItem implements SearchQuery.Item {
     }
 
     private String name() {
-        if (name == null) name = stack.getHoverName()
+        if (name == null) name = FluidStacks.name(stack)
             .getString();
         return name;
     }
 
     private String mod() {
         if (mod == null) {
-            String ns = BuiltInRegistries.ITEM.getKey(stack.getItem())
-                .getNamespace();
+            String ns = FluidStacks.namespaceOf(stack);
             String display = ns;
             try {
                 display = Platform.get().modDisplayName(ns).orElse(ns);

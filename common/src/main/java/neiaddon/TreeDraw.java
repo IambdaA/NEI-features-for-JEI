@@ -193,7 +193,7 @@ final class TreeDraw {
                 int sx = x + (n % TIP_MAX_COLUMNS) * TIP_SLOT;
                 int sy = ty + (n / TIP_MAX_COLUMNS) * TIP_SLOT;
                 if (n == icon.active()) g.fill(sx, sy, sx + TIP_SLOT, sy + TIP_SLOT, 0x66555555);
-                g.renderFakeItem(icon.stacks().get(n), sx + 1, sy + 1);
+                FluidStacks.item(g, icon.stacks().get(n), sx + 1, sy + 1);
                 String amount = n < icon.amounts().size() ? icon.amounts().get(n) : "";
                 if (!amount.isEmpty()) overlayText(g, font, amount, sx + 1, sy + 1, 16, 16, 0xFFFFFF, Align.BOTTOM_RIGHT);
             }
