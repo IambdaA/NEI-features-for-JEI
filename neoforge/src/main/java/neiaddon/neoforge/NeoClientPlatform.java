@@ -31,4 +31,9 @@ final class NeoClientPlatform implements ClientPlatform {
     public Slot hoveredSlot(AbstractContainerScreen<?> screen) {
         return screen.getSlotUnderMouse();
     }
+
+    @Override
+    public long fluidAmount(Object jeiFluidIngredient) {
+        return jeiFluidIngredient instanceof net.neoforged.neoforge.fluids.FluidStack fluid ? fluid.getAmount() : 0L;
+    }
 }

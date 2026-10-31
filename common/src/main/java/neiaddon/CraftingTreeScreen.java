@@ -474,9 +474,7 @@ public final class CraftingTreeScreen extends Screen {
         if (payload instanceof Bookmarks.Entry e && e.key != null) return e.key.sample;
         if (payload instanceof ItemStack s) return s;
         try {
-            return BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(id))
-                .map(ItemStack::new)
-                .orElse(ItemStack.EMPTY);
+            return FluidStacks.stackOf(id);
         } catch (RuntimeException e) {
             return ItemStack.EMPTY;
         }
@@ -655,7 +653,7 @@ public final class CraftingTreeScreen extends Screen {
     private void drawSlot(GuiGraphics g, TreeSlot node, boolean snapshot, SearchResult search, boolean ctrl, boolean hovered) {
         TreeLayout.Point p = pointOf(node);
         TreeDraw.draw(g, slotSprite(node, snapshot, search), p.x, p.y);
-        g.renderFakeItem(stackOf(node), p.x + (SLOT - 16) / 2, p.y + (SLOT - 16) / 2);
+        FluidStacks.item(g, stackOf(node), p.x + (SLOT - 16) / 2, p.y + (SLOT - 16) / 2);
 
         if (node.requestedAmount > 0 && node.leftAmount == 0) {
             drawStackSize(g, node.requestedAmount, p.x, p.y, true, node.isContainerItem);
@@ -779,7 +777,7 @@ public final class CraftingTreeScreen extends Screen {
                     TreeDraw.overlayText(g, font, ReadableNumber.wide(row.recipeCount), x + 1, y + 1, SLOT - 2, SLOT - 2, 0xFFFFFF,
                         TreeDraw.Align.BOTTOM_RIGHT);
                 } else {
-                    g.renderFakeItem(stackOf(row.item, row.payload), x + 1, y + 1);
+                    FluidStacks.item(g, stackOf(row.item, row.payload), x + 1, y + 1);
                     drawStackSize(g, row.amount, x, y, false, false);
                 }
                 if (hoveredStat == placed) {
@@ -912,13 +910,13 @@ public final class CraftingTreeScreen extends Screen {
 
     // ---------------------------------------------------------------- tooltips
 
-    private List<Component> itemLines(ItemStack stack) {
+    private List<Component> itemLines(ItemStack stack, long amount) {
         Minecraft mc = Minecraft.getInstance();
         List<Component> lines = new ArrayList<>();
         if (mc.level != null && !stack.isEmpty()) {
-            lines.addAll(stack.getTooltipLines(Item.TooltipContext.of(mc.level), mc.player, TooltipFlag.Default.NORMAL));
+            lines.addAll(FluidStacks.tooltip(stack, amount, Item.TooltipContext.of(mc.level), mc.player, TooltipFlag.Default.NORMAL));
         }
-        if (lines.isEmpty()) lines.add(stack.getHoverName());
+        if (lines.isEmpty()) lines.add(FluidStacks.name(stack));
         return lines;
     }
 
@@ -971,12 +969,12 @@ public final class CraftingTreeScreen extends Screen {
     private void drawNodeTooltip(GuiGraphics g, int mx, int my) {
         TreeSlot node = hoveredNode;
         ItemStack stack = stackOf(node);
-        List<Component> lines = itemLines(stack);
+        List<Component> lines = itemLines(stack, node.requestedAmount > 0 ? node.requestedAmount : 1000);
 
         // NEI adds each of these at index 1, so the one added last ends up right under the name
         if (TreeState.useInventorySnapshot() && node.requestedAmount > 0) {
             if (node.leftAmount == 0) {
-                lines.add(1, gray(tr("item.state.resolved", stack.getHoverName().getString())));
+                lines.add(1, gray(tr("item.state.resolved", FluidStacks.name(stack).getString())));
             } else if (node.leftAmount != node.requestedAmount) {
                 lines.add(1, gray(tr("item.state.partial", ReadableNumber.amount(node.leftAmount))));
             }
@@ -1021,11 +1019,11 @@ public final class CraftingTreeScreen extends Screen {
         ItemStack stack = stackOf(row.item, row.payload);
         if (row.recipeId != null) {
             List<Component> head = new ArrayList<>();
-            head.add(stack.getHoverName());
+            head.add(FluidStacks.name(stack));
             drawRecipeTooltip(g, mx, my, row.recipeId, row.multiplier, head, stack);
             return;
         }
-        List<Component> lines = itemLines(stack);
+        List<Component> lines = itemLines(stack, row.amount > 0 ? row.amount : 1000);
         Map<String, String> k = new HashMap<>();
         HotkeyTips.recipeAndCopyKeys(k);
         k.remove("LMB");

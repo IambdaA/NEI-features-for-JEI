@@ -94,6 +94,7 @@ public final class Calculator {
     public static void onRuntime(IJeiRuntime rt) {
         runtime = rt;
         optionCache.clear();
+        FluidStacks.reset();
         RecipeLookup.reset();
         CraftablesPanel.reset();
     }
@@ -134,7 +135,7 @@ public final class Calculator {
         IRecipeManager manager = runtime.getRecipeManager();
         IFocusFactory focusFactory = runtime.getJeiHelpers()
             .getFocusFactory();
-        IFocus<ItemStack> focus = focusFactory.createFocus(RecipeIngredientRole.OUTPUT, VanillaTypes.ITEM_STACK, key.sample);
+        IFocus<?> focus = FluidStacks.focus(runtime, RecipeIngredientRole.OUTPUT, key.sample);
         List<IFocus<?>> focuses = List.of(focus);
         IFocusGroup empty = focusFactory.getEmptyFocusGroup();
         manager.createRecipeCategoryLookup()

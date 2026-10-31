@@ -33,7 +33,7 @@ final class FabricEvents {
 
     private static final ResourceLocation TRACK = id("track");
     private static final ResourceLocation FRAME = id("frame");
-    private static final ResourceLocation[] PHASE = { id("highest"), id("high"), Event.DEFAULT_PHASE, id("low"), id("lowest") };
+    private static final ResourceLocation[] PHASE = { id("highest"), id("high"), id("normal"), id("low"), id("lowest") };
 
     /** The newest listener set of every screen: older ones (a screen is set up again when it is resized) stand down. */
     private static final Map<Screen, Object> LIVE = new WeakHashMap<>();
@@ -56,6 +56,9 @@ final class FabricEvents {
     private static void order(Event<?> event) {
         event.addPhaseOrdering(TRACK, PHASE[0]);
         for (int i = 0; i + 1 < PHASE.length; i++) event.addPhaseOrdering(PHASE[i], PHASE[i + 1]);
+        // NORMAL runs before JEI's own listeners (they sit in the default phase), LOW after them
+        event.addPhaseOrdering(PHASE[2], Event.DEFAULT_PHASE);
+        event.addPhaseOrdering(Event.DEFAULT_PHASE, PHASE[3]);
         event.addPhaseOrdering(PHASE[4], FRAME);
     }
 

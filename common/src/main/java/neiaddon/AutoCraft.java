@@ -153,8 +153,7 @@ public final class AutoCraft {
         ItemStack hint = ItemStack.EMPTY;
         for (ChainItem item : math.recipeResults) {
             if (recipeId.equals(item.recipeId)) {
-                Optional<Item> found = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(item.item));
-                if (found.isPresent()) hint = new ItemStack(found.get());
+                hint = FluidStacks.stackOf(item.item);
                 break;
             }
         }

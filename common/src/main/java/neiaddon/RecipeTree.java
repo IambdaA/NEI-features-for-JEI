@@ -59,10 +59,21 @@ public final class RecipeTree {
                         }
 
                         RecipeShape sub = recipeId == null ? null : RecipeLookup.find(recipeId, chosen.stack());
+                        NeiAddon.LOGGER.info(
+                            "Recipe tree: recipe {} slot {} -> {} favorite={} found={}",
+                            recipe.id,
+                            slot.alts.stream()
+                                .map(RecipeShape.Alt::id)
+                                .toList(),
+                            chosen.id(),
+                            recipeId,
+                            sub != null);
                         if (sub == null) {
                             chosen = null;
                         } else {
                             seen.add(chosen.id());
+                            // the result the parent recipe needs comes first in the sub-recipe's row
+                            sub.leadResult = chosen.id();
                             if (depth >= 0) {
                                 result.add(sub);
                                 next.add(sub);
@@ -91,7 +102,16 @@ public final class RecipeTree {
     public static int save(RecipeShape main) {
         List<RecipeData> data = new ArrayList<>();
         for (RecipeShape shape : build(main.copy(), DEPTH)) {
-            data.add(shape.toData(null));
+            // a recipe the tree pulls in for one of its fluids or items shows only that result, not its byproducts
+            RecipeData row = shape.toData(shape.leadResult);
+            NeiAddon.LOGGER.info("Tree row: recipe {} lead={} results={} ingredients={}", shape.id, shape.leadResult,
+                row.results.stream()
+                    .map(RecipeData.Part::itemId)
+                    .toList(),
+                row.ingredients.stream()
+                    .map(RecipeData.Part::itemId)
+                    .toList());
+            data.add(row);
         }
         return Bookmarks.addGroup(data, true, true);
     }

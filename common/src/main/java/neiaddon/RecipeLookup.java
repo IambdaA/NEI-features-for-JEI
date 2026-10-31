@@ -170,7 +170,7 @@ public final class RecipeLookup {
         IRecipeLookup<T> lookup = manager.createRecipeLookup(type)
             .includeHidden();
         if (focused && hint != null && !hint.isEmpty()) {
-            IFocus<ItemStack> focus = focuses.createFocus(RecipeIngredientRole.OUTPUT, VanillaTypes.ITEM_STACK, hint);
+            IFocus<?> focus = FluidStacks.focus(rt, RecipeIngredientRole.OUTPUT, hint);
             lookup = lookup.limitFocus(List.of(focus));
         } else if (focused) {
             return null;

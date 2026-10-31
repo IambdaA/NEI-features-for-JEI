@@ -341,7 +341,7 @@ public final class CraftablesPanel {
                 int y = r.getY() + PAD + row * CELL;
                 ItemStack out = results.get(index).out;
                 if (index == hoverIndex) g.fill(x, y, x + CELL, y + CELL, HIGHLIGHT);
-                g.renderFakeItem(out, x + 1, y + 1);
+                FluidStacks.item(g, out, x + 1, y + 1);
                 g.renderItemDecorations(font, out, x + 1, y + 1, null);
             }
         }
@@ -361,7 +361,7 @@ public final class CraftablesPanel {
             HotkeyTips.building = false;
         }
         List<Component> tip = new ArrayList<>(body);
-        if (tip.isEmpty()) tip.add(c.out.getHoverName());
+        if (tip.isEmpty()) tip.add(FluidStacks.name(c.out));
         tip.add(Component.literal(c.favorite() ? "§7Favorite recipe" : "§7Can be crafted now"));
         tip.add(HotkeyTips.modName(c.out));
         List<FormattedCharSequence> lines = new ArrayList<>();

@@ -389,14 +389,9 @@ public final class Bookmarks {
             options = List.of();
         }
         Entry entry;
-        Optional<Item> item;
-        try {
-            item = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(p[1]));
-        } catch (RuntimeException ex) {
-            item = Optional.empty();
-        }
-        if (item.isPresent()) {
-            entry = new Entry(new Calculator.StackKey(new ItemStack(item.get())), amount, gid);
+        ItemStack parsed = FluidStacks.stackOf(p[1]);
+        if (!parsed.isEmpty()) {
+            entry = new Entry(new Calculator.StackKey(parsed), amount, gid);
             page.entries.add(entry);
         } else {
             entry = Entry.ghost(p[1], amount, gid);
@@ -836,14 +831,9 @@ public final class Bookmarks {
             boolean recipeItem = p.length >= 7 && !p[5].isEmpty() && !p[5].equals("-");
             if (recipeItem && alreadyThere.contains(p[5])) continue;
             if (!recipeItem && !kind.equals("group")) {
-                Optional<Item> item;
-                try {
-                    item = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(p[1]));
-                } catch (RuntimeException ex) {
-                    item = Optional.empty();
-                }
-                if (item.isPresent()) {
-                    add(new ItemStack(item.get()), Math.max(1, parseLong(p[2], 1)), NO_GROUP);
+                ItemStack parsed = FluidStacks.stackOf(p[1]);
+                if (!parsed.isEmpty()) {
+                    add(parsed, Math.max(1, parseLong(p[2], 1)), NO_GROUP);
                     added = true;
                     continue;
                 }
@@ -874,14 +864,9 @@ public final class Bookmarks {
         int size = entry.options.size();
         int at = Math.max(0, entry.options.indexOf(entry.itemId()));
         String id = entry.options.get((((at - wheel) % size) + size) % size);
-        Optional<Item> item;
-        try {
-            item = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(id));
-        } catch (RuntimeException e) {
-            return false;
-        }
-        if (item.isEmpty()) return false;
-        entry.key = new Calculator.StackKey(new ItemStack(item.get()));
+        ItemStack chosen = FluidStacks.stackOf(id);
+        if (chosen.isEmpty()) return false;
+        entry.key = new Calculator.StackKey(chosen);
         save();
         return true;
     }

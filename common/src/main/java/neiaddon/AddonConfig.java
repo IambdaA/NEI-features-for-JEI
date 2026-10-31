@@ -67,6 +67,10 @@ public final class AddonConfig {
         .comment("Allow autocrafting of bookmarked recipes and craftables (NEI autocrafting).")
         .define("autocrafting", true);
 
+    public static final ConfigSpec.BooleanValue HEART_SCROLL_RESULT = B
+        .comment("Mouse wheel over a recipe's heart picks which result to favorite (as NEI does). Off: the heart uses the first result, and Shift+F over a result slot favorites that result.")
+        .define("heartScrollResult", true);
+
     // NEI: the search field of the recipe GUI
     public static final ConfigSpec.BooleanValue RECIPE_SEARCH = B
         .comment("Show a search field under JEI's recipe screen that filters the recipes shown (NEI recipe search syntax).")
