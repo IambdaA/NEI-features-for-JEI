@@ -102,7 +102,8 @@ public final class RecipeTree {
     public static int save(RecipeShape main) {
         List<RecipeData> data = new ArrayList<>();
         for (RecipeShape shape : build(main.copy(), DEPTH)) {
-            data.add(shape.toData(null));
+            // a recipe the tree pulls in for one of its fluids or items shows only that result, not its byproducts
+            data.add(shape.toData(shape.leadResult));
         }
         return Bookmarks.addGroup(data, true, true);
     }

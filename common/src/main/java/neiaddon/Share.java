@@ -126,10 +126,9 @@ public final class Share {
         MutableComponent clickable = null;
         if (lines.length > 1 && lines[1].startsWith("target\t")) {
             try {
-                Optional<Item> item = BuiltInRegistries.ITEM.getOptional(Identifier.parse(lines[1].substring(7)));
-                if (item.isPresent()) {
+                ItemStack stack = FluidStacks.stackOf(lines[1].substring(7));
+                if (!stack.isEmpty()) {
                     // built like JEI's own item chat links: plain text carrying the click and the item hover
-                    ItemStack stack = new ItemStack(item.get());
                     clickable = Component.literal("[" + stack.getHoverName().getString() + "]")
                         .withStyle(style -> style.withColor(ChatFormatting.AQUA).withHoverEvent(new HoverEvent.ShowItem(ItemStackTemplate.fromNonEmptyStack(stack))));
                 }

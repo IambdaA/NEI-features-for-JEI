@@ -88,9 +88,7 @@ public final class FluidStacks {
                     .isEmpty()) return ItemStack.EMPTY;
                 return carrier(fluid);
             }
-            return BuiltInRegistries.ITEM.getOptional(Identifier.parse(id))
-                .map(ItemStack::new)
-                .orElse(ItemStack.EMPTY);
+            return StackIds.parse(id);
         } catch (RuntimeException e) {
             return ItemStack.EMPTY;
         }
@@ -117,6 +115,7 @@ public final class FluidStacks {
 
     public static void reset() {
         drawables.clear();
+        StackIds.reset();
     }
 
     /** {@code g.fakeItem(stack, x, y)}, or the fluid's picture (as JEI draws it in its list) for a carrier stack. */
