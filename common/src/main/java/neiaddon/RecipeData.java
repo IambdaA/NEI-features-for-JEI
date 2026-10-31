@@ -46,6 +46,8 @@ public final class RecipeData {
     public static String idOf(ItemStack stack) {
         String fluid = FluidStacks.itemIdOf(stack);
         if (fluid != null) return fluid;
+        String subtyped = StackIds.subtypeId(stack);
+        if (subtyped != null) return subtyped;
         return BuiltInRegistries.ITEM.getKey(stack.getItem())
             .toString();
     }

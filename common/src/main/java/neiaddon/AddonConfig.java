@@ -69,7 +69,7 @@ public final class AddonConfig {
 
     public static final ConfigSpec.BooleanValue HEART_SCROLL_RESULT = B
         .comment("Mouse wheel over a recipe's heart picks which result to favorite (as NEI does). Off: the heart uses the first result, and Shift+F over a result slot favorites that result.")
-        .define("heartScrollResult", false);
+        .define("heartScrollResult", true);
 
     // NEI: the search field of the recipe GUI
     public static final ConfigSpec.BooleanValue RECIPE_SEARCH = B
