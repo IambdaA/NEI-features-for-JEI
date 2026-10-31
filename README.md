@@ -1,3 +1,4 @@
+[Curseforge](https://www.curseforge.com/minecraft/mc-mods/nei-features-for-jei)
 # NEI Features for JEI
 
 An unofficial port of features from [GTNH NotEnoughItems](https://github.com/GTNewHorizons/NotEnoughItems) to
