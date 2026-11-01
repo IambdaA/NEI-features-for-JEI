@@ -656,17 +656,17 @@ public final class CraftingTreeScreen extends Screen {
         FluidStacks.item(g, stackOf(node), p.x + (SLOT - 16) / 2, p.y + (SLOT - 16) / 2);
 
         if (node.requestedAmount > 0 && node.leftAmount == 0) {
-            drawStackSize(g, node.requestedAmount, p.x, p.y, true, node.isContainerItem);
+            drawStackSize(g, stackOf(node), node.requestedAmount, p.x, p.y, true, node.isContainerItem);
         } else if (node.requestedAmount > 0 && node.leftAmount > 0) {
             long amount = hovered && node.prefItem != null && canvas.graph.roots.contains(node)
                 && canvas.collapsedRecipes.contains(node.prefItem.recipeId) && ctrl ? node.currentRequestedAmount : node.requestedAmount;
-            drawStackSize(g, amount, p.x, p.y, false, node.isContainerItem);
+            drawStackSize(g, stackOf(node), amount, p.x, p.y, false, node.isContainerItem);
         }
     }
 
     /** {@code estimate}: NEI draws a tool that comes back worn from a craft as "~amount" in orange. */
-    private void drawStackSize(GuiGraphics g, long amount, int x, int y, boolean resolved, boolean estimate) {
-        String text = ReadableNumber.amount(amount);
+    private void drawStackSize(GuiGraphics g, ItemStack stack, long amount, int x, int y, boolean resolved, boolean estimate) {
+        String text = FluidStacks.isMilli(stack) ? FluidStacks.milliLabel(amount) : ReadableNumber.amount(amount);
         int color = 0xFFFFFF;
         if (estimate) {
             text = "~" + text;
@@ -778,7 +778,7 @@ public final class CraftingTreeScreen extends Screen {
                         TreeDraw.Align.BOTTOM_RIGHT);
                 } else {
                     FluidStacks.item(g, stackOf(row.item, row.payload), x + 1, y + 1);
-                    drawStackSize(g, row.amount, x, y, false, false);
+                    drawStackSize(g, stackOf(row.item, row.payload), row.amount, x, y, false, false);
                 }
                 if (hoveredStat == placed) {
                     Pose.begin(g, Pose.OVER);

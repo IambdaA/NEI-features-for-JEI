@@ -114,6 +114,8 @@ public final class NeiSettings extends Screen {
                 AddonConfig.BM_TOOLTIP_MODE, "Never", "Default View", "Todo List View", "Always")
             .choice("Show Recipe Marker", "How recipe results are marked.", AddonConfig.BM_MARKER_MODE, "First Result", "Every Result (R)", "Background")
             .color("Recipe Marker Color", "Color of the R and xN markers.", AddonConfig.BM_MARKER_COLOR)
+            .toggle("Compact Fluid Amounts", "Short fluid amounts in slots: 500mB, then buckets from 1000 mB (2.5B). Off: millibuckets up to 9999 (2500mB), which can run into the next slot.",
+                AddonConfig.FLUID_COMPACT)
             .toggle("Show Recipe Handler Icon", "Show the recipe type's icon instead of the R marker.", AddonConfig.BM_HANDLER_ICON)
             .toggle("World Specific Bookmarks", "Keep a bookmark list for every world and server.", AddonConfig.BM_WORLD_SPECIFIC)
             .toggle("Crafting Tree Zoom Without Ctrl", "Off: Ctrl + wheel zooms and the wheel scrolls.", AddonConfig.TREE_ZOOM_WITHOUT_CTRL);

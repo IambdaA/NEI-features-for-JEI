@@ -35,6 +35,8 @@ public final class CalcKeys {
     public static final KeyMapping CHAT_LINK = new KeyMapping("key.neiaddon.chat_link", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_L, CATEGORY);
     /** NEI's bookmark.pull_items: pull the hovered item (or group) out of the open chest; Shift: only what is missing. */
     public static final KeyMapping PULL = new KeyMapping("key.neiaddon.pull_items", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V, CATEGORY);
+    /** Over an item or fluid in an Applied Energistics 2 screen: type its name into the terminal's search box. */
+    public static final KeyMapping SEARCH_NAME = new KeyMapping("key.neiaddon.ae2_search", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_T, CATEGORY);
     public static final KeyMapping HIDE = new KeyMapping("key.neiaddon.hide_bookmarks", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_B, CATEGORY);
 
     // NEI: world.highlight_tips = Numpad 0 (toggle). The position screen has no NEI key; it is unbound by default.
@@ -50,7 +52,7 @@ public final class CalcKeys {
 
     /** Every key mapping of the addon, for the loader to register. */
     public static java.util.List<KeyMapping> all() {
-        return java.util.List.of(ADD, TREE, FAVORITE, CRAFT, CHAT_LINK, PULL, HIDE, HUD_TOGGLE, HUD_POSITION, ItemZoom.TOGGLE, ItemZoom.HOLD,
+        return java.util.List.of(ADD, TREE, SEARCH_NAME, FAVORITE, CRAFT, CHAT_LINK, PULL, HIDE, HUD_TOGGLE, HUD_POSITION, ItemZoom.TOGGLE, ItemZoom.HOLD,
             ItemZoom.ZOOM_IN, ItemZoom.ZOOM_OUT);
     }
 

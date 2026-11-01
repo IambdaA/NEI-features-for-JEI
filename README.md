@@ -1,4 +1,3 @@
-[Curseforge](https://www.curseforge.com/minecraft/mc-mods/nei-features-for-jei)
 # NEI Features for JEI
 
 An unofficial port of features from [GTNH NotEnoughItems](https://github.com/GTNewHorizons/NotEnoughItems) to
@@ -54,4 +53,4 @@ texture (`craftingtree.png`) is from NotEnoughItems too.
 | `26.1.x` | 26.1, 26.1.1, 26.1.2 | NeoForge | 29.x | one jar, not tested in game yet |
 | `1.20.1` | 1.20.1 | Forge | 15.38+ | runs in game |
 
-Each branch builds with its own `gradle.properties`; see BUILDING.md. Releases are tagged by Minecraft version, for example `v1.1.1+mc1.21.1`.
+Each branch builds with its own `gradle.properties`; see BUILDING.md. Releases are tagged by Minecraft version, for example `v1.1.2+mc1.21.1`.
