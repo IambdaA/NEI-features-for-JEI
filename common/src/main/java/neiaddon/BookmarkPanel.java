@@ -648,7 +648,7 @@ public final class BookmarkPanel {
             // NEI: amounts are drawn small (half size) bottom right, only when above 0
             long amount = amountOf(c);
             if (amount > 0) {
-                String text = format(amount);
+                String text = FluidStacks.isMilli(stack) ? FluidStacks.milliLabel(amount) : format(amount);
                 drawSmall(g, font, text, x + 1 + 16 - font.width(text) * 0.5f, y + 1 + 16 - 9 * 0.5f, 0xFFFFFFFF);
             }
             // NEI: the first result of an output recipe gets an "xN" marker (N = the recipe's real multiplier) top left

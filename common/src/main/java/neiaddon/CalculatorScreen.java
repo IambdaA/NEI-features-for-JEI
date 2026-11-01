@@ -69,6 +69,7 @@ public class CalculatorScreen extends Screen {
     }
 
     private static String qty(ItemStack sample, long amount) {
+        if (FluidStacks.isMilli(sample)) return FluidStacks.milliLabel(amount);
         int max = Math.max(1, sample.getMaxStackSize());
         if (max > 1 && amount >= max) {
             return amount + " (" + (amount / max) + "x" + max + (amount % max != 0 ? " + " + (amount % max) : "") + ")";
