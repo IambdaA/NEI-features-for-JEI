@@ -49,6 +49,48 @@ public final class FluidStacks {
         return fluidIdOf(stack) != null;
     }
 
+    /** A stack counted in millibuckets: a carrier of a real fluid, or an item that stands for one (NTM - Continuum). */
+    public static boolean isMilli(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        return isFluid(stack) || StackIds.anyMilli() && StackIds.isMilli(RecipeData.idOf(stack));
+    }
+
+    /** An amount of fluid as short text: {@code 500mB}, then buckets ({@code 12.5B}, {@code 10kB}) once it gets long. */
+    public static String milliLabel(long milliBuckets) {
+        return AddonConfig.FLUID_COMPACT.get() ? compactLabel(milliBuckets) : longLabel(milliBuckets);
+    }
+
+    /**
+     * The short form for a slot (at most 5 characters, so neighbors do not run together): {@code 500mB}, then buckets
+     * from 1000 mB on ({@code 2.5B}, {@code 12.5B}, {@code 120B}, {@code 10kB}).
+     */
+    static String compactLabel(long milliBuckets) {
+        if (milliBuckets < 1000) return milliBuckets + "mB";
+        long buckets = milliBuckets / 1000;
+        if (buckets >= 10_000) return (buckets / 1000) + "kB";
+        long rest = milliBuckets % 1000;
+        if (buckets < 10 && rest != 0) {
+            String decimals = String.format("%02d", rest / 10);
+            if (decimals.endsWith("0")) decimals = decimals.substring(0, 1);
+            if (!decimals.equals("0")) return buckets + "." + decimals + "B";
+        } else if (buckets < 100 && rest >= 100) {
+            return buckets + "." + (rest / 100) + "B";
+        }
+        return buckets + "B";
+    }
+
+    /** The first form: whole millibuckets up to 9999, so {@code 2500mB} and {@code 5000mB} (what the setting turns back on). */
+    static String longLabel(long milliBuckets) {
+        if (milliBuckets < 10_000) return milliBuckets + "mB";
+        long buckets = milliBuckets / 1000;
+        if (buckets >= 10_000) return (buckets / 1000) + "kB";
+        if (buckets < 100 && milliBuckets % 1000 != 0) {
+            long tenths = (milliBuckets % 1000) / 100;
+            if (tenths != 0) return buckets + "." + tenths + "B";
+        }
+        return buckets + "B";
+    }
+
     /** {@code namespace:path} of the fluid a carrier stack stands for, or null for anything else. */
     public static String fluidIdOf(ItemStack stack) {
         if (stack.isEmpty() || !stack.is(Items.BUCKET)) return null;
@@ -186,7 +228,12 @@ public final class FluidStacks {
                 NeiAddon.LOGGER.debug("Could not build the tooltip of fluid {}", id, e);
             }
         }
-        return stack.getTooltipLines(player, flag);
+        List<Component> lines = stack.getTooltipLines(player, flag);
+        if (milliBuckets > 0 && StackIds.anyMilli() && isMilli(stack)) {
+            lines = new java.util.ArrayList<>(lines);
+            StackIds.replaceMilliLine(lines, milliBuckets);
+        }
+        return lines;
     }
 
     @SuppressWarnings("deprecation")

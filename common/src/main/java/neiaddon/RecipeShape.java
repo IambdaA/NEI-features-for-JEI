@@ -168,7 +168,13 @@ public final class RecipeShape {
         for (ItemStack s : slot.getItemStacks()
             .toList()) {
             if (s.isEmpty()) continue;
-            if (seen.add(RecipeData.idOf(s))) alts.add(new Alt(McCompat.copyWithCount(s, 1), Math.max(1, s.getCount())));
+            String id = RecipeData.idOf(s);
+            if (!seen.add(id)) continue;
+            long amount = Math.max(1, s.getCount());
+            // items that stand for a fluid (NTM - Continuum) keep the amount in their data; the tooltip says it in mB
+            long milli = StackIds.milliAmount(s, id);
+            if (milli > 0) amount = milli;
+            alts.add(new Alt(McCompat.copyWithCount(s, 1), (int) Math.min(Integer.MAX_VALUE, amount)));
         }
         addFluids(slot, alts, seen);
         return alts;

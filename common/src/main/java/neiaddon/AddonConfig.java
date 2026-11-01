@@ -71,6 +71,10 @@ public final class AddonConfig {
         .comment("Mouse wheel over a recipe's heart picks which result to favorite (as NEI does). Off: the heart uses the first result, and Shift+F over a result slot favorites that result.")
         .define("heartScrollResult", true);
 
+    public static final ConfigSpec.BooleanValue FLUID_COMPACT = B
+        .comment("Short fluid amounts in slots: 500mB, then buckets from 1000 mB (2.5B). Off: millibuckets up to 9999 (2500mB), which can run into the next slot.")
+        .define("compactFluidAmounts", true);
+
     // NEI: the search field of the recipe GUI
     public static final ConfigSpec.BooleanValue RECIPE_SEARCH = B
         .comment("Show a search field under JEI's recipe screen that filters the recipes shown (NEI recipe search syntax).")

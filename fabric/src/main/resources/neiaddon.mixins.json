@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_17",
   "client": [
     "AbstractContainerScreenAccessor",
+    "KeyMappingAccessor",
     "KeyboardHandlerMixin",
     "MinecraftMixin"
   ],

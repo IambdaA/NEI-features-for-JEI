@@ -9,6 +9,8 @@ import mezz.jei.api.gui.buttons.IIconButtonController;
 import mezz.jei.api.gui.builder.ITooltipBuilder;
 import mezz.jei.api.gui.drawable.IDrawable;
 import mezz.jei.api.gui.inputs.IJeiUserInput;
+import mezz.jei.api.gui.ingredient.IRecipeSlotRichTooltipCallback;
+import mezz.jei.api.gui.ingredient.IRecipeSlotView;
 import mezz.jei.api.gui.inputs.RecipeSlotUnderMouse;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.advanced.IRecipeButtonControllerFactory;
@@ -126,6 +128,8 @@ public final class RecipeHearts {
         final RecipeShape shape;
         private final List<String> resultIds = new ArrayList<>();
         private int selected;
+        /** True when the hint of fluid result slots is part of JEI's own tooltip (see {@link #injectHints}). */
+        private boolean hintsInjected;
 
         Controller(IRecipeLayoutDrawable<?> layout) {
             this.layout = layout;
@@ -135,6 +139,42 @@ public final class RecipeHearts {
             String favorite = Favorites.itemFor(shape.id);
             int at = favorite == null ? -1 : resultIds.indexOf(favorite);
             selected = Math.max(0, at);
+            hintsInjected = injectHints();
+        }
+
+        /**
+         * JEI has no event for the tooltip of a fluid, only the callbacks a recipe's own slots were built with. Add one to
+         * each result slot so the hotkey hint is a line of that tooltip. This reaches into JEI's slot class; when that
+         * does not work the hint is drawn in a box of its own instead ({@link #onRenderHint}).
+         */
+        @SuppressWarnings("unchecked")
+        private boolean injectHints() {
+            IRecipeSlotRichTooltipCallback callback = (slot, tooltip) -> {
+                if (slot.getRole() != RecipeIngredientRole.OUTPUT || !usable()) return;
+                List<RecipeShape.Alt> alts = RecipeShape.altsOf(slot);
+                if (alts.isEmpty()) return;
+                String result = alts.get(0)
+                    .id();
+                // items get theirs from the item tooltip event
+                if (!FluidStacks.isFluidId(result) || !resultIds.contains(result)) return;
+                for (String line : resultHint(this, result)) tooltip.add(Component.literal(line));
+            };
+            boolean any = false;
+            try {
+                for (IRecipeSlotView slot : layout.getRecipeSlotsView()
+                    .getSlotViews()) {
+                    if (slot.getRole() != RecipeIngredientRole.OUTPUT) continue;
+                    any = true;
+                    java.lang.reflect.Field field = slot.getClass()
+                        .getDeclaredField("tooltipCallbacks");
+                    field.setAccessible(true);
+                    ((List<IRecipeSlotRichTooltipCallback>) field.get(slot)).add(callback);
+                }
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+                NeiAddon.LOGGER.debug("Could not add the hotkey hint to JEI's slot tooltips", e);
+                return false;
+            }
+            return any;
         }
 
         private boolean usable() {
@@ -430,7 +470,7 @@ public final class RecipeHearts {
     static void onRenderHint(ScreenEvent.Render.Post event) {
         if (!onRecipesScreen()) return;
         Controller recipe = fresh(hoverLayout, layoutStamp);
-        if (recipe == null || !recipe.usable()) return;
+        if (recipe == null || !recipe.usable() || recipe.hintsInjected) return;
         if (Math.abs(event.getMouseX() - hoverX) > 1 || Math.abs(event.getMouseY() - hoverY) > 1) return;
         String result = recipe.hoveredResultId();
         if (result == null || !FluidStacks.isFluidId(result) || !recipe.resultIds.contains(result)) return;

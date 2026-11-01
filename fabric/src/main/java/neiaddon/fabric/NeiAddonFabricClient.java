@@ -31,6 +31,7 @@ public final class NeiAddonFabricClient implements ClientModInitializer {
         HudRenderCallback.EVENT.register((graphics, tickDelta) -> {
             if (!Minecraft.getInstance().options.hideGui) tips.render(graphics, tickDelta);
         });
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(client -> KeyMapFix.tick());
         FabricEvents.install();
     }
 }

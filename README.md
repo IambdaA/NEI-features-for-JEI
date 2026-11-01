@@ -53,4 +53,4 @@ texture (`craftingtree.png`) is from NotEnoughItems too.
 | `26.2` | 26.2 | NeoForge | 30.x | works in game |
 | `26.1.x` | 26.1, 26.1.1, 26.1.2 | NeoForge | 29.x | one jar, not tested in game yet |
 
-Each branch builds with its own `gradle.properties`; see BUILDING.md. Releases are tagged by Minecraft version, for example `v1.1.1+mc1.21.1`.
+Each branch builds with its own `gradle.properties`; see BUILDING.md. Releases are tagged by Minecraft version, for example `v1.1.2+mc1.21.1`.
