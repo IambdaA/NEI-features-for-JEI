@@ -186,7 +186,7 @@ public final class HotkeyTips {
 
     @SubscribeEvent
     static void onTooltip(ItemTooltipEvent event) {
-        if (building) return;
+        if (building || StackIds.reading()) return;
         ItemStack stack = event.getItemStack();
         List<String> onResult = RecipeHearts.resultTooltipLines(stack);
         if (!onResult.isEmpty()) {
