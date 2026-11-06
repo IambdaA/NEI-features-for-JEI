@@ -762,7 +762,21 @@ public final class BookmarkPanel {
     private static boolean recipePictureWanted(Bookmarks.Page page, Cell cell) {
         int mode = AddonConfig.BM_TOOLTIP_MODE.get();
         boolean todo = page.meta(cell.groupId()).todo;
+<<<<<<< Updated upstream
         return cell.recipe() != null && (mode == 3 || mode == 1 && !todo || mode == 2 && todo);
+=======
+        return recipeId != null && (mode == 3 || mode == 1 && !todo || mode == 2 && todo);
+    }
+
+    /** Is this a plain item that was bookmarked together with a recipe (JEI's bookmark button, or the bookmark key over an item in a recipe)? */
+    private static boolean withRecipe(Cell cell) {
+        return cell.recipe() == null && cell.entry().isPlain() && cell.entry().recipeId != null;
+    }
+
+    /** The recipe a tooltip shows: the recipe of a recipe item, or the one a plain item was bookmarked with. */
+    private static String tipRecipe(Cell cell) {
+        return cell.recipe() != null ? cell.recipe() : cell.entry().isPlain() ? cell.entry().recipeId : null;
+>>>>>>> Stashed changes
     }
 
     private static IRecipeLayoutDrawable<?> picture(String recipeId, ItemStack hint) {
@@ -1131,6 +1145,14 @@ public final class BookmarkPanel {
             ChainItem.Type type = calc != null ? calc.item.type : entry.type;
             tip.add(Component.literal("§7Recipe: x" + multiplier + (type == ChainItem.Type.RESULT ? " (result)" : " (ingredient)")));
         }
+<<<<<<< Updated upstream
+=======
+        boolean shiftPicture = withRecipe(cell) && Minecraft.getInstance().hasShiftDown();
+        if (cell.recipe() == null && tipRecipe(cell) != null && !shiftPicture && !(cell.recipe() != null && recipePictureWanted(page, cell, tipRecipe(cell)))) {
+            // JEI's own wording for a bookmarked recipe
+            tip.add(Component.literal("§7§o[Hold \"SHIFT\" for recipe details]"));
+        }
+>>>>>>> Stashed changes
         tip.add(HotkeyTips.modName(stack));
         List<FormattedCharSequence> lines = new ArrayList<>();
         for (Component line : tip) lines.addAll(font.split(line, 260));

@@ -153,6 +153,20 @@ final class TreeDraw {
      */
     static void tooltip(GuiGraphicsExtractor g, Font font, int mx, int my, int screenW, int screenH, List<FormattedCharSequence> lines,
         List<IconLine> icons, int extraW, int extraH, ExtraPainter extra) {
+<<<<<<< Updated upstream
+=======
+        box(g, font, mx, my, false, screenW, screenH, lines, icons, extraW, extraH, extra);
+    }
+
+    /** The same box with its content's top left corner at exactly (x, y); the caller keeps it on the screen. */
+    static void boxAt(GuiGraphicsExtractor g, Font font, int x, int y, List<FormattedCharSequence> lines, int extraW, int extraH,
+        ExtraPainter extra) {
+        box(g, font, x, y, true, 0, 0, lines, List.of(), extraW, extraH, extra);
+    }
+
+    private static void box(GuiGraphicsExtractor g, Font font, int mx, int my, boolean exact, int screenW, int screenH,
+        List<FormattedCharSequence> lines, List<IconLine> icons, int extraW, int extraH, ExtraPainter extra) {
+>>>>>>> Stashed changes
         int textW = 0;
         for (FormattedCharSequence line : lines) textW = Math.max(textW, font.width(line));
         int width = textW;

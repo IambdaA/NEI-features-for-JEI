@@ -54,7 +54,11 @@ public final class ConfigButton {
             }
             if (hover >= 0) {
                 g.setTooltipForNextFrame(Minecraft.getInstance().font,
+<<<<<<< Updated upstream
                     List.of(Component.literal(TIPS[hover]).getVisualOrderText()), event.getMouseX(), event.getMouseY());
+=======
+                    tipLines(), event.getMouseX(), event.getMouseY());
+>>>>>>> Stashed changes
             }
         } finally {
             pose.popMatrix();
@@ -68,7 +72,17 @@ public final class ConfigButton {
         int hit = over(s, event.getMouseX(), event.getMouseY());
         if (hit < 0) return;
         if (event.getButton() == 0) {
+<<<<<<< Updated upstream
             NeiSettings.open(s);
+=======
+            if (Minecraft.getInstance().hasControlDown()) {
+                // NEI: Ctrl + click on the options button cycles Recipe, Utility and Cheat Mode
+                AddonConfig.CHEAT_MODE.set((AddonConfig.CHEAT_MODE.get() + 1) % 3);
+                AddonConfig.CHEAT_MODE.save();
+            } else {
+                NeiSettings.open(s);
+            }
+>>>>>>> Stashed changes
         }
         event.setCanceled(true);
     }

@@ -2,6 +2,21 @@ package neiaddon;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+<<<<<<< Updated upstream
+=======
+import java.lang.reflect.Modifier;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Stream;
+import mezz.jei.api.ingredients.ITypedIngredient;
+import net.minecraft.client.gui.screens.Screen;
+>>>>>>> Stashed changes
 import net.minecraft.client.renderer.Rect2i;
 
 /**

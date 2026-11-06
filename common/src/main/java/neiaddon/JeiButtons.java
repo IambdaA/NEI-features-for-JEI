@@ -39,11 +39,14 @@ public final class JeiButtons {
         return SIZE;
     }
 
+<<<<<<< Updated upstream
     /** Is the point over the "show bookmarks" button? */
     public static boolean overBookmarkButton(double mx, double my, int screenHeight) {
         return inside(mx, my, MARGIN, screenHeight - MARGIN - SIZE, SIZE, SIZE);
     }
 
+=======
+>>>>>>> Stashed changes
     /** Is the point over any of the two buttons (with a little slack)? */
     public static boolean overButtonRow(double mx, double my, int screenHeight) {
         return inside(mx, my, MARGIN - 2, screenHeight - MARGIN - SIZE - 2, SIZE * 4 + GAP * 3 + 4, SIZE + 4);

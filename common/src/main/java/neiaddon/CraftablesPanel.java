@@ -367,7 +367,28 @@ public final class CraftablesPanel {
         tip.add(HotkeyTips.modName(c.out));
         List<FormattedCharSequence> lines = new ArrayList<>();
         for (Component line : tip) lines.addAll(font.split(line, 260));
+<<<<<<< Updated upstream
         g.setTooltipForNextFrame(font, lines, mx, my);
+=======
+        tipLines = lines;
+        g.setTooltipForNextFrame(font, lines, mx, my);
+    }
+
+    /** The lines of the tooltip drawn last, so the recipe picture can sit beside it. */
+    private static List<FormattedCharSequence> tipLines = List.of();
+
+    /** The tooltip lines of the cell under the mouse (empty when there is none). */
+    static List<FormattedCharSequence> hoveredTooltipLines() {
+        return hoverIndex >= 0 && hoverIndex < results.size() ? tipLines : List.of();
+    }
+
+    /** The id of the recipe the cell under the mouse crafts its item with, or null. */
+    static String hoveredRecipeId() {
+        Screen s = McCompat.screen();
+        if (s == null || rect(s) == null) return null;
+        int index = hoverIndex;
+        return index >= 0 && index < results.size() ? results.get(index).id : null;
+>>>>>>> Stashed changes
     }
 
     @SubscribeEvent(priority = EventPriority.HIGH)

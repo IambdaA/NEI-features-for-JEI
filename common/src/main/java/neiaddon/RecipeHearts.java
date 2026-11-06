@@ -50,6 +50,14 @@ public final class RecipeHearts {
     private static final String JEI_RECIPES_GUI = "mezz.jei.gui.recipes.RecipesGui";
     private static final long FRESH_NANOS = 150_000_000L;
 
+<<<<<<< Updated upstream
+=======
+    /** The recipes of the open recipe screen, as their hearts report them every frame (for the highlight of owned items). */
+    private static final List<Controller> visible = new ArrayList<>();
+    private static java.lang.reflect.Field rectField;
+    private static java.lang.reflect.Method[] rectGetters;
+    private static boolean rectBroken;
+>>>>>>> Stashed changes
     private static Controller hoverHeart;
     private static Controller hoverLayout;
     private static long heartStamp;
@@ -262,6 +270,69 @@ public final class RecipeHearts {
             }
         }
 
+<<<<<<< Updated upstream
+=======
+        /**
+         * Tints the input slots whose ingredient the inventory holds (NEI's highlight of present items). A slot that
+         * accepts several items counts when any of them is held.
+         */
+        void drawPresent(GuiGraphicsExtractor g, Map<String, Long> have) {
+            Rect2i origin = layout.getRect();
+            for (IRecipeSlotView view : layout.getRecipeSlotsView()
+                .getSlotViews()) {
+                if (view.getRole() != RecipeIngredientRole.INPUT || !(view instanceof IRecipeSlotDrawable slot)) continue;
+                boolean present = false;
+                for (RecipeShape.Alt alt : RecipeShape.altsOf(view)) {
+                    Long held = have.get(alt.id());
+                    if (held != null && held >= alt.count()) {
+                        present = true;
+                        break;
+                    }
+                }
+                if (!present) continue;
+                Rect2i area = slotRect(slot);
+                if (area == null) return;
+                int x = origin.getX() + area.getX();
+                int y = origin.getY() + area.getY();
+                int w = area.getWidth();
+                int h = area.getHeight();
+                g.fill(x, y, x + w, y + h, PRESENT_COLOR);
+            }
+        }
+
+        /**
+         * The slot's own rectangle, relative to the recipe. JEI's {@code getAreaIncludingBackground} puts the slot's
+         * background (an offset from the slot) at an offset from the recipe instead, so for most slots it is a box reaching
+         * out to the top left corner of the recipe; the field it is built from is read directly. Null when that does not work.
+         */
+        private static Rect2i slotRect(IRecipeSlotDrawable slot) {
+            if (rectBroken) return null;
+            try {
+                if (rectField == null) {
+                    rectField = slot.getClass()
+                        .getDeclaredField("rect");
+                    rectField.setAccessible(true);
+                }
+                Object rect = rectField.get(slot);
+                if (rectGetters == null) {
+                    rectGetters = new java.lang.reflect.Method[4];
+                    String[] names = { "getX", "getY", "getWidth", "getHeight" };
+                    for (int i = 0; i < 4; i++) {
+                        rectGetters[i] = rect.getClass()
+                            .getMethod(names[i]);
+                        rectGetters[i].setAccessible(true);
+                    }
+                }
+                return new Rect2i((Integer) rectGetters[0].invoke(rect), (Integer) rectGetters[1].invoke(rect),
+                    (Integer) rectGetters[2].invoke(rect), (Integer) rectGetters[3].invoke(rect));
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+                rectBroken = true;
+                NeiAddon.LOGGER.warn("Could not read the position of recipe slots: no highlight of present items", e);
+                return null;
+            }
+        }
+
+>>>>>>> Stashed changes
         /** Everything the result slot under the mouse accepts, or an empty list when the mouse is not over a result slot. */
         List<RecipeShape.Alt> hoveredResultAlts() {
             Optional<RecipeSlotUnderMouse> under = layout.getSlotUnderMouse(hoverX, hoverY);
@@ -334,6 +405,24 @@ public final class RecipeHearts {
     }
 
     /**
+<<<<<<< Updated upstream
+=======
+     * How often a recipe saved with the bookmark key is set to run (NEI bookmarkRecipeWithCount): once when the option
+     * is on or Ctrl is held, otherwise it has no count yet (0).
+     */
+    static long startRuns() {
+        return AddonConfig.BM_RECIPE_WITH_COUNT.get() || Minecraft.getInstance()
+            .hasControlDown() ? 1 : 0;
+    }
+
+    /** The id of the recipe the mouse is over in JEI's recipe screen (NEI's focused recipe), or null. */
+    public static String hoveredRecipeId() {
+        Controller recipe = fresh(hoverLayout, layoutStamp);
+        return recipe != null && recipe.usable() ? recipe.shape.id : null;
+    }
+
+    /**
+>>>>>>> Stashed changes
      * Shift + favorite key over a result slot of a recipe in JEI's recipe screen: makes the recipe the favorite of that
      * result, or removes it when it already is. Returns true if the key was used.
      */
