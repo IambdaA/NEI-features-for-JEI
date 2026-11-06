@@ -1,10 +1,12 @@
 package neiaddon;
 
 import java.util.List;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
 import neiaddon.event.EventPriority;
 import neiaddon.event.SubscribeEvent;
 import neiaddon.event.ScreenEvent;
@@ -22,6 +24,21 @@ public final class ConfigButton {
 
     private static final String[] LABELS = { "N" };
     private static final String[] TIPS = { "NEI Features Options" };
+    private static final String[] MODES = { "Recipe Mode", "Utility Mode", "Cheat Mode" };
+
+    /** NEI's options button tooltip: its name, the cheat mode (gold: utility, red: cheat) and how to change it. */
+    private static List<FormattedCharSequence> tipLines() {
+        int mode = Math.max(0, Math.min(AddonConfig.CHEAT_MODE.get(), 2));
+        ChatFormatting color = mode == 1 ? ChatFormatting.GOLD : mode == 2 ? ChatFormatting.RED : ChatFormatting.WHITE;
+        return List.of(Component.literal(TIPS[0])
+            .getVisualOrderText(),
+            Component.literal(MODES[mode])
+                .withStyle(color)
+                .getVisualOrderText(),
+            Component.literal("Ctrl-click here to cycle between Recipe, Utility, and Cheat Mode.")
+                .withStyle(color)
+                .getVisualOrderText());
+    }
 
     private static int buttonX(int i) {
         return JeiButtons.configX() + i * (JeiButtons.size() + 2);
@@ -53,7 +70,7 @@ public final class ConfigButton {
             }
             if (hover >= 0) {
                 g.renderTooltip(Minecraft.getInstance().font,
-                    List.of(Component.literal(TIPS[hover]).getVisualOrderText()), event.getMouseX(), event.getMouseY());
+                    tipLines(), event.getMouseX(), event.getMouseY());
             }
         } finally {
             pose.popMatrix();
@@ -67,7 +84,13 @@ public final class ConfigButton {
         int hit = over(s, event.getMouseX(), event.getMouseY());
         if (hit < 0) return;
         if (event.getButton() == 0) {
-            NeiSettings.open(s);
+            if (McCompat.ctrl()) {
+                // NEI: Ctrl + click on the options button cycles Recipe, Utility and Cheat Mode
+                AddonConfig.CHEAT_MODE.set((AddonConfig.CHEAT_MODE.get() + 1) % 3);
+                AddonConfig.CHEAT_MODE.save();
+            } else {
+                NeiSettings.open(s);
+            }
         }
         event.setCanceled(true);
     }
