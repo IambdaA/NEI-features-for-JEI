@@ -13,11 +13,7 @@ If Loom says it needs another Gradle, run `./gradlew wrapper --gradle-version <t
 - `neoforge/` - `NeiAddonNeoForge` / `NeiAddonNeoForgeClient` (the `@Mod` entry points), `NeoEvents` (hooks NeoForge's screen, tick and tooltip events to the addon's bus, one listener per priority), `NeoPlatform`, `NeoClientPlatform`, `neoforge.mods.toml`.
 - `fabric/` - `NeiAddonFabric` / `NeiAddonFabricClient` (entry points), `FabricEvents` (the same hooks on Fabric API's per-screen events, in phases ordered like NeoForge's priorities), four small mixins (typed characters, screen drawing, container screen drawing, end of frame), an access widener (container screen size and hovered slot), `fabric.mod.json` (JEI plugin entry point `jei_mod_plugin`).
 - What the shared code needs from a loader is in `neiaddon.platform` (config folder, mod names, the optional chat link channel, a container screen's bounds and hovered slot). The handler classes use the addon's own `neiaddon.event` (`@SubscribeEvent`, `EventPriority`, `ScreenEvent`..., same names and getters as NeoForge's, run by `Bus`), and the settings are `neiaddon.config.ConfigSpec`, which reads and writes `config/neiaddon-client.toml`.
-<<<<<<< Updated upstream
-- Fabric differences: the settings screen opens from the gear button on container screens (no Mod Menu entry), and the highlight tips HUD is not hidden by F1.
-=======
 - Fabric differences: the settings screen opens from the N button in JEI's bottom-left button row (no Mod Menu entry), and the highlight tips HUD is not hidden by F1.
->>>>>>> Stashed changes
 
 ## Features
 - **Highlight tips** (as NEI's HUDRenderer): a tooltip-style box with the item and name of the BLOCK under the crosshair (not entities). Off by default; Numpad 0 toggles it, the player-list key (Tab) hides it. Position `hudX`/`hudY` (0..10000, NEI defaults 5000/100) in `neiaddon-client.toml`; bind "Move Highlight Tooltips" in Controls to open NEI's drag-to-position screen. Extras not in NEI (off by default): `hudShowMod`, `hudShowId`.
@@ -35,8 +31,6 @@ If Loom says it needs another Gradle, run `./gradlew wrapper --gradle-version <t
   - The chain maths is plain Java (`neiaddon.chain`, no Minecraft classes) and is checked by `tools/ChainMathCheck.java`; the model and the layout by `tools/ModelCheck.java` / `tools/LayoutCheck.java` against stand-in classes (`tools/make_stubs.py`, see the headers of those files). These checks never touch the real game: they only catch mistakes in this addon's own code.
 - **Crafting calculator** (per group): steps and raw materials; click a step = other recipe, right click = treat as raw, +/- adjust amounts. Works with any recipe type JEI knows.
 - **Keys (Controls, NEI defaults)**: `A` toggles a bookmark for the hovered item (JEI list, recipe screen or inventory slot; over a bookmark it removes it; Ctrl+A keeps the stack size), `Shift+A` over a group strip or the page label removes the group, `T` over a group strip or the label opens the crafting tree window when that group is in crafting-chain mode, `B` hides/shows the panel. `T` (own key, "Search Name in AE2 Terminal") over an item or fluid in an Applied Energistics 2 screen types its name into the terminal's search box. Fluid amounts are shown in mB (buckets once large). `R`/`U` are JEI's own keys and already match NEI. Ignored while the JEI search box has focus.
-<<<<<<< Updated upstream
-=======
 - **More NEI features (settings under Inventory and Tools, keys in Controls):**
   - The settings screen (mod list button, or the N button in JEI's bottom-left button row) is laid out like NEI's options screen: a column of at most 320 px with a thin scroll bar, the tiled header and footer, the page's name at the top and a Back button. Inventory holds Cheat Mode, the Utilities and Gamemodes icon rows (a lit icon is on: left click turns one on, right click off), the sub pages Bookmarks Panel, Recipes GUI, History Panel, Craftables Panel, Item Zoom Panel and Favorites, and the yes/no options with NEI's names and value texts (Yes / No, Enabled / Disabled). A number or a color is a text field (a valid value applies as you type; a color also has a swatch that opens the color picker). The root also has KeyBindings (the controls screen), World (Highlight Tooltips), Tools > Data Dumps and JEI Options. It does not pause the game and Esc goes back to where you came from. NEI's Item Panel Sorting, Search Widget, Subsets, Collapsible Items, Item IDs, item panel scale, mouse wheel transfer and per-world (W) overrides are not here: this addon has nothing for them.
   - `generateSingleRecipeFavorites` (off, as NEI): an item with exactly one recipe in JEI uses it as its favorite when it has no own favorite (used by Shift+A, Shift+F, the recipe tree and the crafting key). `favoritesDepth` (default 9, 0 to 100): how many levels a saved recipe tree goes down.
@@ -55,7 +49,6 @@ If Loom says it needs another Gradle, run `./gradlew wrapper --gradle-version <t
   - Data Dumps (Settings > Tools > Data Dumps): items, blocks, potion effects, potions, entities, enchantments, biomes and JEI's item list as CSV files in `<game folder>/neiaddon/dumps`.
   - `itemUntranslator` (off): while the game is not in English, JEI's search also finds items by their English name. Read when JEI loads, so a change applies after the next JEI reload (rejoin the world).
   - Not ported: NEI's two toggles "bookmark items with recipe" / "recipe bookmark with count" (a bookmarked recipe here is a group of its own and is always added once), the mob spawner / chunk overlays, mouse-wheel item transfer between slots (vanilla has it), "ignore potion overlap".
->>>>>>> Stashed changes
 - JEI's own bookmark overlay is switched off (it would be a second panel); the panel also appears on JEI's recipe screen. If JEI's internals change and this fails, a warning is logged and JEI's overlay stays.
 
 ## Known limits
@@ -72,8 +65,8 @@ This addon is licensed under the GNU Lesser General Public License, version 3 or
 - **Hotkeys on Alt:** items (bookmark panel and JEI's item list) and groups show "Hold ALT for hotkeys"; holding Alt lists
   the keys that work, merged and sorted like NEI (`HotkeyTips.format`). Ctrl+C copies the item name, Ctrl+X the item id.
   Over an item of JEI's list: Shift+A bookmarks its favorite recipe, Shift+F saves its favorite recipe tree.
-- **Not ported (no equivalent without NEI's server side or 1.7.10 systems):** Ctrl+D (OreDictionary),
-  pull items (V), recipe collapsing (Ctrl+D copies item tags instead of OreDictionary names).
+- **Not ported (no equivalent without NEI's server side or 1.7.10 systems):** the OreDictionary (Ctrl+D copies the item's
+  tags instead) and recipe collapsing. Pull items (V) is ported.
 - **JEI's two buttons at the bottom left:** the bookmark button shows or hides this addon's panel (JEI's own bookmark list is
   replaced). The history button works as in JEI; while the history list is on (left side) the panel leaves room for it.
   The JEI tooltip text of the bookmark button is replaced through `assets/jei/lang/en_us.json`.

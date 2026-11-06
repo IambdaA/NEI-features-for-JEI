@@ -367,9 +367,6 @@ public final class CraftablesPanel {
         tip.add(HotkeyTips.modName(c.out));
         List<FormattedCharSequence> lines = new ArrayList<>();
         for (Component line : tip) lines.addAll(font.split(line, 260));
-<<<<<<< Updated upstream
-        g.setTooltipForNextFrame(font, lines, mx, my);
-=======
         tipLines = lines;
         g.setTooltipForNextFrame(font, lines, mx, my);
     }
@@ -388,7 +385,6 @@ public final class CraftablesPanel {
         if (s == null || rect(s) == null) return null;
         int index = hoverIndex;
         return index >= 0 && index < results.size() ? results.get(index).id : null;
->>>>>>> Stashed changes
     }
 
     @SubscribeEvent(priority = EventPriority.HIGH)

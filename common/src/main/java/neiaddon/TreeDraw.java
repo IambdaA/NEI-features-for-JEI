@@ -153,8 +153,6 @@ final class TreeDraw {
      */
     static void tooltip(GuiGraphicsExtractor g, Font font, int mx, int my, int screenW, int screenH, List<FormattedCharSequence> lines,
         List<IconLine> icons, int extraW, int extraH, ExtraPainter extra) {
-<<<<<<< Updated upstream
-=======
         box(g, font, mx, my, false, screenW, screenH, lines, icons, extraW, extraH, extra);
     }
 
@@ -166,7 +164,6 @@ final class TreeDraw {
 
     private static void box(GuiGraphicsExtractor g, Font font, int mx, int my, boolean exact, int screenW, int screenH,
         List<FormattedCharSequence> lines, List<IconLine> icons, int extraW, int extraH, ExtraPainter extra) {
->>>>>>> Stashed changes
         int textW = 0;
         for (FormattedCharSequence line : lines) textW = Math.max(textW, font.width(line));
         int width = textW;
@@ -179,12 +176,16 @@ final class TreeDraw {
         for (IconLine icon : icons) height += 2 + 11 + iconRows(icon) * TIP_SLOT;
         if (extraH > 0) height += 2 + extraH;
 
-        int x = mx + 12;
-        int y = my - 12;
-        if (x + width + 6 > screenW) x = mx - 12 - width;
-        if (y + height + 6 > screenH) y = screenH - height - 6;
-        y = Math.max(y, 6);
-        x = Math.max(x, 6);
+        int x = mx;
+        int y = my;
+        if (!exact) {
+            x = mx + 12;
+            y = my - 12;
+            if (x + width + 6 > screenW) x = mx - 12 - width;
+            if (y + height + 6 > screenH) y = screenH - height - 6;
+            y = Math.max(y, 6);
+            x = Math.max(x, 6);
+        }
 
         g.nextStratum();
         g.fill(x - 3, y - 4, x + width + 3, y + height + 4, 0xF0100010);

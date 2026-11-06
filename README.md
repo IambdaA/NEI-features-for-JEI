@@ -15,11 +15,8 @@ NotEnoughItems authors.
 - Item zoom: the hovered item drawn large beside the inventory (Shift+Z toggles, NEI options)
 - NEI recipe search: a field under JEI's recipe screen that filters the recipes shown (query like `<iron >rail`), and the same search syntax in the crafting tree search
 - Craftables panel (off by default, `craftablesEnabled` in the config): what the open container can craft from your inventory, above the quantity field
-<<<<<<< Updated upstream
-=======
 - Recipe screen extras: fill the crafting grid with a recipe (S), highlight of the ingredients you already have, the favorite recipe as a picture beside item tooltips, favorites generated for items with a single recipe
 - Utility buttons above the bookmark panel (time of day, rain, heal, game mode; NEI's Cheat Mode setting) and the same as keys, data dumps, English-name search, many NEI settings (a few defaults differ from NEI's, see BUILDING.md)
->>>>>>> Stashed changes
 - Fluid slots of JEI recipes (in millibuckets) in bookmarks, the chain maths and the crafting tree (first version)
 - Highlight tips HUD and item info pages
 - Crafting calculator
@@ -48,7 +45,7 @@ JDK 25, then `./gradlew build`. The jars are `neoforge/build/libs/neiaddon-neofo
 
 LGPL-3.0-or-later, see [LICENSE.txt](LICENSE.txt). Large parts are ports of GTNH NotEnoughItems (LGPL-3.0-or-later) by
 Chicken-Bones, GTNewHorizons and the NotEnoughItems contributors, and keep that license and credit. The crafting tree
-texture (`craftingtree.png`) is from NotEnoughItems too.
+textures (`craftingtree.png`, `nei_sprites.png`) are from NotEnoughItems too.
 
 ## Versions
 

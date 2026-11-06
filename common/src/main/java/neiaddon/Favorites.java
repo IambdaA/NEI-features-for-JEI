@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import neiaddon.platform.Platform;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * NEI's {@code FavoriteRecipes} (manual favorites only): one favorite recipe per result item.
@@ -49,6 +50,16 @@ public final class Favorites {
     public static String recipeFor(String itemId) {
         ensureLoaded();
         return byItem.get(itemId);
+    }
+
+    /**
+     * The favorite recipe of an item for the recipe tree and the keys: the one set by hand, else, when generated
+     * favorites are on, the only recipe that makes the item. {@code stack} is the item (for the search).
+     */
+    public static String recipeFor(String itemId, ItemStack stack) {
+        String manual = recipeFor(itemId);
+        if (manual != null || stack == null || !AddonConfig.FAVORITES_AUTO.get()) return manual;
+        return RecipeLookup.onlyRecipeFor(stack);
     }
 
     /** The item a recipe is the favorite of, or null. */
