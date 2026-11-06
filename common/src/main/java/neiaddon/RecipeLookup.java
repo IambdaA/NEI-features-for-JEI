@@ -30,10 +30,20 @@ public final class RecipeLookup {
     private static final Map<String, RecipeShape> cache = new HashMap<>();
     private static final java.util.Set<String> missing = new java.util.HashSet<>();
     private static final Map<String, Target<?>> targets = new HashMap<>();
+    /** Item id -> the id of the only recipe making it, or "" when it has none or several. */
+    private static final Map<String, String> onlyRecipes = new HashMap<>();
+    /** Counts the JEI reloads, so pictures of recipes kept elsewhere know when to be dropped. */
+    private static int generation;
 
     private RecipeLookup() {}
 
+    public static int generation() {
+        return generation;
+    }
+
     public static void reset() {
+        generation++;
+        onlyRecipes.clear();
         cache.clear();
         missing.clear();
         targets.clear();
@@ -91,12 +101,85 @@ public final class RecipeLookup {
         }
 
         /** Moves the ingredients for one craft into the grid (JEI sends the request to the server). */
-        @SuppressWarnings("removal")
         public boolean transfer(AbstractContainerMenu menu, Player player) {
+            return transfer(menu, player, false);
+        }
+
+        /** The same, and with {@code max} as many crafts as the grid takes (what Shift does on JEI's "+" button). */
+        @SuppressWarnings("removal")
+        public boolean transfer(AbstractContainerMenu menu, Player player, boolean max) {
             IJeiRuntime rt = Calculator.runtime;
             if (rt == null) return false;
             IRecipeTransferHandler<AbstractContainerMenu, T> handler = handler(rt, menu);
-            return handler != null && handler.transferRecipe(menu, recipe, slots, player, false, true) == null;
+            return handler != null && handler.transferRecipe(menu, recipe, slots, player, max, true) == null;
+        }
+    }
+
+    /** Moves the ingredients of the recipe a layout shows into the open container, like JEI's "+" button. */
+    public static <T> boolean transfer(IRecipeLayoutDrawable<T> layout, AbstractContainerMenu menu, Player player, boolean max) {
+        return new Target<>(layout.getRecipeCategory(), layout.getRecipe(), layout.getRecipeSlotsView()).transfer(menu, player, max);
+    }
+
+    /** What a search for the recipes making one item found. */
+    private static final class Count {
+
+        int recipes;
+        RecipeShape shape;
+    }
+
+    /**
+     * NEI's generated single-recipe favorite: the id of the recipe when exactly one recipe in all of JEI makes the item
+     * (and it has ingredients), else null. The answer is kept until JEI reloads.
+     */
+    public static String onlyRecipeFor(ItemStack stack) {
+        if (stack.isEmpty()) return null;
+        String key = RecipeData.idOf(stack);
+        String known = onlyRecipes.get(key);
+        if (known != null) return known.isEmpty() ? null : known;
+        IJeiRuntime rt = Calculator.runtime;
+        if (rt == null) return null;
+        String found = "";
+        try {
+            IFocus<?> focus = FluidStacks.focus(rt, RecipeIngredientRole.OUTPUT, stack);
+            IRecipeManager manager = rt.getRecipeManager();
+            Count count = new Count();
+            for (IRecipeCategory<?> category : manager.createRecipeCategoryLookup()
+                .limitFocus(List.of(focus))
+                .get()
+                .toList()) {
+                scan(rt, manager, category, focus, count);
+                if (count.recipes > 1) break;
+            }
+            if (count.recipes == 1 && count.shape != null && !count.shape.inputs.isEmpty()) found = count.shape.id;
+        } catch (RuntimeException e) {
+            NeiAddon.LOGGER.warn("Could not look for the recipes of {}", key, e);
+        }
+        onlyRecipes.put(key, found);
+        return found.isEmpty() ? null : found;
+    }
+
+    private static <T> void scan(IJeiRuntime rt, IRecipeManager manager, IRecipeCategory<T> category, IFocus<?> focus, Count count) {
+        for (T recipe : manager.createRecipeLookup(category.getRecipeType())
+            .limitFocus(List.of(focus))
+            .get()
+            .toList()) {
+            Optional<IRecipeLayoutDrawable<T>> layout = manager.createRecipeLayoutDrawable(
+                category,
+                recipe,
+                rt.getJeiHelpers()
+                    .getFocusFactory()
+                    .getEmptyFocusGroup());
+            if (layout.isEmpty()) continue;
+            count.recipes++;
+            if (count.recipes > 1) return;
+            String id = RecipeShape.idOf(layout.get());
+            RecipeShape shape = RecipeShape.read(layout.get()
+                .getRecipeSlotsView(), id);
+            targets.put(id, new Target<>(category, recipe, layout.get()
+                .getRecipeSlotsView()));
+            cache.put(id, shape);
+            missing.remove(id);
+            count.shape = shape;
         }
     }
 

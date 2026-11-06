@@ -465,17 +465,29 @@ public final class Bookmarks {
 
     /** Adds an item to a group of the active page (NO_GROUP = ungrouped, appended at the end). */
     public static void add(ItemStack stack, long amount, int groupId) {
+        add(stack, amount, groupId, null);
+    }
+
+    /**
+     * Like {@link #add(ItemStack, long, int)}, and a plain item can remember the recipe it was bookmarked from
+     * ({@code recipeId}, NEI bookmarkItemsWithRecipe): its tooltip then shows that recipe. It is not part of a recipe
+     * (no chain), so it keeps type ITEM; an item that is already there keeps the recipe it has, or gets this one.
+     */
+    public static void add(ItemStack stack, long amount, int groupId, String recipeId) {
         if (stack.isEmpty()) return;
         Page page = page();
         Calculator.StackKey key = new Calculator.StackKey(stack);
         for (Entry e : page.entries) {
             if (e.isPlain() && e.key.equals(key)) {
                 e.amount += amount;
+                if (e.recipeId == null) e.recipeId = recipeId;
                 save();
                 return;
             }
         }
-        page.entries.add(insertIndex(page, groupId), new Entry(key, amount, groupId));
+        Entry added = new Entry(key, amount, groupId);
+        added.recipeId = recipeId;
+        page.entries.add(insertIndex(page, groupId), added);
         save();
     }
 
@@ -537,6 +549,11 @@ public final class Bookmarks {
 
     /** NEI's bookmark.add key: removes the item if it is already bookmarked, otherwise adds it. */
     public static void toggle(ItemStack stack, long amount) {
+        toggle(stack, amount, null);
+    }
+
+    /** {@link #toggle(ItemStack, long)}; an item that gets added remembers {@code recipeId} (may be null). */
+    public static void toggle(ItemStack stack, long amount, String recipeId) {
         if (stack.isEmpty()) return;
         Page page = page();
         Calculator.StackKey key = new Calculator.StackKey(stack);
@@ -546,7 +563,7 @@ public final class Bookmarks {
                 return;
             }
         }
-        add(stack, amount, NO_GROUP);
+        add(stack, amount, NO_GROUP, recipeId);
     }
 
     /** Is this item bookmarked as a plain item on the active page? */

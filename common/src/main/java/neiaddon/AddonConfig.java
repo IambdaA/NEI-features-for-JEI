@@ -75,6 +75,82 @@ public final class AddonConfig {
         .comment("Short fluid amounts in slots: 500mB, then buckets from 1000 mB (2.5B). Off: millibuckets up to 9999 (2500mB), which can run into the next slot.")
         .define("compactFluidAmounts", true);
 
+    // NEI: inventory.favorites.*
+    public static final ConfigSpec.BooleanValue FAVORITES_AUTO = B
+        .comment("Use the only recipe of an item as its favorite when the item has exactly one recipe and no favorite of its own (NEI generateSingleRecipeFavorites).")
+        .define("generateSingleRecipeFavorites", false);
+
+    public static final ConfigSpec.IntValue FAVORITES_DEPTH = B
+        .comment("How many levels a recipe tree goes down when it is saved (NEI inventory.favorites.depth, default 9).")
+        .defineInRange("favoritesDepth", 9, 0, 100);
+
+    public static final ConfigSpec.BooleanValue RECIPE_TIP_LIST = B
+        .comment("Show the favorite recipe of an item of JEI's item list, lookup history or craftables panel in a box beside its tooltip (NEI showRecipeTooltipInPanel). The craftables panel shows the recipe it crafts the item with.")
+        .define("recipeTooltipInList", false);
+
+    public static final ConfigSpec.BooleanValue RECIPE_TIP_GUI = B
+        .comment("Show the favorite recipe of an item of JEI's recipe screen in a box beside its tooltip (NEI showRecipeTooltipInGui).")
+        .define("recipeTooltipInRecipeScreen", false);
+
+    public static final ConfigSpec.BooleanValue HIGHLIGHT_PRESENT = B
+        .comment("Tint the ingredients of a recipe in JEI's recipe screen that are in your inventory (NEI slotHighlightPresent).")
+        .define("highlightPresentItems", false);
+
+    public static final ConfigSpec.IntValue BM_TIP_ROWS = B
+        .comment("Most rows of icons in a bookmark group's crafting chain tooltip, 0 for no limit (NEI maxVerticalTooltipRows).")
+        .defineInRange("bookmarkTooltipRows", 5, 0, 50);
+
+    public static final ConfigSpec.IntValue KEY_DEFAULTS = B
+        .comment("Internal: set once the addon has put its unbound keys back on their defaults (done once per version of that fix).")
+        .defineInRange("keyDefaultsDone", 0, 0, 100);
+
+    public static final ConfigSpec.BooleanValue BM_JEI_BOOKMARKS = B
+        .comment("What JEI's own bookmark button (on each recipe) and its bookmark key add goes into this addon's bookmark panel instead of JEI's own list.")
+        .define("jeiBookmarksToPanel", true);
+
+    public static final ConfigSpec.IntValue BM_MARGIN_TOP = B
+        .comment("Extra space above the bookmark panel, in pixels, for a mod that draws on the screen without telling anyone (the panel already moves out of the way of buttons it can find).")
+        .defineInRange("bookmarkMarginTop", 0, 0, 400);
+
+    public static final ConfigSpec.IntValue BM_MARGIN_LEFT = B
+        .comment("Extra space left of the bookmark panel, in pixels.")
+        .defineInRange("bookmarkMarginLeft", 0, 0, 400);
+
+    public static final ConfigSpec.BooleanValue BM_ANIMATION = B
+        .comment("Slide bookmarks to their new place when the panel rearranges (NEI's REI style animation).")
+        .define("bookmarkAnimation", false);
+
+    public static final ConfigSpec.BooleanValue SHOW_HOTKEYS = B
+        .comment("List the keys that work on an item in its tooltip while Alt is held (NEI showHotkeys).")
+        .define("showHotkeys", true);
+
+    // NEI: inventory.cheatmode (0 recipe mode, 1 utility mode, 2 cheat mode), inventory.utilities, inventory.gamemodes
+    public static final ConfigSpec.IntValue CHEAT_MODE = B
+        .comment("Utility buttons above the bookmark panel (NEI cheat mode): 0 recipe mode (none), 1 utility mode (the ones picked below), 2 cheat mode (all).")
+        .defineInRange("cheatMode", 0, 0, 2);
+    public static final ConfigSpec.BooleanValue UTIL_TIME = B
+        .comment("Utility mode: the four time of day buttons.")
+        .define("utilityTime", true);
+    public static final ConfigSpec.BooleanValue UTIL_RAIN = B
+        .comment("Utility mode: the rain button.")
+        .define("utilityRain", true);
+    public static final ConfigSpec.BooleanValue UTIL_HEAL = B
+        .comment("Utility mode: the heal button.")
+        .define("utilityHeal", true);
+    public static final ConfigSpec.BooleanValue UTIL_GAMEMODE = B
+        .comment("Utility mode: the game mode button.")
+        .define("utilityGamemode", true);
+    public static final ConfigSpec.BooleanValue GM_CREATIVE = B
+        .comment("The game mode button cycles to creative.")
+        .define("gamemodeCreative", true);
+    public static final ConfigSpec.BooleanValue GM_ADVENTURE = B
+        .comment("The game mode button cycles to adventure.")
+        .define("gamemodeAdventure", true);
+
+    public static final ConfigSpec.BooleanValue UNTRANSLATE = B
+        .comment("Also find items by their English name when the game is not in English (NEI itemUntranslator). Applies after the next JEI reload.")
+        .define("itemUntranslator", false);
+
     // NEI: the search field of the recipe GUI
     public static final ConfigSpec.BooleanValue RECIPE_SEARCH = B
         .comment("Show a search field under JEI's recipe screen that filters the recipes shown (NEI recipe search syntax).")
@@ -94,7 +170,7 @@ public final class AddonConfig {
         .define("itemZoomOnlySolid", false);
 
     public static final ConfigSpec.IntValue ZOOM_SIDE = B
-        .comment("Side of the zoom: 0 auto (the side the mouse is not on), 1 left, 2 right.")
+        .comment("Side of the zoom (NEI preferredSide): 0 auto (the side whose panel holds fewer items, the other one when the mouse is over it), 1 left, 2 right.")
         .defineInRange("itemZoomSide", 1, 0, 2);
 
     public static final ConfigSpec.BooleanValue ZOOM_HELP = B
@@ -133,6 +209,18 @@ public final class AddonConfig {
     public static final ConfigSpec.BooleanValue BM_WORLD_SPECIFIC = B
         .comment("Keep a separate bookmark list for every world and server (NEI worldSpecific).")
         .define("bookmarksWorldSpecific", false);
+
+    public static final ConfigSpec.BooleanValue BM_VISIBLE = B
+        .comment("Show the bookmark panel (NEI bookmarks.enabled). The bookmarks key and the bookmarks button in JEI's button row switch it too.")
+        .define("bookmarksVisible", true);
+
+    public static final ConfigSpec.BooleanValue BM_ITEMS_WITH_RECIPE = B
+        .comment("A bookmarks key press (A) over an item inside a recipe of JEI's recipe screen saves the recipe with the item, and its tooltip then shows that recipe (NEI bookmarkItemsWithRecipe).")
+        .define("bookmarkItemsWithRecipe", true);
+
+    public static final ConfigSpec.BooleanValue BM_RECIPE_WITH_COUNT = B
+        .comment("A recipe saved with Shift+A starts with a count of one run (NEI bookmarkRecipeWithCount). Off: it starts without a count and Ctrl+Shift+A saves it with one.")
+        .define("bookmarkRecipeWithCount", true);
 
     static final ConfigSpec SPEC = B.build();
 
