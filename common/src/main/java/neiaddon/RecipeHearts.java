@@ -1,7 +1,9 @@
 package neiaddon;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import mezz.jei.api.gui.IRecipeLayoutDrawable;
 import mezz.jei.api.gui.buttons.IButtonState;
@@ -10,6 +12,7 @@ import mezz.jei.api.gui.builder.ITooltipBuilder;
 import mezz.jei.api.gui.drawable.IDrawable;
 import mezz.jei.api.gui.inputs.IJeiUserInput;
 import mezz.jei.api.gui.ingredient.IRecipeSlotRichTooltipCallback;
+import mezz.jei.api.gui.ingredient.IRecipeSlotDrawable;
 import mezz.jei.api.gui.ingredient.IRecipeSlotView;
 import mezz.jei.api.gui.inputs.RecipeSlotUnderMouse;
 import mezz.jei.api.recipe.RecipeIngredientRole;
@@ -50,6 +53,8 @@ public final class RecipeHearts {
     private static final String JEI_RECIPES_GUI = "mezz.jei.gui.recipes.RecipesGui";
     private static final long FRESH_NANOS = 150_000_000L;
 
+    /** The recipes of the open recipe screen, as their hearts report them every frame (for the highlight of owned items). */
+    private static final List<Controller> visible = new ArrayList<>();
     private static Controller hoverHeart;
     private static Controller hoverLayout;
     private static long heartStamp;
@@ -128,6 +133,8 @@ public final class RecipeHearts {
         final RecipeShape shape;
         private final List<String> resultIds = new ArrayList<>();
         private int selected;
+        /** When the screen last drew this recipe (see {@link #visible}). */
+        private long seen;
         /** True when the hint of fluid result slots is part of JEI's own tooltip (see {@link #injectHints}). */
         private boolean hintsInjected;
 
@@ -243,6 +250,8 @@ public final class RecipeHearts {
         @Override
         public void drawExtras(GuiGraphics g, Rect2i buttonArea, int mouseX, int mouseY, float partialTicks) {
             long now = System.nanoTime();
+            seen = now;
+            if (!visible.contains(this)) visible.add(this);
             if (mouseX >= buttonArea.getX() && mouseX < buttonArea.getX() + buttonArea.getWidth()
                 && mouseY >= buttonArea.getY() && mouseY < buttonArea.getY() + buttonArea.getHeight()) {
                 hoverHeart = this;
@@ -259,6 +268,35 @@ public final class RecipeHearts {
                 hoverY = mouseY;
             } else if (hoverLayout == this) {
                 hoverLayout = null;
+            }
+        }
+
+        /**
+         * Tints the input slots whose ingredient the inventory holds (NEI's highlight of present items). A slot that
+         * accepts several items counts when any of them is held.
+         */
+        void drawPresent(GuiGraphics g, Map<String, Long> have) {
+            Rect2i origin = layout.getRect();
+            for (IRecipeSlotView view : layout.getRecipeSlotsView()
+                .getSlotViews()) {
+                if (view.getRole() != RecipeIngredientRole.INPUT || !(view instanceof IRecipeSlotDrawable slot)) continue;
+                boolean present = false;
+                for (RecipeShape.Alt alt : RecipeShape.altsOf(view)) {
+                    Long held = have.get(alt.id());
+                    if (held != null && held >= alt.count()) {
+                        present = true;
+                        break;
+                    }
+                }
+                if (!present) continue;
+                // the slot's own rectangle (getAreaIncludingBackground puts the slot's background at the wrong place)
+                Rect2i area = slot.getRect();
+                int x = origin.getX() + area.getX();
+                int y = origin.getY() + area.getY();
+                int w = area.getWidth();
+                int h = area.getHeight();
+                // in front of the item
+                Pose.over(g, () -> g.fill(x, y, x + w, y + h, PRESENT_COLOR));
             }
         }
 
@@ -283,6 +321,32 @@ public final class RecipeHearts {
         }
     }
 
+    /** Translucent green over an ingredient that is in the inventory. */
+    private static final int PRESENT_COLOR = 0x6000C800;
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    static void onRenderPresent(ScreenEvent.Render.Post event) {
+        long now = System.nanoTime();
+        visible.removeIf(c -> now - c.seen > FRESH_NANOS);
+        if (visible.isEmpty() || !AddonConfig.HIGHLIGHT_PRESENT.get() || !onRecipesScreen()) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return;
+        Map<String, Long> have = new HashMap<>();
+        for (net.minecraft.world.inventory.Slot slot : mc.player.containerMenu.slots) {
+            if (slot.hasItem() && !(slot instanceof net.minecraft.world.inventory.ResultSlot)) {
+                have.merge(RecipeData.idOf(slot.getItem()), (long) slot.getItem()
+                    .getCount(), Long::sum);
+            }
+        }
+        for (Controller c : visible) {
+            try {
+                c.drawPresent(event.getGuiGraphics(), have);
+            } catch (RuntimeException e) {
+                NeiAddon.LOGGER.debug("Could not highlight the items of a recipe", e);
+            }
+        }
+    }
+
     private static String nameOf(String itemId) {
         ItemStack stack = FluidStacks.stackOf(itemId);
         return stack.isEmpty() ? itemId : FluidStacks.name(stack)
@@ -291,7 +355,7 @@ public final class RecipeHearts {
 
     // ---------------------------------------------------------------- keys
 
-    private static boolean onRecipesScreen() {
+    static boolean onRecipesScreen() {
         Screen s = McCompat.screen();
         return s != null && s.getClass()
             .getName()
@@ -323,7 +387,7 @@ public final class RecipeHearts {
             RecipeData data = recipe.shape.toData(recipe.hoveredResultId());
             // NEI: if the recipe is already bookmarked in the default group the key removes it, else it adds it
             if (!Bookmarks.removeRecipe(page, data.recipeId, Bookmarks.NO_GROUP)) {
-                if (Bookmarks.addRecipe(page, data, 1, Bookmarks.NO_GROUP)) {
+                if (Bookmarks.addRecipe(page, data, startRuns(), Bookmarks.NO_GROUP)) {
                     page.normalize();
                     Bookmarks.save();
                 }
@@ -331,6 +395,20 @@ public final class RecipeHearts {
             return true;
         }
         return false;
+    }
+
+    /**
+     * How often a recipe saved with the bookmark key is set to run (NEI bookmarkRecipeWithCount): once when the option
+     * is on or Ctrl is held, otherwise it has no count yet (0).
+     */
+    static long startRuns() {
+        return AddonConfig.BM_RECIPE_WITH_COUNT.get() || McCompat.ctrl() ? 1 : 0;
+    }
+
+    /** The id of the recipe the mouse is over in JEI's recipe screen (NEI's focused recipe), or null. */
+    public static String hoveredRecipeId() {
+        Controller recipe = fresh(hoverLayout, layoutStamp);
+        return recipe != null && recipe.usable() ? recipe.shape.id : null;
     }
 
     /**
@@ -349,18 +427,38 @@ public final class RecipeHearts {
         return true;
     }
 
-    public static boolean hasFavorite(ItemStack stack) {
-        return Favorites.recipeFor(RecipeData.idOf(stack)) != null;
+    /**
+     * NEI's overlay key (gui.overlay, S) over a recipe of the recipe screen: moves the recipe's ingredients into the open
+     * crafting grid, like JEI's "+" button. Shift moves as many crafts as the grid takes. Returns true if the key was
+     * used.
+     */
+    public static boolean onFillKey(boolean max) {
+        Controller recipe = fresh(hoverLayout, layoutStamp);
+        if (recipe == null) return false;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return false;
+        try {
+            boolean done = RecipeLookup.transfer(recipe.layout, mc.player.containerMenu, mc.player, max);
+            NeiAddon.LOGGER.info("Fill key over recipe {}: {}", recipe.shape.id, done ? "moved" : "refused");
+            return true;
+        } catch (RuntimeException e) {
+            NeiAddon.LOGGER.warn("Could not fill the crafting grid with a recipe", e);
+            return true;
+        }
     }
 
-    private static RecipeShape favoriteShape(ItemStack stack) {
-        String recipeId = Favorites.recipeFor(RecipeData.idOf(stack));
+    public static boolean hasFavorite(ItemStack stack) {
+        return Favorites.recipeFor(RecipeData.idOf(stack), stack) != null;
+    }
+
+    static RecipeShape favoriteShape(ItemStack stack) {
+        String recipeId = Favorites.recipeFor(RecipeData.idOf(stack), stack);
         return recipeId == null ? null : RecipeLookup.find(recipeId, stack);
     }
 
     /**
      * Shift + bookmark key over an item of JEI's list: toggles the item's favorite recipe in the default group, with its
-     * count (NEI saveRecipeInBookmark with saveIngredients; recipeBookmarkWithCount is on by default, so Ctrl does not matter).
+     * count when {@link AddonConfig#BM_RECIPE_WITH_COUNT} is on or Ctrl is held (NEI saveRecipeInBookmark with saveIngredients).
      */
     public static boolean onShiftListItem(ItemStack stack) {
         RecipeShape shape = favoriteShape(stack);
@@ -368,7 +466,7 @@ public final class RecipeHearts {
         Bookmarks.Page page = Bookmarks.page();
         RecipeData data = shape.toData(RecipeData.idOf(stack));
         if (!Bookmarks.removeRecipe(page, data.recipeId, Bookmarks.NO_GROUP)) {
-            if (Bookmarks.addRecipe(page, data, 1, Bookmarks.NO_GROUP)) {
+            if (Bookmarks.addRecipe(page, data, startRuns(), Bookmarks.NO_GROUP)) {
                 page.normalize();
                 Bookmarks.save();
             }

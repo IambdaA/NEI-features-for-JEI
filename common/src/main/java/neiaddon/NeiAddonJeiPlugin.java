@@ -8,6 +8,7 @@ import mezz.jei.api.gui.handlers.IGlobalGuiHandler;
 import mezz.jei.api.gui.handlers.IGhostIngredientHandler;
 import mezz.jei.api.ingredients.ITypedIngredient;
 import mezz.jei.api.registration.IAdvancedRegistration;
+import mezz.jei.api.registration.IIngredientAliasRegistration;
 import mezz.jei.api.registration.IGuiHandlerRegistration;
 import mezz.jei.api.registration.IRecipeRegistration;
 import java.util.ArrayList;
@@ -55,6 +56,12 @@ public class NeiAddonJeiPlugin implements IModPlugin {
         registration.addRecipeButtonFactory(new TreeRecipes.Factory());
     }
 
+    /** NEI's item untranslator: find items by their English name too. */
+    @Override
+    public void registerIngredientAliases(IIngredientAliasRegistration registration) {
+        Untranslator.register(registration);
+    }
+
     @Override
     public void onRuntimeAvailable(IJeiRuntime jeiRuntime) {
         Calculator.onRuntime(jeiRuntime);
@@ -73,6 +80,8 @@ public class NeiAddonJeiPlugin implements IModPlugin {
 
             @Override
             public Collection<Rect2i> getGuiExtraAreas() {
+                // BookmarkPanel reads the other areas from JEI to lay itself out; do not loop back into that
+                if (JeiAreas.querying) return List.of();
                 List<Rect2i> areas = new ArrayList<>(BookmarkPanel.extraAreas());
                 areas.addAll(QuantityField.extraAreas());
                 areas.addAll(CraftablesPanel.extraAreas());

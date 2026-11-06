@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -93,7 +94,7 @@ public final class BookmarkPanel {
     private static final List<GroupArea> groupAreas = new ArrayList<>();
     private static int totalRows;
     private static int gridPage;
-    private static int px, py, pw, gridTop, cols, rows, footY, band, scrW, scrH;
+    private static int px, py, pw, gridTop, cols, rows, footY, band, scrW, scrH, top, bottomEdge;
     private static boolean active;
     private static int lastMx, lastMy;
 
@@ -111,11 +112,10 @@ public final class BookmarkPanel {
     private BookmarkPanel() {}
 
     private static final String JEI_RECIPES_GUI = "mezz.jei.gui.recipes.RecipesGui";
-    private static boolean hidden;
 
     /** Container screens and the JEI recipe screen. */
     public static boolean supports(Screen s) {
-        return s instanceof AbstractContainerScreen<?> || s.getClass().getName().equals(JEI_RECIPES_GUI);
+        return s != null && (s instanceof AbstractContainerScreen<?> || s.getClass().getName().equals(JEI_RECIPES_GUI));
     }
 
     private static boolean applies(Screen s) {
@@ -123,32 +123,76 @@ public final class BookmarkPanel {
     }
 
     public static boolean isHidden() {
-        return hidden;
+        return !AddonConfig.BM_VISIBLE.get();
     }
 
     public static void toggleHidden() {
-        hidden = !hidden;
+        AddonConfig.BM_VISIBLE.set(!AddonConfig.BM_VISIBLE.get());
+        AddonConfig.BM_VISIBLE.save();
     }
 
     // ---------------------------------------------------------------- layout
 
-    private static void layout(Screen screen) {
+    static void layout(Screen screen) {
         // the JEI recipe window is centred and about half the screen wide
         int left = screen instanceof AbstractContainerScreen<?> c ? neiaddon.platform.ClientPlatform.get().containerBounds(c)[0] : (int) (screen.width * 0.26);
-        int free = left - PAD * 2;
-        cols = (free - STRIP) / SLOT;
-        px = PAD;
-        py = PAD;
-        pw = Math.max(0, cols) * SLOT + STRIP;
-        gridTop = py + BAR;
         // JEI's lookup history list (when on) sits above its two buttons at the bottom left; leave it room
         scrW = screen.width;
         scrH = screen.height;
-        band = JeiButtons.historyBand();
-        int bottom = screen.height - band;
-        rows = (bottom - PAD * 2 - BAR * 2) / SLOT;
-        footY = bottom - PAD - BTN;
-        active = !hidden && cols >= 1 && rows >= 1;
+        band = Math.max(JeiButtons.historyBand(), JeiButtons.rowBand());
+        int x0 = PAD + AddonConfig.BM_MARGIN_LEFT.get();
+        int x1 = left;
+        int y0 = PAD + AddonConfig.BM_MARGIN_TOP.get();
+        int y1 = screen.height - band;
+        // other mods put buttons and panels beside the inventory (FTB Quests and Teams, for one) and register their areas
+        // with JEI; the panel gives way to them instead of covering them
+        List<Rect2i> keepClear = new ArrayList<>(JeiAreas.exclusions(screen));
+        List<Rect2i> found = ScreenAreas.widgets(screen);
+        ScreenAreas.log(screen, keepClear, found);
+        keepClear.addAll(found);
+        // JEI's own overlays (the lookup history at the bottom, the item list on a narrow screen) are never covered either
+        for (Rect2i jei : new Rect2i[] { JeiAreas.history(), JeiAreas.list() }) {
+            if (jei != null && jei.getWidth() > 0 && jei.getHeight() > 0) keepClear.add(jei);
+        }
+        for (Rect2i r : ScreenAreas.merge(keepClear, 4)) {
+            int rx1 = r.getX() + r.getWidth();
+            int ry1 = r.getY() + r.getHeight();
+            if (r.getX() >= x1 || rx1 <= x0 || r.getY() >= y1 || ry1 <= y0) continue;
+            int[][] options = { { x0, r.getX(), y0, y1 }, { rx1, x1, y0, y1 }, { x0, x1, ry1, y1 }, { x0, x1, y0, r.getY() } };
+            int best = 0;
+            int bestScore = -1;
+            for (int i = 0; i < options.length; i++) {
+                int score = fits(options[i][1] - options[i][0], options[i][3] - options[i][2]);
+                if (score > bestScore) {
+                    best = i;
+                    bestScore = score;
+                }
+            }
+            x0 = options[best][0];
+            x1 = options[best][1];
+            y0 = options[best][2];
+            y1 = options[best][3];
+        }
+        top = y0;
+        bottomEdge = y1;
+        int free = x1 - x0 - PAD;
+        cols = (free - STRIP) / SLOT;
+        px = x0;
+        // the utility buttons (cheat mode) take the top of the column; the panel starts below them
+        int barH = UtilityBar.layout(x0, y0, free);
+        py = y0 + barH;
+        pw = Math.max(0, cols) * SLOT + STRIP;
+        gridTop = py + BAR;
+        rows = (y1 - y0 - PAD - BAR * 2 - barH) / SLOT;
+        footY = y1 - PAD - BTN;
+        active = !isHidden() && cols >= 1 && rows >= 1;
+    }
+
+    /** How many slots a free area of this size holds (what the panel would have there), for picking the best way around an obstacle. */
+    private static int fits(int width, int height) {
+        int c = (width - PAD - STRIP) / SLOT;
+        int r = (height - PAD - BAR * 2) / SLOT;
+        return c < 1 || r < 1 ? 0 : c * r;
     }
 
     private static boolean isCollapsed(Bookmarks.Page page, int gid) {
@@ -231,10 +275,10 @@ public final class BookmarkPanel {
             boolean todo = meta != null && meta.todo;
             // NEI: in a crafting chain only the items the maths drew a slot for are shown; a collapsed recipe's own
             // items stand in for all of its recipes
-            boolean anchor = d != null && e.recipeId != null && e.type != ChainItem.Type.INGREDIENT
+            boolean anchor = d != null && e.isRecipe() && e.type != ChainItem.Type.INGREDIENT
                 && meta.collapsedRecipes.contains(e.recipeId);
             if (d != null && !anchor && (!d.calculated.containsKey(e)
-                || e.recipeId != null && !e.recipeId.equals(d.itemToRecipe.getOrDefault(e, e.recipeId)))) {
+                || e.isRecipe() && !e.recipeId.equals(d.itemToRecipe.getOrDefault(e, e.recipeId)))) {
                 continue;
             }
             if (collapsed || d != null && !todo) {
@@ -257,14 +301,14 @@ public final class BookmarkPanel {
                     cells.add(cellOf(item, d, next, gid, first));
                     rowGroup.put(next / cols, gid);
                     if (collapsed) borderIds.put(next, "group:" + gid);
-                    else if (d != null && item.recipeId != null && d.collapsedItems.containsKey(item.recipeId)) {
+                    else if (d != null && item.isRecipe() && d.collapsedItems.containsKey(item.recipeId)) {
                         borderIds.put(next, "recipe:" + item.recipeId);
                     }
                     prev = item;
                     prevSlot = next;
                     slot = next;
                 }
-            } else if (d != null && e.recipeId != null && d.itemToRecipe.containsValue(e.recipeId)) {
+            } else if (d != null && e.isRecipe() && d.itemToRecipe.containsValue(e.recipeId)) {
                 // a collapsed recipe in todo-list view: one block of merged slots
                 String recipe = e.recipeId;
                 List<ChainDetails.Calc> block = new ArrayList<>(d.collapsedItems.get(recipe));
@@ -354,14 +398,13 @@ public final class BookmarkPanel {
         return Math.max(0, Math.min(row, totalRows - 1));
     }
 
-    /** The screen area this panel occupies, for JEI's "avoid this area" handler. */
+    /**
+     * The screen area this panel tells JEI to keep its overlays out of: none. JEI slides its bookmark and history buttons
+     * to the right of any area an addon reserves in the left column (with the panel shown they ended up at the edge of
+     * the inventory, with it hidden they sat in the bottom left corner), so the panel stays out of JEI's layout and
+     * leaves room itself (the bottom strip for the buttons and the history list, see {@link #layout}).
+     */
     public static List<Rect2i> extraAreas() {
-        Screen s = McCompat.screen();
-        if (applies(s)) {
-            Screen screen = s;
-            layout(screen);
-            if (active) return List.of(new Rect2i(px, py, pw, screen.height - band - PAD * 2));
-        }
         return List.of();
     }
 
@@ -494,7 +537,7 @@ public final class BookmarkPanel {
     }
 
     /** 1.21.1 draws with a depth test: the panel sits in front of the container's own items. */
-    private static final float PANEL_Z = 100f;
+    static final float PANEL_Z = 100f;
 
     private static boolean in(double mx, double my, int x, int y, int w, int h) {
         return mx >= x && mx < x + w && my >= y && my < y + h;
@@ -635,10 +678,16 @@ public final class BookmarkPanel {
 
         // slots
         Cell hover = reorder == null ? cellAt(mx, my) : null;
+        beginSlide(page);
         for (Cell c : cells) {
             if (c.row() < first || c.row() >= last) continue;
             int x = cellX(c);
             int y = cellY(c);
+            if (AddonConfig.BM_ANIMATION.get()) {
+                int[] at = slideTo(new SlideKey(c.entry(), slideOcc.getOrDefault(c, 0)), x, y);
+                x = at[0];
+                y = at[1];
+            }
             boolean hovered = c == hover || (reorder != null && c.entry() == reorder);
             boolean recipeResult = c.recipe() != null && c.entry().type != ChainItem.Type.INGREDIENT;
             // NEI showRecipeMarkerMode 2: results of a recipe get a tinted background
@@ -661,10 +710,12 @@ public final class BookmarkPanel {
                 if (output || real > 1) drawSmall(g, font, "x" + format(real), x + 1, y + 1, 0xFF000000 | AddonConfig.BM_MARKER_COLOR.get());
             }
             if (recipeResult && (c.firstOutput() || AddonConfig.BM_MARKER_MODE.get() == 1)) drawRecipeMarker(g, font, c, x, y);
+            else if (withRecipe(c)) drawRecipeMarker(g, font, c, x, y);
             if (c == hover) {
                 tipStack = stack;
             }
         }
+        endSlide();
         drawBorders(g, page, first, last);
 
         // tooltips
@@ -738,8 +789,11 @@ public final class BookmarkPanel {
     private static void drawRecipeMarker(GuiGraphics g, Font font, Cell c, int x, int y) {
         checkCaches();
         IDrawable icon = null;
-        if (AddonConfig.BM_HANDLER_ICON.get()) {
-            icon = icons.computeIfAbsent(c.recipe(), id -> {
+        // a plain item saved with its recipe (JEI's bookmark button) always shows the recipe type's icon, like JEI's own list
+        boolean plain = c.recipe() == null;
+        String recipe = tipRecipe(c);
+        if (recipe != null && (plain || AddonConfig.BM_HANDLER_ICON.get())) {
+            icon = icons.computeIfAbsent(recipe, id -> {
                 try {
                     RecipeLookup.Target<?> target = RecipeLookup.findTarget(id, c.entry().key.sample);
                     return Optional.ofNullable(target == null ? null : target.icon());
@@ -752,22 +806,33 @@ public final class BookmarkPanel {
             float f = 6.4f / Math.max(icon.getWidth(), icon.getHeight());
             Pose pose = Pose.of(g);
             pose.pushMatrix();
-            pose.translateZ(Pose.OVER);
+            // an item icon draws 150 above the pose: this puts it just in front of the slot's item and well behind tooltips (400)
+            pose.translateZ(60f);
             pose.translate(x + 17 - icon.getWidth() * f, y + 1);
             pose.scale(f, f);
             icon.draw(g, 0, 0);
             pose.popMatrix();
-        } else if (AddonConfig.BM_MARKER_MODE.get() == 1) {
+        } else if (!plain && AddonConfig.BM_MARKER_MODE.get() == 1) {
             drawSmall(g, font, "R", x + 17 - font.width("R") * 0.5f, y + 1, 0xFF000000 | AddonConfig.BM_MARKER_COLOR.get());
         }
     }
 
     /** NEI recipeTooltipsMode: 0 never, 1 default view, 2 todo-list view, 3 always. */
-    private static boolean recipePictureWanted(Bookmarks.Page page, Cell cell) {
+    private static boolean recipePictureWanted(Bookmarks.Page page, Cell cell, String recipeId) {
         int mode = AddonConfig.BM_TOOLTIP_MODE.get();
         Bookmarks.GroupMeta meta = page.meta(cell.groupId());
         boolean todo = meta != null && meta.todo;
-        return cell.recipe() != null && (mode == 3 || mode == 1 && !todo || mode == 2 && todo);
+        return recipeId != null && (mode == 3 || mode == 1 && !todo || mode == 2 && todo);
+    }
+
+    /** Is this a plain item that was bookmarked together with a recipe (JEI's bookmark button, or the bookmark key over an item in a recipe)? */
+    private static boolean withRecipe(Cell cell) {
+        return cell.recipe() == null && cell.entry().isPlain() && cell.entry().recipeId != null;
+    }
+
+    /** The recipe a tooltip shows: the recipe of a recipe item, or the one a plain item was bookmarked with. */
+    private static String tipRecipe(Cell cell) {
+        return cell.recipe() != null ? cell.recipe() : cell.entry().isPlain() ? cell.entry().recipeId : null;
     }
 
     private static IRecipeLayoutDrawable<?> picture(String recipeId, ItemStack hint) {
@@ -797,6 +862,58 @@ public final class BookmarkPanel {
         pose.scale(0.5f, 0.5f);
         g.drawString(font, text, 0, 0, color, true);
         pose.popMatrix();
+    }
+
+    // ---------------------------------------------------------------- animation (NEI's REI style animation)
+
+    /** A bookmark and which of its slots (an item can fill several in a crafting chain), not the slot's number: that moves. */
+    private record SlideKey(Bookmarks.Entry entry, int occurrence) {}
+
+    private static final Map<Cell, Integer> slideOcc = new IdentityHashMap<>();
+
+    private static Map<SlideKey, float[]> slideNow = new HashMap<>();
+    private static Map<SlideKey, float[]> slideNext = new HashMap<>();
+    private static Object slideKeyPage;
+    private static int slideKeyGrid = -1;
+    private static long slideStamp;
+    private static float slideStep;
+
+    private static void beginSlide(Bookmarks.Page page) {
+        long now = System.nanoTime();
+        float dt = slideStamp == 0 ? 0.05f : Math.min(0.1f, (now - slideStamp) / 1e9f);
+        if (slideStamp != 0 && now - slideStamp > 500_000_000L) slideNow.clear();
+        slideStamp = now;
+        slideStep = 1f - (float) Math.exp(-dt * 16f);
+        // a different page or a scrolled grid shows other bookmarks: they appear where they are
+        if (slideKeyPage != page || slideKeyGrid != gridPage) {
+            slideNow.clear();
+            slideKeyPage = page;
+            slideKeyGrid = gridPage;
+        }
+        slideNext.clear();
+        slideOcc.clear();
+        Map<Bookmarks.Entry, Integer> counts = new IdentityHashMap<>();
+        for (Cell c : cells) slideOcc.put(c, counts.merge(c.entry(), 1, Integer::sum) - 1);
+    }
+
+    private static int[] slideTo(SlideKey key, int x, int y) {
+        float[] at = slideNow.get(key);
+        if (at == null) {
+            at = new float[] { x, y };
+        } else {
+            at[0] += (x - at[0]) * slideStep;
+            at[1] += (y - at[1]) * slideStep;
+            if (Math.abs(x - at[0]) < 0.5f) at[0] = x;
+            if (Math.abs(y - at[1]) < 0.5f) at[1] = y;
+        }
+        slideNext.put(key, at);
+        return new int[] { Math.round(at[0]), Math.round(at[1]) };
+    }
+
+    private static void endSlide() {
+        Map<SlideKey, float[]> done = slideNow;
+        slideNow = slideNext;
+        slideNext = done;
     }
 
     private static String format(long amount) {
@@ -923,7 +1040,7 @@ public final class BookmarkPanel {
             stacks.add((ItemStack) e.getValue()[0]);
             amounts.add((Long) e.getValue()[1]);
         }
-        return new Section(label, stacks, amounts, TIP_ROWS, -1, missing);
+        return new Section(label, stacks, amounts, tipRows(), -1, missing);
     }
 
     /** Recomputed twice a second, not every frame. */
@@ -1019,12 +1136,15 @@ public final class BookmarkPanel {
             stacks.add((ItemStack) e.getValue()[0]);
             amounts.add((Long) e.getValue()[1]);
         }
-        out.add(new Section(label, stacks, amounts, TIP_ROWS, -1, 0));
+        out.add(new Section(label, stacks, amounts, tipRows(), -1, 0));
     }
 
     private static final int TIP_SLOT = 18;
     private static final int TIP_COLUMNS = 11;
-    private static final int TIP_ROWS = 5;
+    private static int tipRows() {
+        int rows = AddonConfig.BM_TIP_ROWS.get();
+        return rows <= 0 ? Integer.MAX_VALUE : rows;
+    }
 
     /** How a section's icons are laid out: NEI's ItemsTooltipLineHandler.layoutWithNames (no named rows) / layoutAsGrid. */
     private record SectionLayout(int rows, int columns, int count, int shift, int width) {}
@@ -1140,11 +1260,16 @@ public final class BookmarkPanel {
             ChainItem.Type type = calc != null ? calc.item.type : entry.type;
             tip.add(Component.literal("§7Recipe: x" + multiplier + (type == ChainItem.Type.RESULT ? " (result)" : " (ingredient)")));
         }
+        boolean shiftPicture = withRecipe(cell) && McCompat.shift();
+        if (cell.recipe() == null && tipRecipe(cell) != null && !shiftPicture && !(cell.recipe() != null && recipePictureWanted(page, cell, tipRecipe(cell)))) {
+            // JEI's own wording for a bookmarked recipe
+            tip.add(Component.literal("§7§o[Hold \"SHIFT\" for recipe details]"));
+        }
         tip.add(HotkeyTips.modName(stack));
         List<FormattedCharSequence> lines = new ArrayList<>();
         for (Component line : tip) lines.addAll(font.split(line, 260));
-        if (recipePictureWanted(page, cell)) {
-            IRecipeLayoutDrawable<?> picture = picture(cell.recipe(), stack);
+        if (shiftPicture || cell.recipe() != null && recipePictureWanted(page, cell, tipRecipe(cell))) {
+            IRecipeLayoutDrawable<?> picture = picture(tipRecipe(cell), stack);
             Screen screen = McCompat.screen();
             if (picture != null && screen != null) {
                 Rect2i r = picture.getRect();

@@ -15,9 +15,6 @@ import java.util.Set;
  */
 public final class RecipeTree {
 
-    /** NEI's {@code inventory.favorites.depth} default. */
-    public static final int DEPTH = 9;
-
     private RecipeTree() {}
 
     /**
@@ -46,11 +43,11 @@ public final class RecipeTree {
 
                     if (chosen == null) {
                         chosen = slot.alts.get(0);
-                        String recipeId = Favorites.recipeFor(chosen.id());
+                        String recipeId = Favorites.recipeFor(chosen.id(), chosen.stack());
 
                         if (recipeId == null) {
                             for (RecipeShape.Alt alt : slot.alts) {
-                                recipeId = Favorites.recipeFor(alt.id());
+                                recipeId = Favorites.recipeFor(alt.id(), alt.stack());
                                 if (recipeId != null) {
                                     chosen = alt;
                                     break;
@@ -101,7 +98,7 @@ public final class RecipeTree {
      */
     public static int save(RecipeShape main) {
         List<RecipeData> data = new ArrayList<>();
-        for (RecipeShape shape : build(main.copy(), DEPTH)) {
+        for (RecipeShape shape : build(main.copy(), AddonConfig.FAVORITES_DEPTH.get())) {
             // a recipe the tree pulls in for one of its fluids or items shows only that result, not its byproducts
             RecipeData row = shape.toData(shape.leadResult);
             NeiAddon.LOGGER.info("Tree row: recipe {} lead={} results={} ingredients={}", shape.id, shape.leadResult,

@@ -37,11 +37,23 @@ public final class CalcKeys {
     public static final KeyMapping PULL = new KeyMapping("key.neiaddon.pull_items", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V, CATEGORY);
     /** Over an item or fluid in an Applied Energistics 2 screen: type its name into the terminal's search box. */
     public static final KeyMapping SEARCH_NAME = new KeyMapping("key.neiaddon.ae2_search", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_T, CATEGORY);
+    /** NEI's gui.overlay: over a recipe of the recipe screen, fill the open crafting grid with it (Shift: as many crafts as fit). */
+    public static final KeyMapping FILL = new KeyMapping("key.neiaddon.fill_grid", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_S, CATEGORY);
     public static final KeyMapping HIDE = new KeyMapping("key.neiaddon.hide_bookmarks", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_B, CATEGORY);
 
     // NEI: world.highlight_tips = Numpad 0 (toggle). The position screen has no NEI key; it is unbound by default.
     public static final KeyMapping HUD_TOGGLE = new KeyMapping("key.neiaddon.highlight_tips", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_KP_0, CATEGORY);
     public static final KeyMapping HUD_POSITION = new KeyMapping("key.neiaddon.highlight_tips_position", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, CATEGORY);
+
+    // NEI's utility keys (world.dawn / noon / dusk / midnight / rain / heal, creative toggle): all unbound by default.
+    // They send the matching command, so they work wherever the player may use it.
+    public static final KeyMapping TIME_DAWN = unbound("key.neiaddon.time_dawn");
+    public static final KeyMapping TIME_NOON = unbound("key.neiaddon.time_noon");
+    public static final KeyMapping TIME_DUSK = unbound("key.neiaddon.time_dusk");
+    public static final KeyMapping TIME_MIDNIGHT = unbound("key.neiaddon.time_midnight");
+    public static final KeyMapping RAIN = unbound("key.neiaddon.toggle_rain");
+    public static final KeyMapping HEAL = unbound("key.neiaddon.heal");
+    public static final KeyMapping CREATIVE = unbound("key.neiaddon.toggle_creative");
 
     private static java.lang.reflect.Method setBookmarkEnabled;
     private static java.lang.reflect.Method isBookmarkEnabled;
@@ -50,10 +62,14 @@ public final class CalcKeys {
 
     private CalcKeys() {}
 
+    private static KeyMapping unbound(String name) {
+        return new KeyMapping(name, InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, CATEGORY);
+    }
+
     /** Every key mapping of the addon, for the loader to register. */
     public static java.util.List<KeyMapping> all() {
-        return java.util.List.of(ADD, TREE, SEARCH_NAME, FAVORITE, CRAFT, CHAT_LINK, PULL, HIDE, HUD_TOGGLE, HUD_POSITION, ItemZoom.TOGGLE, ItemZoom.HOLD,
-            ItemZoom.ZOOM_IN, ItemZoom.ZOOM_OUT);
+        return java.util.List.of(ADD, TREE, SEARCH_NAME, FAVORITE, CRAFT, FILL, CHAT_LINK, PULL, HIDE, HUD_TOGGLE, HUD_POSITION, TIME_DAWN, TIME_NOON,
+            TIME_DUSK, TIME_MIDNIGHT, RAIN, HEAL, CREATIVE, ItemZoom.TOGGLE, ItemZoom.HOLD, ItemZoom.ZOOM_IN, ItemZoom.ZOOM_OUT);
     }
 
     /**
@@ -70,6 +86,7 @@ public final class CalcKeys {
         while (HUD_POSITION.consumeClick()) {
             HudPositionScreen.open();
         }
+        utilityKeys();
         if (toggleFailed) return;
         try {
             if (toggleState == null) {
@@ -87,6 +104,26 @@ public final class CalcKeys {
         } catch (ReflectiveOperationException | RuntimeException e) {
             toggleFailed = true;
             NeiAddon.LOGGER.warn("Could not switch off JEI's bookmark overlay; both panels will show", e);
+        }
+    }
+
+    /** The unbound-by-default utility keys: each sends the command that does it. */
+    private static void utilityKeys() {
+        Minecraft mc = Minecraft.getInstance();
+        while (TIME_DAWN.consumeClick()) UtilityCommands.run("time set 0");
+        while (TIME_NOON.consumeClick()) UtilityCommands.run("time set 6000");
+        while (TIME_DUSK.consumeClick()) UtilityCommands.run("time set 12000");
+        while (TIME_MIDNIGHT.consumeClick()) UtilityCommands.run("time set 18000");
+        while (RAIN.consumeClick()) {
+            boolean raining = mc.level != null && mc.level.isRaining();
+            UtilityCommands.run(raining ? "weather clear" : "weather rain");
+        }
+        while (HEAL.consumeClick()) {
+            UtilityCommands.run("effect give @s minecraft:instant_health 1 10 true");
+            UtilityCommands.run("effect give @s minecraft:saturation 1 10 true");
+        }
+        while (CREATIVE.consumeClick()) {
+            UtilityCommands.run(mc.player != null && mc.player.isCreative() ? "gamemode survival" : "gamemode creative");
         }
     }
 
@@ -157,6 +194,11 @@ public final class CalcKeys {
                 return;
             }
         }
+        if (McCompat.matches(FILL, key) && RecipeHearts.onFillKey(shift)) {
+            // NEI gui.overlay: the recipe under the mouse into the open crafting grid
+            event.setCanceled(true);
+            return;
+        }
         if (McCompat.matches(PULL, key) && BookmarkPanel.hoveredStack().isEmpty()) {
             // NEI pullRecipeItems over anything but a bookmark: the quantity field's amount of the item
             ItemStack stack = hoveredStack(screen);
@@ -184,7 +226,8 @@ public final class CalcKeys {
                 // NEI bookmark.add toggles: an item that is already bookmarked is removed. Ctrl keeps the stack size.
                 long amount = !McCompat.ctrl() ? 1
                     : listed.isPresent() ? QuantityField.scrollMultiplier(stack) : Math.max(1, stack.getCount());
-                Bookmarks.toggle(stack, amount);
+                // NEI bookmarkItemsWithRecipe: over an item inside a recipe of the recipe screen the item keeps that recipe
+                Bookmarks.toggle(stack, amount, AddonConfig.BM_ITEMS_WITH_RECIPE.get() ? RecipeHearts.hoveredRecipeId() : null);
                 event.setCanceled(true);
             }
         } else if (McCompat.matches(HIDE, key) && BookmarkPanel.supports(screen)) {
