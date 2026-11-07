@@ -254,6 +254,21 @@ public final class RecipeShape {
         }
     }
 
+    private static boolean noIngredientsList;
+
+    /** A slot's ingredients; {@code getAllIngredientsList()} is missing from older JEI (15.20), whose stream does the same. */
+    static java.util.List<ITypedIngredient<?>> allIngredients(IRecipeSlotView slot) {
+        if (!noIngredientsList) {
+            try {
+                return slot.getAllIngredientsList();
+            } catch (NoSuchMethodError e) {
+                noIngredientsList = true;
+            }
+        }
+        return slot.getAllIngredients()
+            .toList();
+    }
+
     private static String hash(IRecipeSlotsView view) {
         StringBuilder sb = new StringBuilder();
         for (IRecipeSlotView slot : view.getSlotViews()) {
@@ -261,7 +276,7 @@ public final class RecipeShape {
                 slot.getRole()
                     .name())
                 .append(':');
-            for (ITypedIngredient<?> ing : slot.getAllIngredientsList()) {
+            for (ITypedIngredient<?> ing : allIngredients(slot)) {
                 if (ing == null) continue;
                 var stack = ing.getItemStack();
                 if (stack.isPresent()) {

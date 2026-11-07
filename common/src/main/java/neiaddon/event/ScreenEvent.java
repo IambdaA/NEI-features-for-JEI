@@ -47,6 +47,14 @@ public abstract class ScreenEvent extends Event {
             return partialTick;
         }
 
+        /** Before the screen draws anything (and before JEI draws its overlays). */
+        public static final class Pre extends Render {
+
+            public Pre(Screen screen, GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+                super(screen, graphics, mouseX, mouseY, partialTick);
+            }
+        }
+
         /** After the screen drew everything (the foreground included). */
         public static final class Post extends Render {
 

@@ -47,6 +47,11 @@ final class ForgeEvents {
 
     static void install() {
         bridge(
+            net.minecraftforge.client.event.ScreenEvent.Render.Pre.class,
+            ScreenEvent.Render.Pre.class,
+            e -> new ScreenEvent.Render.Pre(e.getScreen(), e.getGuiGraphics(), e.getMouseX(), e.getMouseY(), e.getPartialTick()),
+            (n, m) -> {});
+        bridge(
             net.minecraftforge.client.event.ScreenEvent.Render.Post.class,
             ScreenEvent.Render.Post.class,
             e -> new ScreenEvent.Render.Post(e.getScreen(), e.getGuiGraphics(), e.getMouseX(), e.getMouseY(), e.getPartialTick()),

@@ -32,6 +32,9 @@ public final class BookmarkImport {
             }
         } catch (ReflectiveOperationException | RuntimeException e) {
             NeiAddon.LOGGER.warn("Could not read JEI bookmarks (JEI internals changed?): {}", e.toString());
+        } catch (LinkageError e) {
+            // older JEI (15.20, 19.25) has no getBookmarkManager()
+            NeiAddon.LOGGER.warn("Could not read JEI bookmarks: this JEI has no bookmark manager ({})", e.toString());
         }
         return result;
     }

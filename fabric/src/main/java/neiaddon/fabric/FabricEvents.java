@@ -164,6 +164,14 @@ final class FabricEvents {
                 });
         }
 
+        if (Bus.hasHandlers(ScreenEvent.Render.Pre.class)) {
+            ScreenEvents.beforeRender(screen)
+                .register((s, graphics, mouseX, mouseY, delta) -> {
+                    if (!live(s, token)) return;
+                    for (EventPriority p : EventPriority.values()) Bus.post(new ScreenEvent.Render.Pre(s, graphics, mouseX, mouseY, delta), p);
+                });
+        }
+
         Event<ScreenEvents.AfterRender> render = ScreenEvents.afterRender(screen);
         order(render);
         for (EventPriority p : EventPriority.values()) {

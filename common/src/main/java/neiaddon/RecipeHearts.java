@@ -6,17 +6,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import mezz.jei.api.gui.IRecipeLayoutDrawable;
-import mezz.jei.api.gui.buttons.IButtonState;
-import mezz.jei.api.gui.buttons.IIconButtonController;
-import mezz.jei.api.gui.builder.ITooltipBuilder;
 import mezz.jei.api.gui.drawable.IDrawable;
-import mezz.jei.api.gui.inputs.IJeiUserInput;
 import mezz.jei.api.gui.ingredient.IRecipeSlotRichTooltipCallback;
 import mezz.jei.api.gui.ingredient.IRecipeSlotDrawable;
 import mezz.jei.api.gui.ingredient.IRecipeSlotView;
 import mezz.jei.api.gui.inputs.RecipeSlotUnderMouse;
 import mezz.jei.api.recipe.RecipeIngredientRole;
-import mezz.jei.api.recipe.advanced.IRecipeButtonControllerFactory;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -41,7 +36,8 @@ import neiaddon.event.ScreenEvent;
  * </ul>
  *
  * <p>
- * JEI's {@code addRecipeButtonFactory} hands each recipe layout to {@link Factory}. The key press is not delivered to a
+ * JEI's {@code addRecipeButtonFactory} hands each recipe layout to {@link JeiRecipeButtons} (on JEI versions without that
+ * API {@link RecipeButtonsFallback} draws the hearts). The key press is not delivered to a
  * button, so each button reports the mouse position from its per-frame draw callback and the key handler asks which heart
  * or recipe was hovered a moment ago.
  *
@@ -63,16 +59,13 @@ public final class RecipeHearts {
 
     private RecipeHearts() {}
 
-    public static final class Factory implements IRecipeButtonControllerFactory {
-
-        @Override
-        public <T> IIconButtonController createButtonController(IRecipeLayoutDrawable<T> layout) {
-            try {
-                return new Controller(layout);
-            } catch (RuntimeException e) {
-                NeiAddon.LOGGER.warn("Could not create the favorite button for a recipe", e);
-                return null;
-            }
+    /** The heart of a recipe layout, or null when it cannot be made (see {@link JeiRecipeButtons}, {@link RecipeButtonsFallback}). */
+    static Controller create(IRecipeLayoutDrawable<?> layout, boolean injectHints) {
+        try {
+            return new Controller(layout, injectHints);
+        } catch (RuntimeException e) {
+            NeiAddon.LOGGER.warn("Could not create the favorite button for a recipe", e);
+            return null;
         }
     }
 
@@ -127,7 +120,11 @@ public final class RecipeHearts {
 
     // ---------------------------------------------------------------- the button
 
-    public static final class Controller implements IIconButtonController {
+    /**
+     * The heart of one recipe. It knows nothing of JEI's button API (older JEI has none): {@link JeiRecipeButtons} wraps it
+     * in JEI's button, {@link RecipeButtonsFallback} draws it on JEI versions without that API.
+     */
+    public static final class Controller {
 
         private final IRecipeLayoutDrawable<?> layout;
         final RecipeShape shape;
@@ -138,7 +135,7 @@ public final class RecipeHearts {
         /** True when the hint of fluid result slots is part of JEI's own tooltip (see {@link #injectHints}). */
         private boolean hintsInjected;
 
-        Controller(IRecipeLayoutDrawable<?> layout) {
+        Controller(IRecipeLayoutDrawable<?> layout, boolean injectHints) {
             this.layout = layout;
             this.shape = RecipeShape.read(layout);
             RecipeLookup.register(shape);
@@ -146,7 +143,7 @@ public final class RecipeHearts {
             String favorite = Favorites.itemFor(shape.id);
             int at = favorite == null ? -1 : resultIds.indexOf(favorite);
             selected = Math.max(0, at);
-            hintsInjected = injectHints();
+            hintsInjected = injectHints && injectHints();
         }
 
         /**
@@ -209,29 +206,24 @@ public final class RecipeHearts {
             Favorites.set(resultIds.get(selected), off ? null : shape.id);
         }
 
-        @Override
-        public void initState(IButtonState state) {
-            if (!usable()) {
-                state.setActive(false);
-                state.setVisible(false);
-            }
-            updateState(state);
+        /** Whether the heart is shown at all (a recipe without inputs or results has none). */
+        boolean shown() {
+            return usable();
         }
 
-        @Override
-        public void updateState(IButtonState state) {
-            state.setIcon(isOn() ? ICON_ON : ICON_OFF);
+        IDrawable icon() {
+            return isOn() ? ICON_ON : ICON_OFF;
         }
 
-        @Override
-        public boolean onPress(IJeiUserInput input) {
+        /** A click on the heart; {@code simulate}: only say whether it would be used. */
+        boolean press(boolean simulate) {
             if (!usable()) return false;
-            if (!input.isSimulate()) toggle();
+            if (!simulate) toggle();
             return true;
         }
 
-        @Override
-        public void getTooltips(ITooltipBuilder tooltip) {
+        List<Component> tooltipLines() {
+            List<Component> tooltip = new ArrayList<>();
             tooltip.add(Component.translatable(isOn() ? "neiaddon.recipe.unfavorite" : "neiaddon.recipe.favorite"));
             if (resultIds.size() > 1) {
                 tooltip.add(Component.literal("§7" + nameOf(resultIds.get(selected))));
@@ -245,10 +237,11 @@ public final class RecipeHearts {
             String key = CalcKeys.ADD.getTranslatedKeyMessage()
                 .getString();
             tooltip.add(Component.literal("§7Shift+" + key + ": Bookmark Recipe Tree"));
+            return tooltip;
         }
 
-        @Override
-        public void drawExtras(GuiGraphics g, Rect2i buttonArea, int mouseX, int mouseY, float partialTicks) {
+        /** Every frame the recipe is drawn: where the heart is and where the mouse is (for the keys over recipes). */
+        void frame(Rect2i buttonArea, int mouseX, int mouseY) {
             long now = System.nanoTime();
             seen = now;
             if (!visible.contains(this)) visible.add(this);
@@ -313,12 +306,25 @@ public final class RecipeHearts {
             return List.of();
         }
 
+        /** Everything the slot under the mouse accepts (inputs too), or an empty list. */
+        List<RecipeShape.Alt> slotAlts() {
+            Optional<RecipeSlotUnderMouse> under = layout.getSlotUnderMouse(hoverX, hoverY);
+            return under.isPresent() ? RecipeShape.altsOf(under.get()
+                .slot()) : List.of();
+        }
+
         /** The result under the mouse if the mouse is over a result slot, else null. */
         String hoveredResultId() {
             List<RecipeShape.Alt> alts = hoveredResultAlts();
             return alts.isEmpty() ? null : alts.get(0)
                 .id();
         }
+    }
+
+    /** Everything the recipe slot under the mouse accepts, or an empty list (the ingredient directory). */
+    static List<RecipeShape.Alt> hoveredSlotAlts() {
+        Controller recipe = fresh(hoverLayout, layoutStamp);
+        return recipe == null ? List.of() : recipe.slotAlts();
     }
 
     /** Translucent green over an ingredient that is in the inventory. */

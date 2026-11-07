@@ -363,7 +363,7 @@ public final class CraftablesPanel {
         List<Component> tip = new ArrayList<>(body);
         if (tip.isEmpty()) tip.add(FluidStacks.name(c.out));
         tip.add(Component.literal(c.favorite() ? "§7Favorite recipe" : "§7Can be crafted now"));
-        tip.add(HotkeyTips.modName(c.out));
+        HotkeyTips.addModName(tip, c.out);
         List<FormattedCharSequence> lines = new ArrayList<>();
         for (Component line : tip) lines.addAll(font.split(line, 260));
         tipLines = lines;

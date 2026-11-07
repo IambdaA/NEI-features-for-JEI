@@ -989,7 +989,7 @@ public final class CraftingTreeScreen extends Screen {
 
         int at = 1;
         for (String line : HotkeyTips.hotkeyLines(nodeKeys(node))) lines.add(at++, Component.literal(line));
-        lines.add(HotkeyTips.modName(stack));
+        HotkeyTips.addModName(lines, stack);
 
         List<TreeDraw.IconLine> icons = new ArrayList<>();
         if (accepting != null) icons.add(acceptsLine(accepting));
@@ -1038,7 +1038,7 @@ public final class CraftingTreeScreen extends Screen {
         }
         int at = 1;
         for (String line : HotkeyTips.hotkeyLines(k)) lines.add(at++, Component.literal(line));
-        lines.add(HotkeyTips.modName(stack));
+        HotkeyTips.addModName(lines, stack);
         show(g, mx, my, lines, List.of(), null);
     }
 

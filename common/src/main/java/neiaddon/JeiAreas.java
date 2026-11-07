@@ -7,6 +7,8 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
@@ -27,7 +29,7 @@ public final class JeiAreas {
     // one flag per feature, so one broken lookup cannot switch the others off
     private static boolean failedList, failedHistory, failedMatch, failedHeight;
     private static Field contentsField, historyField;
-    private static Method contentsArea, historyShown, historyArea;
+    private static Method contentsArea;
 
     private JeiAreas() {}
 
@@ -57,26 +59,94 @@ public final class JeiAreas {
     public static Rect2i history() {
         if (failedHistory || Calculator.runtime == null) return null;
         try {
-            Object overlay = Calculator.runtime.getIngredientListOverlay();
-            if (historyField == null) {
-                historyField = field(overlay.getClass(), "lookupHistoryOverlay");
-            }
-            Object history = historyField.get(overlay);
-            if (historyShown == null || historyArea == null) {
-                historyShown = history.getClass()
-                    .getMethod("isListDisplayed");
-                historyShown.setAccessible(true);
-                historyArea = history.getClass()
-                    .getMethod("getBackgroundArea");
-                historyArea.setAccessible(true);
-            }
-            if (!Boolean.TRUE.equals(historyShown.invoke(history))) return null;
-            return rect(historyArea.invoke(history));
+            Object history = shownHistory();
+            return history == null ? null : rect(historyArea(history));
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             fail("history", e);
             failedHistory = true;
             return null;
         }
+    }
+
+    private static Field bookmarkHistoryField;
+    private static boolean noBookmarkHistory;
+
+    /**
+     * The lookup history overlay that is shown, or null: the item list's, else the one on the bookmark side (JEI 15.59 and
+     * later on 1.20.1 give each side its own).
+     */
+    private static Object shownHistory() throws ReflectiveOperationException {
+        Object listOverlay = Calculator.runtime.getIngredientListOverlay();
+        if (historyField == null) historyField = field(listOverlay.getClass(), "lookupHistoryOverlay");
+        Object history = historyField.get(listOverlay);
+        if (history != null && Boolean.TRUE.equals(invoke(history, "isListDisplayed"))) return history;
+        Object bookmarks = Calculator.runtime.getBookmarkOverlay();
+        if (bookmarks == null || noBookmarkHistory) return null;
+        if (bookmarkHistoryField == null) {
+            try {
+                bookmarkHistoryField = field(bookmarks.getClass(), "lookupHistoryOverlay");
+            } catch (NoSuchFieldException e) {
+                noBookmarkHistory = true;
+                return null;
+            }
+        }
+        Object other = bookmarkHistoryField.get(bookmarks);
+        return other != null && other != history && Boolean.TRUE.equals(invoke(other, "isListDisplayed")) ? other : null;
+    }
+
+    /** Where a history overlay is: its own getBackgroundArea(), its backgroundArea field (JEI 15.59), or its grid's area. */
+    private static Object historyArea(Object history) throws ReflectiveOperationException {
+        if (method(history.getClass(), "getBackgroundArea") != null) return invoke(history, "getBackgroundArea");
+        Field area = cachedField(history.getClass(), "backgroundArea");
+        if (area != null) return area.get(history);
+        Field contents = cachedField(history.getClass(), "contents");
+        if (contents == null) throw new NoSuchFieldException("backgroundArea / contents of " + history.getClass().getName());
+        return invoke(contents.get(history), "getBackgroundArea");
+    }
+
+    // ---------------------------------------------------------------- reflection helpers (cached, misses too)
+
+    private static final Map<String, Optional<Method>> METHODS = new HashMap<>();
+    private static final Map<String, Optional<Field>> FIELDS = new HashMap<>();
+
+    /** A method without parameters (public, or declared on the class or a superclass), or null. */
+    static Method method(Class<?> type, String name) {
+        return METHODS.computeIfAbsent(type.getName() + '#' + name, k -> {
+            Method m = null;
+            try {
+                m = type.getMethod(name);
+            } catch (NoSuchMethodException ignored) {
+                for (Class<?> c = type; c != null && m == null; c = c.getSuperclass()) {
+                    try {
+                        m = c.getDeclaredMethod(name);
+                    } catch (NoSuchMethodException ignored2) {}
+                }
+            }
+            if (m != null) m.setAccessible(true);
+            return Optional.ofNullable(m);
+        })
+            .orElse(null);
+    }
+
+    private static Field cachedField(Class<?> type, String name) {
+        return FIELDS.computeIfAbsent(type.getName() + '.' + name, k -> {
+            try {
+                return Optional.of(field(type, name));
+            } catch (NoSuchFieldException e) {
+                return Optional.empty();
+            }
+        })
+            .orElse(null);
+    }
+
+    /** Calls the first of these parameterless methods the object has (JEI renames them between versions). */
+    static Object invoke(Object o, String... names) throws ReflectiveOperationException {
+        for (String name : names) {
+            Method m = method(o.getClass(), name);
+            if (m != null) return m.invoke(o);
+        }
+        throw new NoSuchMethodException(o.getClass()
+            .getName() + "." + String.join(" / ", names) + "()");
     }
 
     /** True while JEI is asked for the areas other mods keep free; our own area handler answers nothing then. */
@@ -184,7 +254,8 @@ public final class JeiAreas {
         try {
             Rect2i area = history();
             if (area == null || !area.contains(mouseX, mouseY)) return Optional.empty();
-            Object history = historyField.get(Calculator.runtime.getIngredientListOverlay());
+            Object history = shownHistory();
+            if (history == null) return Optional.empty();
             if (historyHover == null) {
                 for (Method m : history.getClass()
                     .getMethods()) {
@@ -222,7 +293,7 @@ public final class JeiAreas {
     }
 
     private static Field historyConfigField;
-    private static Method gridArea, maxColumns, valueGet, valueSet;
+    private static Method gridArea, valueGet, valueSet;
     private static long lastMatch;
     private static int pendingColumns = -1;
 
@@ -236,7 +307,10 @@ public final class JeiAreas {
         lastMatch = now;
         try {
             Object overlay = Calculator.runtime.getIngredientListOverlay();
-            if (history() == null) return;
+            // only the history on the item list's side (JEI 15.59 also has one on the bookmark side)
+            if (historyField == null) historyField = field(overlay.getClass(), "lookupHistoryOverlay");
+            Object shown = historyField.get(overlay);
+            if (shown == null || !Boolean.TRUE.equals(invoke(shown, "isListDisplayed"))) return;
             if (contentsField == null) contentsField = field(overlay.getClass(), "contents");
             Object contents = contentsField.get(overlay);
             if (gridArea == null) {
@@ -258,12 +332,8 @@ public final class JeiAreas {
             }
             Object history = historyField.get(overlay);
             Object config = historyConfig(history);
-            if (maxColumns == null) {
-                maxColumns = config.getClass()
-                    .getMethod("maxColumns");
-                maxColumns.setAccessible(true);
-            }
-            Object value = maxColumns.invoke(config);
+            Method columnsGetter = method(config.getClass(), "maxColumns");
+            Object value = columnsGetter != null ? columnsGetter.invoke(config) : cachedField(config.getClass(), "maxColumns").get(config);
             if (valueGet == null) {
                 valueGet = value.getClass()
                     .getMethod("get");
@@ -322,8 +392,8 @@ public final class JeiAreas {
                     try {
                         f.setAccessible(true);
                         Object v = f.get(history);
-                        if (v != null && v.getClass()
-                            .getMethod("maxColumns") != null) {
+                        // a maxColumns() value (older JEI), or a maxColumns field (JEI 15.59 keeps its values private)
+                        if (v != null && (method(v.getClass(), "maxColumns") != null || cachedField(v.getClass(), "maxColumns") != null)) {
                             historyConfigField = f;
                             break;
                         }
@@ -335,7 +405,7 @@ public final class JeiAreas {
         return historyConfigField.get(history);
     }
 
-    private static Field field(Class<?> type, String name) throws NoSuchFieldException {
+    static Field field(Class<?> type, String name) throws NoSuchFieldException {
         for (Class<?> c = type; c != null; c = c.getSuperclass()) {
             try {
                 Field f = c.getDeclaredField(name);

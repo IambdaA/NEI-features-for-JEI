@@ -93,8 +93,9 @@ public final class CalcKeys {
                 Class<?> internal = Class.forName("mezz.jei.common.Internal");
                 toggleState = internal.getMethod("getClientToggleState")
                     .invoke(null);
-                isBookmarkEnabled = toggleState.getClass()
-                    .getMethod("isBookmarkEnabled");
+                isBookmarkEnabled = JeiAreas.method(toggleState.getClass(), "isBookmarkEnabled");
+                if (isBookmarkEnabled == null) isBookmarkEnabled = toggleState.getClass()
+                    .getMethod("isBookmarkOverlayEnabled");
                 setBookmarkEnabled = toggleState.getClass()
                     .getMethod("setBookmarkEnabled", boolean.class);
             }
@@ -229,6 +230,17 @@ public final class CalcKeys {
                 // NEI bookmarkItemsWithRecipe: over an item inside a recipe of the recipe screen the item keeps that recipe
                 Bookmarks.toggle(stack, amount, AddonConfig.BM_ITEMS_WITH_RECIPE.get() ? RecipeHearts.hoveredRecipeId() : null);
                 event.setCanceled(true);
+            } else {
+                // a fluid of JEI's item list or of a recipe: its carrier is bookmarked here (one bucket, Ctrl keeps the slot's amount)
+                // and the key is used up, or JEI would put the fluid into its own bookmark list
+                JeiFluids.Hit fluid = JeiFluids.underMouse();
+                if (fluid != null) {
+                    Bookmarks.toggle(
+                        fluid.carrier(),
+                        McCompat.ctrl() ? fluid.milliBuckets() : 1000,
+                        AddonConfig.BM_ITEMS_WITH_RECIPE.get() ? RecipeHearts.hoveredRecipeId() : null);
+                    event.setCanceled(true);
+                }
             }
         } else if (McCompat.matches(HIDE, key) && BookmarkPanel.supports(screen)) {
             BookmarkPanel.toggleHidden();
@@ -250,6 +262,8 @@ public final class CalcKeys {
     /** What the zoom may show: the bookmark panel, the craftables panel and the JEI item list (no inventory slots, no recipes). */
     static ItemStack hoveredStack(Screen screen, boolean overlaysOnly) {
         if (!overlaysOnly) return hoveredStack(screen);
+        if (!IngredientDirectory.hoveredStack()
+            .isEmpty()) return IngredientDirectory.hoveredStack();
         ItemStack fromPanel = BookmarkPanel.hoveredStack();
         if (!fromPanel.isEmpty()) return fromPanel;
         ItemStack fromCraftables = CraftablesPanel.hoveredStack();
@@ -259,6 +273,8 @@ public final class CalcKeys {
     }
 
     private static ItemStack hoveredStack(Screen screen) {
+        ItemStack fromDirectory = IngredientDirectory.hoveredStack();
+        if (!fromDirectory.isEmpty()) return fromDirectory;
         ItemStack fromPanel = BookmarkPanel.hoveredStack();
         if (!fromPanel.isEmpty()) return fromPanel;
         ItemStack fromCraftables = CraftablesPanel.hoveredStack();

@@ -141,7 +141,7 @@ public final class RecipePreview {
             if (lastStack.getItem() == stack.getItem() && !lastLines.isEmpty()) lines.addAll(lastLines);
             else lines.add(stack.getHoverName());
             // JEI adds the name of the mod below the item's own lines
-            lines.add(HotkeyTips.modName(stack));
+            HotkeyTips.addModName(lines, stack);
             for (Component line : lines) tipW = Math.max(tipW, font.width(line));
             tipH = lines.size() * 10 + (lines.size() > 1 ? 2 : 0);
         }

@@ -21,6 +21,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import neiaddon.event.TickEvent;
+import neiaddon.event.EventPriority;
+import neiaddon.event.ScreenEvent;
 import neiaddon.event.SubscribeEvent;
 
 /**
@@ -31,9 +33,9 @@ import neiaddon.event.SubscribeEvent;
  *
  * <p>
  * JEI has no API for this, so its bookmark list is found by reflection below the runtime (by the class name
- * {@code BookmarkList}) and polled a few times a second. If that does not work (a different JEI) one warning is logged and
- * JEI keeps its own list, as before. A bookmark that cannot be turned into one of ours (a fluid, a recipe that no longer
- * exists) is left where it is.
+ * {@code BookmarkList}) and polled every tick, and again right after each click or key press so that JEI's own list is
+ * never drawn with the new entry in it. If that does not work (a different JEI) one warning is logged and JEI keeps its own
+ * list, as before. A bookmark that cannot be turned into one of ours (a recipe that no longer exists) is left where it is.
  */
 public final class JeiBookmarks {
 
@@ -42,15 +44,28 @@ public final class JeiBookmarks {
     private static Object list;
     private static Field backing;
     private static final Set<Object> skipped = Collections.newSetFromMap(new IdentityHashMap<>());
-    private static int ticks;
 
     private JeiBookmarks() {}
 
     @SubscribeEvent
     static void onTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        pollNow();
+    }
+
+    /**
+     * JEI's button and key add to its list while the click or key press is handled, and JEI draws that list in the same
+     * frame, so a poll on a tick alone lets it flash up for a moment. Checking just before each frame of a screen is drawn
+     * (cheap: one field read while JEI's list is empty) takes the entry out before JEI ever draws it; the tick poll stays
+     * for the time no screen is open.
+     */
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    static void onRender(ScreenEvent.Render.Pre event) {
+        pollNow();
+    }
+
+    private static void pollNow() {
         if (failed || !AddonConfig.BM_JEI_BOOKMARKS.get() || Calculator.runtime == null) return;
-        if (++ticks % 4 != 0) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) return;
         try {
@@ -192,7 +207,13 @@ public final class JeiBookmarks {
     private static boolean moveItem(ITypedIngredient<?> shown) {
         Optional<ItemStack> stack = shown.getItemStack();
         if (stack.isEmpty() || stack.get()
-            .isEmpty()) return false;
+            .isEmpty()) {
+            // a fluid: one bucket of it, as the bookmark key itself gives
+            JeiFluids.Hit fluid = JeiFluids.of(shown);
+            if (fluid == null) return false;
+            Bookmarks.toggle(fluid.carrier(), 1000);
+            return true;
+        }
         Bookmarks.toggle(stack.get(), 1);
         return true;
     }
@@ -250,7 +271,7 @@ public final class JeiBookmarks {
                 return true;
             }
         }
-        Bookmarks.add(result, 1, Bookmarks.NO_GROUP, data.recipeId);
+        Bookmarks.add(result, 1, Bookmarks.NO_GROUP, data.recipeId, true);
         return true;
     }
 }
