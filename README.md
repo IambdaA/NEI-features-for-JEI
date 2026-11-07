@@ -32,7 +32,7 @@ See [BUILDING.md](BUILDING.md) for the full list, keys and notes.
 Early version. Parts have been tested in game, but not every feature in every setup. Bug reports are welcome in the
 [issue tracker](../../issues).
 
-Not ported from NEI: collapsible item groups and NC/chance badges (JEI has no API for either), drop chances and fluids in the
+Not ported from NEI: NC/chance badges (JEI has no API for them), drop chances and fluids in the
 chain maths (JEI gives no chance data on recipe slots, and the addon only knows items).
 
 ## Building
@@ -53,6 +53,6 @@ textures (`craftingtree.png`, `nei_sprites.png`) are from NotEnoughItems too.
 | `1.21.1` (this branch) | 1.21.1 | NeoForge, Fabric | 19.x | runs in game on both |
 | `26.2` | 26.2 | NeoForge | 30.x | works in game |
 | `26.1.x` | 26.1, 26.1.1, 26.1.2 | NeoForge | 29.x | one jar, not tested in game yet |
-| `1.20.1` | 1.20.1 | Forge | 15.38+ | runs in game |
+| `1.20.1` | 1.20.1 | Forge | 15.20+ | runs in game |
 
 Each branch builds with its own `gradle.properties`; see BUILDING.md. Releases are tagged by Minecraft version, for example `v1.2.0+mc1.21.1`.

@@ -52,8 +52,16 @@ public class NeiAddonJeiPlugin implements IModPlugin {
     /** NEI's favorite (heart) button on every recipe. */
     @Override
     public void registerAdvanced(IAdvancedRegistration registration) {
-        registration.addRecipeButtonFactory(new RecipeHearts.Factory());
-        registration.addRecipeButtonFactory(new TreeRecipes.Factory());
+        // JEI's recipe button API is missing from older JEI versions that modpacks ship (15.20, 19.25): draw them ourselves there
+        if (RecipeButtonsFallback.jeiHasButtons()) {
+            try {
+                JeiRecipeButtons.register(registration);
+                return;
+            } catch (LinkageError e) {
+                NeiAddon.LOGGER.warn("JEI's recipe button API could not be used; drawing the hearts ourselves", e);
+            }
+        }
+        RecipeButtonsFallback.register(registration);
     }
 
     /** NEI's item untranslator: find items by their English name too. */

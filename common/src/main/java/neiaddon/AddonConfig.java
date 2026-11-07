@@ -67,6 +67,18 @@ public final class AddonConfig {
         .comment("Allow autocrafting of bookmarked recipes and craftables (NEI autocrafting).")
         .define("autocrafting", true);
 
+    public static final ConfigSpec.BooleanValue AUTOCRAFTING_FAST = B
+        .comment("Faster Autocrafting: when a full crafting grid would make more than is wanted, click the result once per wanted craft instead of crafting one set at a time. Every click waits for the server and is checked; anything unexpected stops autocrafting and puts the cursor and grid back into the inventory. Extra (not in NEI).")
+        .define("autocraftingFast", false);
+
+    public static final ConfigSpec.BooleanValue AUTOCRAFTING_RESTORE = B
+        .comment("After autocrafting, move the items that were in the inventory back to the slots they were in before (one checked click at a time). Crafted items stay in the slots they landed in.")
+        .define("autocraftingRestoreLayout", false);
+
+    public static final ConfigSpec.BooleanValue COLLAPSIBLE_ITEMS = B
+        .comment("NEI's collapsible item groups: families of items (wool colours, spawn eggs, ...) show as one entry in JEI's list; Alt + click opens or closes a group. Groups are in config/neiaddon/collapsibleitems.cfg. Takes the members out of JEI's list while closed.")
+        .define("collapsibleItems", false);
+
     public static final ConfigSpec.BooleanValue HEART_SCROLL_RESULT = B
         .comment("Mouse wheel over a recipe's heart picks which result to favorite (as NEI does). Off: the heart uses the first result, and Shift+F over a result slot favorites that result.")
         .define("heartScrollResult", true);
@@ -104,6 +116,14 @@ public final class AddonConfig {
         .comment("Internal: set once the addon has put its unbound keys back on their defaults (done once per version of that fix).")
         .defineInRange("keyDefaultsDone", 0, 0, 100);
 
+    public static final ConfigSpec.BooleanValue RELEASE_NOTE = B
+        .comment("On joining a world, a chat message asks to report issues with this release on GitHub.")
+        .define("releaseNote", true);
+
+    public static final ConfigSpec.BooleanValue WARN_JEI_PLUS_PLUS = B
+        .comment("On joining a world, say in chat that JEI++ (when installed) clashes with this addon.")
+        .define("warnJeiPlusPlus", true);
+
     public static final ConfigSpec.BooleanValue BM_JEI_BOOKMARKS = B
         .comment("What JEI's own bookmark button (on each recipe) and its bookmark key add goes into this addon's bookmark panel instead of JEI's own list.")
         .define("jeiBookmarksToPanel", true);
@@ -126,7 +146,7 @@ public final class AddonConfig {
 
     // NEI: inventory.cheatmode (0 recipe mode, 1 utility mode, 2 cheat mode), inventory.utilities, inventory.gamemodes
     public static final ConfigSpec.IntValue CHEAT_MODE = B
-        .comment("Utility buttons above the bookmark panel (NEI cheat mode): 0 recipe mode (none), 1 utility mode (the ones picked below), 2 cheat mode (all).")
+        .comment("Utility buttons above the bookmark panel (NEI cheat mode): 0 recipe mode (none), 1 utility mode (the ones picked below), 2 cheat mode (all, and a click on an item gives it).")
         .defineInRange("cheatMode", 0, 0, 2);
     public static final ConfigSpec.BooleanValue UTIL_TIME = B
         .comment("Utility mode: the four time of day buttons.")
@@ -163,7 +183,7 @@ public final class AddonConfig {
 
     public static final ConfigSpec.BooleanValue ZOOM_OVERLAYS_ONLY = B
         .comment("Only zoom items of the JEI item list and the bookmark panel (NEI neiOnly).")
-        .define("itemZoomOverlaysOnly", true);
+        .define("itemZoomOverlaysOnly", false);
 
     public static final ConfigSpec.BooleanValue ZOOM_ONLY_SOLID = B
         .comment("Only zoom blocks that are solid (NEI onlySolid).")
@@ -171,7 +191,7 @@ public final class AddonConfig {
 
     public static final ConfigSpec.IntValue ZOOM_SIDE = B
         .comment("Side of the zoom (NEI preferredSide): 0 auto (the side whose panel holds fewer items, the other one when the mouse is over it), 1 left, 2 right.")
-        .defineInRange("itemZoomSide", 1, 0, 2);
+        .defineInRange("itemZoomSide", 0, 0, 2);
 
     public static final ConfigSpec.BooleanValue ZOOM_HELP = B
         .comment("Show the name 'Item Zoom' and its toggle key below the zoomed item (NEI helpText).")

@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import mezz.jei.api.runtime.IRecipesGui;
 import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.gui.IRecipeLayoutDrawable;
 import mezz.jei.api.gui.drawable.IDrawable;
@@ -526,14 +527,12 @@ public final class BookmarkPanel {
         }
     }
 
+    /**
+     * The addon's buttons are drawn with vanilla's button sprites (NEI's way, see {@link NeiSettings}), not as flat
+     * colors: resource packs and mods that restyle the game's buttons (ATM9's dark mode, for one) restyle these too.
+     */
     static void button(GuiGraphics g, Font font, int x, int y, int w, int h, String label, boolean over) {
-        g.fill(x, y, x + w, y + h, 0xFF000000);
-        g.fill(x + 1, y + 1, x + w - 1, y + h - 1, over ? 0xFF7A8CC8 : 0xFF8B8B8B);
-        g.fill(x + 1, y + 1, x + w - 1, y + 2, 0xFFFFFFFF);
-        g.fill(x + 1, y + 1, x + 2, y + h - 1, 0xFFFFFFFF);
-        g.fill(x + 1, y + h - 2, x + w - 1, y + h - 1, 0xFF555555);
-        g.fill(x + w - 2, y + 1, x + w - 1, y + h - 1, 0xFF555555);
-        g.drawString(font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2, over ? 0xFFFFFFA0 : 0xFFE0E0E0, true);
+        NeiSettings.button(g, font, x, y, w, h, label, over ? 2 : 1);
     }
 
     /** 1.21.1 draws with a depth test: the panel sits in front of the container's own items. */
@@ -702,6 +701,9 @@ public final class BookmarkPanel {
                 String text = FluidStacks.isMilli(stack) ? FluidStacks.milliLabel(amount) : format(amount);
                 drawSmall(g, font, text, x + 1 + 16 - font.width(text) * 0.5f, y + 1 + 16 - 9 * 0.5f, 0xFFFFFFFF);
             }
+            // while a storage terminal is open: how many the network holds, small and cyan top left (the xN marker wins)
+            long stored = StorageCounts.count(stack);
+            if (stored > 0 && !c.firstOutput()) drawSmall(g, font, format(stored), x + 1, y + 1, 0xFF55FFFF);
             // NEI: the first result of an output recipe gets an "xN" marker (N = the recipe's real multiplier) top left
             if (c.firstOutput()) {
                 ChainDetails.Calc calc = c.calc();
@@ -710,7 +712,7 @@ public final class BookmarkPanel {
                 if (output || real > 1) drawSmall(g, font, "x" + format(real), x + 1, y + 1, 0xFF000000 | AddonConfig.BM_MARKER_COLOR.get());
             }
             if (recipeResult && (c.firstOutput() || AddonConfig.BM_MARKER_MODE.get() == 1)) drawRecipeMarker(g, font, c, x, y);
-            else if (withRecipe(c)) drawRecipeMarker(g, font, c, x, y);
+            else if (jeiStyle(c)) drawRecipeMarker(g, font, c, x, y);
             if (c == hover) {
                 tipStack = stack;
             }
@@ -789,7 +791,7 @@ public final class BookmarkPanel {
     private static void drawRecipeMarker(GuiGraphics g, Font font, Cell c, int x, int y) {
         checkCaches();
         IDrawable icon = null;
-        // a plain item saved with its recipe (JEI's bookmark button) always shows the recipe type's icon, like JEI's own list
+        // a plain item from JEI's recipe bookmark button always shows the recipe type's icon, like JEI's own list
         boolean plain = c.recipe() == null;
         String recipe = tipRecipe(c);
         if (recipe != null && (plain || AddonConfig.BM_HANDLER_ICON.get())) {
@@ -825,9 +827,13 @@ public final class BookmarkPanel {
         return recipeId != null && (mode == 3 || mode == 1 && !todo || mode == 2 && todo);
     }
 
-    /** Is this a plain item that was bookmarked together with a recipe (JEI's bookmark button, or the bookmark key over an item in a recipe)? */
-    private static boolean withRecipe(Cell cell) {
-        return cell.recipe() == null && cell.entry().isPlain() && cell.entry().recipeId != null;
+    /**
+     * Is this a plain item from JEI's recipe bookmark button? It is shown like JEI's own list: the recipe type's icon, and
+     * the recipe in its tooltip while Shift is held. An item saved with its recipe by the bookmark key (NEI
+     * bookmarkItemsWithRecipe) looks like a plain item and shows the recipe as NEI's recipe tooltip mode says.
+     */
+    private static boolean jeiStyle(Cell cell) {
+        return cell.recipe() == null && cell.entry().isPlain() && cell.entry().recipeId != null && cell.entry().jeiRecipe;
     }
 
     /** The recipe a tooltip shows: the recipe of a recipe item, or the one a plain item was bookmarked with. */
@@ -1260,15 +1266,17 @@ public final class BookmarkPanel {
             ChainItem.Type type = calc != null ? calc.item.type : entry.type;
             tip.add(Component.literal("§7Recipe: x" + multiplier + (type == ChainItem.Type.RESULT ? " (result)" : " (ingredient)")));
         }
-        boolean shiftPicture = withRecipe(cell) && McCompat.shift();
-        if (cell.recipe() == null && tipRecipe(cell) != null && !shiftPicture && !(cell.recipe() != null && recipePictureWanted(page, cell, tipRecipe(cell)))) {
+        boolean jei = jeiStyle(cell);
+        boolean shiftPicture = jei && McCompat.shift();
+        boolean modePicture = !jei && recipePictureWanted(page, cell, tipRecipe(cell));
+        if (jei && !shiftPicture) {
             // JEI's own wording for a bookmarked recipe
             tip.add(Component.literal("§7§o[Hold \"SHIFT\" for recipe details]"));
         }
-        tip.add(HotkeyTips.modName(stack));
+        HotkeyTips.addModName(tip, stack);
         List<FormattedCharSequence> lines = new ArrayList<>();
         for (Component line : tip) lines.addAll(font.split(line, 260));
-        if (shiftPicture || cell.recipe() != null && recipePictureWanted(page, cell, tipRecipe(cell))) {
+        if (shiftPicture || modePicture) {
             IRecipeLayoutDrawable<?> picture = picture(tipRecipe(cell), stack);
             Screen screen = McCompat.screen();
             if (picture != null && screen != null) {
@@ -1336,10 +1344,13 @@ public final class BookmarkPanel {
             return;
         }
         if (!inPanel(mx, my)) return;
-        event.setCanceled(true);
         int button = event.getButton();
         Bookmarks.Page page = Bookmarks.page();
         buildCells(page);
+        // only a click on something of the panel is used up: the empty rest of it lets the click through to the screen
+        // below (a machine UI that reaches under the panel, GregTech's for one)
+        if (!overControl(page, mx, my)) return;
+        event.setCanceled(true);
 
         // bottom bar
         if (in(mx, my, nsPrevX(), footY, BTN, BTN)) {
@@ -1413,11 +1424,32 @@ public final class BookmarkPanel {
                 reorder = e;
                 reorderRecipe = c.recipe();
             }
+        } else if ((button == 0 || button == 1) && !(screen instanceof IRecipesGui) && JeiGive.cheating()
+            && JeiGive.give(e.key.sample, button == 0 ? cheatAmount(c) : 1)) {
+            // NEI Cheat Mode (not in the recipe screen): a click gives the item (left: see cheatAmount, right: one);
+            // R / U over the bookmark still show its recipes
         } else if (button == 0) {
             showRecipes(e.key.sample, RecipeIngredientRole.OUTPUT);
         } else if (button == 1) {
             showRecipes(e.key.sample, RecipeIngredientRole.INPUT);
         }
+    }
+
+    /**
+     * What a left click on a bookmark gives in Cheat Mode: NEI gives the bookmark's own amount, or the Stack Controls amount
+     * when it has none. A bookmark without an amount is saved here as 1 (NEI: 0), so 1 counts as none.
+     */
+    private static long cheatAmount(Cell c) {
+        long own = amountOf(c);
+        return own > 1 ? own : QuantityField.scrollMultiplier(c.entry().key.sample);
+    }
+
+    /** Is the point over one of the panel's buttons, its page label, a group strip row or a bookmark? */
+    private static boolean overControl(Bookmarks.Page page, double mx, double my) {
+        if (in(mx, my, nsPrevX(), footY, BTN, BTN) || in(mx, my, nsNextX(), footY, BTN, BTN)) return true;
+        if (pullShown(page) && in(mx, my, pullX(), footY, BTN, BTN)) return true;
+        if (in(mx, my, px, hdrY(), pw, BTN)) return true;
+        return stripRowAt(mx, my) >= 0 || cellAt(mx, my) != null;
     }
 
     static void showRecipes(ItemStack stack, RecipeIngredientRole role) {

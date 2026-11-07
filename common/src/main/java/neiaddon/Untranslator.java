@@ -69,6 +69,10 @@ final class Untranslator {
                 added++;
             } catch (RuntimeException e) {
                 NeiAddon.LOGGER.debug("Could not add an English name for {}", item, e);
+            } catch (LinkageError e) {
+                // older JEI (19.25) has no addAlias(Item, String): the untranslator needs a newer JEI
+                NeiAddon.LOGGER.warn("Item Untranslator needs a newer JEI (no ingredient aliases): {}", e.toString());
+                return;
             }
         }
         NeiAddon.LOGGER.info("Registered {} English names with JEI's search", added);

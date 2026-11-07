@@ -76,6 +76,16 @@ public final class ShareClient {
         // 1.21.1 keeps the leading slash of a command in the click event
         String command = click.getValue();
         if (command.startsWith("/")) command = command.substring(1);
+        if (command.equals(ReleaseNote.COMMAND)) {
+            event.setCanceled(true);
+            ReleaseNote.dismiss();
+            return;
+        }
+        if (command.equals(JeiPlusPlusNote.COMMAND)) {
+            event.setCanceled(true);
+            JeiPlusPlusNote.dismiss();
+            return;
+        }
         if (command.startsWith(Share.COMMAND + " ")) {
             event.setCanceled(true);
             open(command.substring(Share.COMMAND.length() + 1));

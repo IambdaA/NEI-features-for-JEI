@@ -4,13 +4,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import mezz.jei.api.gui.IRecipeLayoutDrawable;
-import mezz.jei.api.gui.buttons.IButtonState;
-import mezz.jei.api.gui.buttons.IIconButtonController;
-import mezz.jei.api.gui.builder.ITooltipBuilder;
 import mezz.jei.api.gui.drawable.IDrawable;
-import mezz.jei.api.gui.inputs.IJeiUserInput;
 import mezz.jei.api.recipe.IRecipeManager;
-import mezz.jei.api.recipe.advanced.IRecipeButtonControllerFactory;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.runtime.IJeiRuntime;
@@ -98,7 +93,7 @@ public final class TreeRecipes {
 
     private static final String[] PLUS = { "..X..", "..X..", "XXXXX", "..X..", "..X.." };
 
-    private static final IDrawable PLUS_ICON = new IDrawable() {
+    static final IDrawable PLUS_ICON = new IDrawable() {
 
         @Override
         public int getWidth() {
@@ -120,24 +115,28 @@ public final class TreeRecipes {
         }
     };
 
-    public static final class Factory implements IRecipeButtonControllerFactory {
+    /** Is a crafting tree waiting for a recipe from JEI's recipe screen (the "+" button shows)? */
+    static boolean waiting() {
+        return waiting != null;
+    }
 
-        @Override
-        public <T> IIconButtonController createButtonController(IRecipeLayoutDrawable<T> layout) {
-            if (waiting == null) return null;
-            try {
-                RecipeShape shape = RecipeShape.read(layout);
-                RecipeData data = shape.toData(null);
-                if (data.isEmpty()) return null;
-                return new Controller(data);
-            } catch (RuntimeException e) {
-                NeiAddon.LOGGER.warn("Could not create the tree button for a recipe", e);
-                return null;
-            }
+
+    /** The "+" of a recipe layout while a tree waits, else null (see {@link JeiRecipeButtons}, {@link RecipeButtonsFallback}). */
+    static Controller create(IRecipeLayoutDrawable<?> layout) {
+        if (waiting == null) return null;
+        try {
+            RecipeShape shape = RecipeShape.read(layout);
+            RecipeData data = shape.toData(null);
+            if (data.isEmpty()) return null;
+            return new Controller(data);
+        } catch (RuntimeException e) {
+            NeiAddon.LOGGER.warn("Could not create the tree button for a recipe", e);
+            return null;
         }
     }
 
-    private static final class Controller implements IIconButtonController {
+    /** The "+" of one recipe; knows nothing of JEI's button API (older JEI has none). */
+    static final class Controller {
 
         private final RecipeData data;
 
@@ -145,27 +144,16 @@ public final class TreeRecipes {
             this.data = data;
         }
 
-        @Override
-        public void initState(IButtonState state) {
-            state.setIcon(PLUS_ICON);
-        }
-
-        @Override
-        public void updateState(IButtonState state) {
-            state.setIcon(PLUS_ICON);
-        }
-
-        @Override
-        public boolean onPress(IJeiUserInput input) {
+        /** A click on the "+"; {@code simulate}: only say whether it would be used. */
+        boolean press(boolean simulate) {
             CraftingTreeScreen tree = waiting;
             if (tree == null) return false;
-            if (!input.isSimulate()) tree.addRecipe(data);
+            if (!simulate) tree.addRecipe(data);
             return true;
         }
 
-        @Override
-        public void getTooltips(ITooltipBuilder tooltip) {
-            tooltip.add(Component.translatable("neiaddon.tree.overlay"));
+        Component tooltip() {
+            return Component.translatable("neiaddon.tree.overlay");
         }
     }
 }

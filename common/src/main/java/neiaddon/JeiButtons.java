@@ -32,9 +32,7 @@ public final class JeiButtons {
     private static final int GAP = 2;
 
     private static boolean failed;
-    private static Method getClientConfigs, getClientConfig, historyEnabled, configGet;
     private static Field historyOverlayField;
-    private static Method onThisSide, displayHeight;
 
     private JeiButtons() {}
 
@@ -204,39 +202,30 @@ public final class JeiButtons {
         return mx >= x && mx < x + w && my >= y && my < y + h;
     }
 
+    private static Method configsGetter;
+
+    /** JEI's client config: Internal.getClientConfigs() (getJeiClientConfigs() on JEI 15.59), then getClientConfig(). */
     private static Object clientConfig() throws ReflectiveOperationException {
-        if (getClientConfigs == null) {
+        if (configsGetter == null) {
             Class<?> internal = Class.forName("mezz.jei.common.Internal");
-            getClientConfigs = internal.getMethod("getClientConfigs");
-            getClientConfigs.setAccessible(true);
+            configsGetter = JeiAreas.method(internal, "getClientConfigs");
+            if (configsGetter == null) configsGetter = JeiAreas.method(internal, "getJeiClientConfigs");
+            if (configsGetter == null) throw new NoSuchMethodException("mezz.jei.common.Internal.getClientConfigs / getJeiClientConfigs()");
         }
-        Object configs = getClientConfigs.invoke(null);
-        if (getClientConfig == null) {
-            getClientConfig = configs.getClass()
-                .getMethod("getClientConfig");
-            getClientConfig.setAccessible(true);
-        }
-        return getClientConfig.invoke(configs);
+        return JeiAreas.invoke(configsGetter.invoke(null), "getClientConfig");
     }
 
-    private static Method searchBarPosition, searchBarGet;
+    /** A config value: a plain boolean on JEI 15.59, else a value holder read with get(). */
+    private static Object configValue(Object config, String... names) throws ReflectiveOperationException {
+        Object value = JeiAreas.invoke(config, names);
+        return value instanceof Boolean || value == null ? value : JeiAreas.invoke(value, "get");
+    }
 
     /** Is JEI's search bar set to "Bottom Center" (config: search / centerSearch)? False when unreadable. */
     public static boolean searchCentered() {
         try {
-            Object config = clientConfig();
-            if (searchBarPosition == null) {
-                searchBarPosition = config.getClass()
-                    .getMethod("searchBarPosition");
-                searchBarPosition.setAccessible(true);
-            }
-            Object value = searchBarPosition.invoke(config);
-            if (searchBarGet == null) {
-                searchBarGet = value.getClass()
-                    .getMethod("get");
-                searchBarGet.setAccessible(true);
-            }
-            return "CENTERED".equals(String.valueOf(searchBarGet.invoke(value)));
+            Object value = configValue(clientConfig(), "searchBarPosition", "isCenterSearchBarEnabled");
+            return Boolean.TRUE.equals(value) || "CENTERED".equals(String.valueOf(value));
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             return false;
         }
@@ -249,37 +238,12 @@ public final class JeiButtons {
     public static int historyBand() {
         if (failed || Calculator.runtime == null) return 0;
         try {
-            Object config = clientConfig();
-            if (historyEnabled == null) {
-                historyEnabled = config.getClass()
-                    .getMethod("lookupHistoryEnabled");
-                historyEnabled.setAccessible(true);
-            }
-            Object value = historyEnabled.invoke(config);
-            if (configGet == null) {
-                configGet = value.getClass()
-                    .getMethod("get");
-                configGet.setAccessible(true);
-            }
-            if (!Boolean.TRUE.equals(configGet.invoke(value))) return 0;
-
+            if (!Boolean.TRUE.equals(configValue(clientConfig(), "lookupHistoryEnabled", "isLookupHistoryEnabled"))) return 0;
             Object overlay = Calculator.runtime.getBookmarkOverlay();
-            if (historyOverlayField == null) {
-                historyOverlayField = overlay.getClass()
-                    .getDeclaredField("lookupHistoryOverlay");
-                historyOverlayField.setAccessible(true);
-            }
+            if (historyOverlayField == null) historyOverlayField = JeiAreas.field(overlay.getClass(), "lookupHistoryOverlay");
             Object history = historyOverlayField.get(overlay);
-            if (onThisSide == null) {
-                onThisSide = history.getClass()
-                    .getMethod("isDisplayedOnThisSide");
-                onThisSide.setAccessible(true);
-                displayHeight = history.getClass()
-                    .getMethod("getDisplayHeight");
-                displayHeight.setAccessible(true);
-            }
-            if (!Boolean.TRUE.equals(onThisSide.invoke(history))) return 0;
-            int height = (Integer) displayHeight.invoke(history);
+            if (!Boolean.TRUE.equals(JeiAreas.invoke(history, "isDisplayedOnThisSide", "isOnSide"))) return 0;
+            int height = ((Number) JeiAreas.invoke(history, "getDisplayHeight")).intValue();
             return height + MARGIN + SIZE + 2;
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             failed = true;
