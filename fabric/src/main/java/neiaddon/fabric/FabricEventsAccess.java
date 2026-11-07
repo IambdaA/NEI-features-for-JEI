@@ -12,6 +12,10 @@ public final class FabricEventsAccess {
         return FabricEvents.charTyped(screen, codePoint, modifiers);
     }
 
+    public static void pre(Screen screen, GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        FabricEvents.pre(screen, graphics, mouseX, mouseY, partialTick);
+    }
+
     public static void foreground(Screen screen, GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         FabricEvents.foreground(screen, graphics, mouseX, mouseY, partialTick);
     }

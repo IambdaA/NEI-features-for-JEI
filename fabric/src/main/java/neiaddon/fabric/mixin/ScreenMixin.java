@@ -10,11 +10,16 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Where NeoForge fires its Render.Foreground (screens that are not container screens) and Render.Post events. The same
- * injection points JEI uses for its own overlay; the higher priority runs this after JEI's mixin.
+ * Where NeoForge fires its Render.Pre, Render.Foreground (screens that are not container screens) and Render.Post events.
+ * The same injection points JEI uses for its own overlay; the higher priority runs this after JEI's mixin.
  */
 @Mixin(value = Screen.class, priority = 1500)
 public abstract class ScreenMixin {
+
+    @Inject(method = "extractRenderStateWithTooltipAndSubtitles(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V", at = @At("HEAD"))
+    private void neiaddon$pre(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float a, CallbackInfo ci) {
+        FabricEventsAccess.pre((Screen) (Object) this, graphics, mouseX, mouseY, a);
+    }
 
     @Inject(
         method = "extractRenderStateWithTooltipAndSubtitles(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V",

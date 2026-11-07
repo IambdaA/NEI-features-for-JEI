@@ -219,6 +219,6 @@ public final class QuantityField {
         if (!focused) return;
         event.setCanceled(true);
         int c = event.getCodePoint();
-        if (c >= '0' && c <= '9' && text.length() < MAX_DIGITS) edit(text + c);
+        if (c >= '0' && c <= '9' && text.length() < MAX_DIGITS) edit(text + (char) c);
     }
 }

@@ -65,9 +65,22 @@ public final class RecipeLookup {
             this.slots = slots;
         }
 
-        /** The recipe type's icon (shown on bookmarks), or null. */
+        /**
+         * The recipe type's icon (shown on bookmarks), or null: the category's own icon, else a picture of its first crafting
+         * station, as JEI's own bookmark list does (JEI's crafting category has no icon of its own, so it shows the crafting table).
+         */
         public mezz.jei.api.gui.drawable.IDrawable icon() {
-            return category.getIcon();
+            mezz.jei.api.gui.drawable.IDrawable own = category.getIcon();
+            IJeiRuntime rt = Calculator.runtime;
+            if (own != null || rt == null) return own;
+            return rt.getRecipeManager()
+                .createCraftingStationLookup(category.getRecipeType())
+                .get()
+                .findFirst()
+                .map(station -> rt.getJeiHelpers()
+                    .getGuiHelper()
+                    .createDrawableIngredient(station))
+                .orElse(null);
         }
 
         /** A drawable copy of the recipe (for tooltips), or null. */

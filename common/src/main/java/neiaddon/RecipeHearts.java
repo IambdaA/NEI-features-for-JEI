@@ -347,12 +347,25 @@ public final class RecipeHearts {
             return List.of();
         }
 
+        /** Everything the slot under the mouse accepts (inputs too), or an empty list. */
+        List<RecipeShape.Alt> slotAlts() {
+            Optional<RecipeSlotUnderMouse> under = layout.getSlotUnderMouse(hoverX, hoverY);
+            return under.isPresent() ? RecipeShape.altsOf(under.get()
+                .slot()) : List.of();
+        }
+
         /** The result under the mouse if the mouse is over a result slot, else null. */
         String hoveredResultId() {
             List<RecipeShape.Alt> alts = hoveredResultAlts();
             return alts.isEmpty() ? null : alts.get(0)
                 .id();
         }
+    }
+
+    /** Everything the recipe slot under the mouse accepts, or an empty list (the ingredient directory). */
+    static List<RecipeShape.Alt> hoveredSlotAlts() {
+        Controller recipe = fresh(hoverLayout, layoutStamp);
+        return recipe == null ? List.of() : recipe.slotAlts();
     }
 
     /** Translucent green over an ingredient that is in the inventory. */
