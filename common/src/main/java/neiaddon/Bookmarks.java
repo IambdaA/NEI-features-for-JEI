@@ -58,6 +58,11 @@ public final class Bookmarks {
         public long factor = 1;
         /** Registry ids of every item the ingredient slot accepts (tags); empty for plain items and results. */
         public List<String> options = List.of();
+        /**
+         * A plain item that JEI's recipe bookmark button put here: shown like JEI's own list (the recipe type's icon, the
+         * recipe on Shift). An item saved with its recipe by the bookmark key looks like a plain item, as in NEI.
+         */
+        public boolean jeiRecipe;
 
         public Entry(Calculator.StackKey key, long amount, int groupId) {
             this(key, null, amount, groupId);
@@ -383,6 +388,8 @@ public final class Bookmarks {
             factor = Math.max(1, parseLong(p[6], 1));
             if (p.length >= 8 && !p[7].isEmpty()) options = Arrays.asList(p[7].split(","));
         }
+        // a column after the options (versions before 1.3.0 write none, and ignore it): "j" for an item from JEI's button
+        boolean jeiRecipe = p.length >= 9 && p[8].equals("j");
         if (recipeId == null) {
             type = ChainItem.Type.ITEM;
             factor = 1;
@@ -401,6 +408,7 @@ public final class Bookmarks {
         entry.recipeId = recipeId;
         entry.factor = factor;
         entry.options = options;
+        entry.jeiRecipe = jeiRecipe && recipeId != null && type == ChainItem.Type.ITEM;
     }
 
     private static long parseAmount(String s) {
@@ -440,7 +448,8 @@ public final class Bookmarks {
 
     private static String line(Entry e, int groupId) {
         return "item\t" + clean(e.itemId()) + "\t" + e.amount + "\t" + groupId + "\t" + e.type.toInt() + "\t"
-            + (e.recipeId == null ? "-" : clean(e.recipeId)) + "\t" + e.factor + "\t" + String.join(",", e.options);
+            + (e.recipeId == null ? "-" : clean(e.recipeId)) + "\t" + e.factor + "\t" + String.join(",", e.options)
+            + (e.jeiRecipe ? "\tj" : "");
     }
 
     public static Page page() {
@@ -474,6 +483,11 @@ public final class Bookmarks {
      * (no chain), so it keeps type ITEM; an item that is already there keeps the recipe it has, or gets this one.
      */
     public static void add(ItemStack stack, long amount, int groupId, String recipeId) {
+        add(stack, amount, groupId, recipeId, false);
+    }
+
+    /** {@link #add(ItemStack, long, int, String)}; {@code jeiRecipe}: it came from JEI's recipe bookmark button. */
+    public static void add(ItemStack stack, long amount, int groupId, String recipeId, boolean jeiRecipe) {
         if (stack.isEmpty()) return;
         Page page = page();
         Calculator.StackKey key = new Calculator.StackKey(stack);
@@ -481,12 +495,14 @@ public final class Bookmarks {
             if (e.isPlain() && e.key.equals(key)) {
                 e.amount += amount;
                 if (e.recipeId == null) e.recipeId = recipeId;
+                if (jeiRecipe && recipeId != null && recipeId.equals(e.recipeId)) e.jeiRecipe = true;
                 save();
                 return;
             }
         }
         Entry added = new Entry(key, amount, groupId);
         added.recipeId = recipeId;
+        added.jeiRecipe = jeiRecipe && recipeId != null;
         page.entries.add(insertIndex(page, groupId), added);
         save();
     }

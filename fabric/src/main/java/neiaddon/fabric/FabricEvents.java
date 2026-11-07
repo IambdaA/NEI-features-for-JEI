@@ -86,6 +86,11 @@ final class FabricEvents {
         return event.isCanceled();
     }
 
+    /** Before the screen (and JEI's overlay) is drawn (NeoForge's Render.Pre). */
+    static void pre(Screen screen, GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        Bus.post(new ScreenEvent.Render.Pre(screen, graphics, mouseX, mouseY, partialTick));
+    }
+
     /** After the screen's main contents, before its tooltips (NeoForge's Render.Foreground). */
     static void foreground(Screen screen, GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         Bus.post(new ScreenEvent.Render.Foreground(screen, graphics, mouseX, mouseY, partialTick));

@@ -84,8 +84,19 @@ public final class ShareClient {
                     .getGuiScaledHeight(),
                 McCompat.guiTicks(),
                 restricted ? ChatComponent.DisplayMode.FOREGROUND_RESTRICTED : ChatComponent.DisplayMode.FOREGROUND);
-        if (finder.result() != null && finder.result()
-            .getClickEvent() instanceof ClickEvent.RunCommand(String command) && command.startsWith(Share.COMMAND + " ")) {
+        if (finder.result() == null || !(finder.result()
+            .getClickEvent() instanceof ClickEvent.RunCommand(String command))) return;
+        if (command.equals(ReleaseNote.COMMAND)) {
+            event.setCanceled(true);
+            ReleaseNote.dismiss();
+            return;
+        }
+        if (command.equals(JeiPlusPlusNote.COMMAND)) {
+            event.setCanceled(true);
+            JeiPlusPlusNote.dismiss();
+            return;
+        }
+        if (command.startsWith(Share.COMMAND + " ")) {
             event.setCanceled(true);
             open(command.substring(Share.COMMAND.length() + 1));
         }

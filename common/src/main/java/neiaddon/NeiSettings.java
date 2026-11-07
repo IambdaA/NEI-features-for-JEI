@@ -196,6 +196,7 @@ public final class NeiSettings extends Screen {
             .choice("Show Recipe Marker", "How recipe results are marked: the first result only, every result with an R, or a tinted background.", AddonConfig.BM_MARKER_MODE, "First Result", "Every Result (R)", "Background")
             .number("Chain Tooltip Rows", "Most rows of icons in a group's crafting chain tooltip. 0 = no limit. Extra (not in NEI: its Max Vertical Tooltip Rows is for named lists this addon does not have).", AddonConfig.BM_TIP_ROWS, 0, 50)
             .toggle("JEI's Bookmark Button Fills This Panel", "What JEI's own bookmark button (on each recipe) and bookmark key add goes into this panel instead of JEI's own list; a recipe shows as its result with the recipe type's icon (hold Shift for the recipe), an item as a plain bookmark. Extra (not in NEI).", AddonConfig.BM_JEI_BOOKMARKS)
+            .toggle("Warn About JEI++", "On joining a world, a chat message says that JEI++ is installed and clashes with this addon (its recipe buttons sit on ours, and it changes JEI's bookmarks). Extra (not in NEI).", AddonConfig.WARN_JEI_PLUS_PLUS)
             .number("Panel Margin Top", "Extra space above the bookmark panel in pixels. The panel already moves out of the way of other mods' buttons and areas it can find; use this for one that draws on the screen without telling anyone. Extra (not in NEI).", AddonConfig.BM_MARGIN_TOP, 0, 400)
             .number("Panel Margin Left", "Extra space left of the bookmark panel in pixels. Extra (not in NEI).", AddonConfig.BM_MARGIN_LEFT, 0, 400)
                         .color("Recipe Marker Color", "Color of the R and xN markers.", AddonConfig.BM_MARKER_COLOR)
@@ -234,7 +235,7 @@ public final class NeiSettings extends Screen {
             .toggle("History As Wide As Item List", "Keeps JEI's lookup history (right side) as wide as the item list. Overwrites JEI's history column setting. Extra (not in NEI).",
                 AddonConfig.HISTORY_MATCH_LIST);
         Page inventory = new Page("Inventory")
-            .cycle("Recipe Mode: no utility buttons. Utility Mode: the buttons picked under Utilities. Cheat Mode: all of them. The buttons send commands, so the server must let you use them.",
+            .cycle("Recipe Mode: no utility buttons. Utility Mode: the buttons picked under Utilities. Cheat Mode: all of them, and a click on an item (JEI's list or the bookmark panel) gives it, as with JEI's cheat mode. The buttons send commands and giving needs cheat rights, so the server must let you use them.",
                 AddonConfig.CHEAT_MODE, "Recipe Mode", "Utility Mode", "Cheat Mode")
             .icons("Utilities", "Select features for utility mode",
                 new Icon("Time", AddonConfig.UTIL_TIME, UtilityBar.Kind.NOON.u, UtilityBar.Kind.NOON.v),
@@ -254,6 +255,10 @@ public final class NeiSettings extends Screen {
             .toggle("Show Hotkeys", "List the keys that work on an item in its tooltip while Alt is held.", AddonConfig.SHOW_HOTKEYS)
             .toggle("Show Item Quantity Widget", "The quantity field above the JEI item list.", AddonConfig.QUANTITY_WIDGET)
             .enabled("Autocrafting", "Allow autocrafting of bookmarked recipes and craftables.", AddonConfig.AUTOCRAFTING)
+            .enabled("Collapsible Item Groups", "Families of items (wool colours, spawn eggs, potions...) show as one entry in JEI's item list; Alt+click opens or closes a group. The groups are in config/neiaddon/collapsibleitems.cfg. While a group is closed its other items are out of JEI's list (a search shows them again).", AddonConfig.COLLAPSIBLE_ITEMS)
+            .enabled("Restore Inventory Layout", "After autocrafting, move the items that were in your inventory back to the slots they were in before (one checked click at a time, after the grid is emptied). Crafted items stay where they landed; items that were used up leave their slot as it is. Extra (not in NEI).", AddonConfig.AUTOCRAFTING_RESTORE)
+            .enabled("Faster Autocrafting", "When a full crafting grid would make more than is wanted, click the result once per wanted craft instead of crafting one set at a time. Each click waits for the server and is checked; if anything is off, autocrafting stops and puts the cursor and grid back into the inventory. Extra (not in NEI).", AddonConfig.AUTOCRAFTING_FAST)
+            .toggle("Release Note in Chat", "On joining a world, a chat message asks you to report issues with this release on GitHub. Its [Turn off this message] link turns this off. Extra (not in NEI).", AddonConfig.RELEASE_NOTE)
             .enabled("Item Untranslator", "Also find items by their English name when the game is not in English. Applies after the next JEI reload.", AddonConfig.UNTRANSLATE)
             .number("Item Quantity", "Amount for \"with count\" actions and the Ctrl+Alt+scroll step. 0 = one stack.", AddonConfig.ITEM_QUANTITY, 0,
                 Integer.MAX_VALUE);
@@ -277,7 +282,9 @@ public final class NeiSettings extends Screen {
             .sub(tools)
             .action("JEI Options", "JEI's own settings (extra, not in NEI).", () -> {
                 if (JeiSettings.available()) McCompat.setScreen(new JeiSettings(holder[0]));
-            });
+            })
+            .action("Report Issues", "Opens the NEI Features for JEI issue tracker on GitHub in your browser (after a confirmation), to report a bug or ask for something. Extra (not in NEI).",
+                () -> net.minecraft.client.gui.screens.ConfirmLinkScreen.confirmLinkNow(holder[0], ReleaseNote.URL));
     }
 
     /** The settings screen, for the loader's mod list button. */
@@ -453,7 +460,7 @@ public final class NeiSettings extends Screen {
     }
 
     /** NEI's button: type 0 is the dark disabled look (an icon that is off), 1 normal, 2 hovered. */
-    private static void button(GuiGraphicsExtractor g, Font font, int x, int y, int w, int h, String label, int type) {
+    static void button(GuiGraphicsExtractor g, Font font, int x, int y, int w, int h, String label, int type) {
         g.blitSprite(RenderPipelines.GUI_TEXTURED, type == 0 ? BTN_OFF : type == 2 ? BTN_HOVER : BTN, x, y, w, h);
         if (label == null || label.isEmpty()) return;
         String t = font.width(label) > w - 4 ? font.plainSubstrByWidth(label, w - 4) : label;

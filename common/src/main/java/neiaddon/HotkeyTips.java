@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Optional;
 import mezz.jei.api.ingredients.ITypedIngredient;
 import neiaddon.chain.ChainItem;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -159,6 +160,22 @@ public final class HotkeyTips {
         if (entry.type == ChainItem.Type.RESULT) k.put(keys("CTRL", "SHIFT", chatKey()), "Send Recipe to Chat");
         recipeAndCopyKeys(k);
         return k;
+    }
+
+    /**
+     * Adds the mod name line unless the tooltip already has one: another mod (a "mod name in tooltip" mod) may have put
+     * the same name in the item's own tooltip lines, which these tooltips start from.
+     */
+    public static void addModName(List<Component> tip, ItemStack stack) {
+        Component line = modName(stack);
+        String name = ChatFormatting.stripFormatting(line.getString())
+            .trim();
+        for (Component existing : tip) {
+            String text = ChatFormatting.stripFormatting(existing.getString());
+            if (text != null && text.trim()
+                .equalsIgnoreCase(name)) return;
+        }
+        tip.add(line);
     }
 
     /** The mod an item comes from, blue and italic like NEI/JEI show it. */

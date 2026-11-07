@@ -43,7 +43,47 @@ public final class ScreenAreas {
                 out.add(new Rect2i(w.getX(), w.getY(), w.getWidth(), w.getHeight()));
             } else if (child instanceof ContainerEventHandler group && depth < 2) {
                 collect(group.children(), out, depth + 1, sw, sh);
+            } else {
+                Rect2i panel = knownPanel(child);
+                if (panel != null) out.add(panel);
             }
+        }
+    }
+
+    private static Class<?> attributesGui;
+    private static java.lang.reflect.Field attrOpen, attrLeft, attrTop;
+    private static int attrWidth = 131;
+    private static boolean attrFailed;
+
+    /**
+     * Panels other mods draw beside the inventory that are not widgets, so the loop above cannot see them. Apothic
+     * Attributes' attributes list (ATM9, ATM10, ...) opens on the left of the inventory, where the bookmark panel sits: its
+     * {@code open}, {@code leftPos} and {@code topPos} fields say where it is (inventory height, 166).
+     */
+    private static Rect2i knownPanel(GuiEventListener child) {
+        if (attrFailed || !child.getClass()
+            .getSimpleName()
+            .equals("AttributesGui")) return null;
+        try {
+            if (attributesGui != child.getClass()) {
+                Class<?> c = child.getClass();
+                attrOpen = JeiAreas.field(c, "open");
+                attrLeft = JeiAreas.field(c, "leftPos");
+                attrTop = JeiAreas.field(c, "topPos");
+                try {
+                    attrWidth = c.getField("WIDTH")
+                        .getInt(null);
+                } catch (ReflectiveOperationException e) {
+                    attrWidth = 131;
+                }
+                attributesGui = c;
+            }
+            if (!attrOpen.getBoolean(child)) return null;
+            return new Rect2i(attrLeft.getInt(child), attrTop.getInt(child), attrWidth, 166);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            attrFailed = true;
+            NeiAddon.LOGGER.warn("Could not read Apothic Attributes' panel; the bookmark panel may cover it", e);
+            return null;
         }
     }
 

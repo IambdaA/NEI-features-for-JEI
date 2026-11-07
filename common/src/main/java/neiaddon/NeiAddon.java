@@ -30,7 +30,7 @@ public final class NeiAddon {
     public static void initClient(ClientPlatform platform) {
         ClientPlatform.HOLDER.set(platform);
         for (Class<?> handlers : new Class<?>[] { Ae2Search.class, AutoCraft.class, BookmarkPanel.class, CalcKeys.class, ColorPickerScreen.class,
-            ConfigButton.class, CraftablesPanel.class, HotkeyTips.class, ItemZoom.class, JeiBookmarks.class, KeyDefaults.class, JeiSettings.class, NeiSettings.class,
+            ConfigButton.class, CraftablesPanel.class, HotkeyTips.class, ItemZoom.class, JeiBookmarks.class, JeiGive.class, IngredientDirectory.class, Subsets.class, StorageCounts.class, CollapsibleItems.class, JeiPlusPlusNote.class, ReleaseNote.class, KeyDefaults.class, JeiSettings.class, NeiSettings.class,
             QuantityField.class, RecipeFilter.class, RecipeHearts.class, RecipePreview.class, ShareClient.class, TreeRecipes.class, TreeShot.class, UtilityBar.class }) {
             Bus.register(handlers);
         }

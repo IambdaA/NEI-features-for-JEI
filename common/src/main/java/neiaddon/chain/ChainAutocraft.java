@@ -12,8 +12,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Decides what to craft next. Call {@link #next()} for a recipe id to craft once, craft it (and let the inventory
- * settle), call {@link #crafted()}, and ask again; {@code null} means finished. {@link #abandon()} gives up on the
+ * Decides what to craft next. Call {@link #next()} for a recipe id to craft (once, or up to {@link #remaining()} times at
+ * once), craft it (and let the inventory settle), call {@link #crafted(long)}, and ask again; {@code null} means finished. {@link #abandon()} gives up on the
  * current recipe (the craft failed) and moves on.
  */
 public final class ChainAutocraft {
@@ -121,8 +121,18 @@ public final class ChainAutocraft {
     }
 
     public void crafted() {
-        remaining--;
+        crafted(1);
+    }
+
+    /** {@code n} crafts of the current recipe were done at once. */
+    public void crafted(long n) {
+        remaining = Math.max(0, remaining - n);
         entryCrafted = true;
+    }
+
+    /** How many more crafts of the recipe {@link #next()} returned are wanted. */
+    public long remaining() {
+        return remaining;
     }
 
     public void abandon() {
