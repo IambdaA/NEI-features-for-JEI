@@ -15,9 +15,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.CraftingContainer;
 import net.minecraft.world.inventory.ContainerInput;
-import net.minecraft.world.inventory.ResultSlot;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -48,7 +46,10 @@ public final class AutoCraft {
         WAIT_CLEAR,
         CLICKS,
         CLEANUP,
-        RESTORE
+        RESTORE,
+        TOPUP,
+        SYNC,
+        RECHECK
     }
 
     private static ChainAutocraft walker;
@@ -90,10 +91,7 @@ public final class AutoCraft {
     }
 
     private static Slot resultSlot(AbstractContainerMenu m) {
-        for (Slot slot : m.slots) {
-            if (slot instanceof ResultSlot) return slot;
-        }
-        return null;
+        return CraftSlots.result(m);
     }
 
     /** What the player can craft with: every slot of the open menu except the result. NEI's getInventoryItems. */
@@ -101,7 +99,7 @@ public final class AutoCraft {
         Map<String, Long> items = new HashMap<>();
         Player player = Minecraft.getInstance().player;
         for (Slot slot : menu.slots) {
-            if (slot.hasItem() && !(slot instanceof ResultSlot) && slot.mayPickup(player)) {
+            if (slot.hasItem() && !CraftSlots.isResult(slot) && slot.mayPickup(player)) {
                 items.merge(RecipeData.idOf(slot.getItem()), (long) slot.getItem().getCount(), Long::sum);
             }
         }
@@ -139,10 +137,17 @@ public final class AutoCraft {
                 RecipeLookup.Target<?> target = target(recipeId);
                 boolean can = target != null && target.canTransfer(menu, Minecraft.getInstance().player);
                 if (!can) NeiAddon.LOGGER.info("Autocrafting: cannot craft {} now (recipe found: {})", recipeId, target != null);
+                lastCan.put(recipeId, can);
                 return can;
             }
         });
-        phase = Phase.NEXT;
+        // first make this side's view of the screen the server's (an item seen here but gone there makes JEI's transfer fail)
+        phase = Phase.SYNC;
+        syncRetries.clear();
+        singleClicks.clear();
+        lastCan.clear();
+        rechecked.clear();
+        craftedBy.clear();
         NeiAddon.LOGGER.info("Autocrafting started: {}", math.outputRecipes);
         return true;
     }
@@ -151,6 +156,8 @@ public final class AutoCraft {
         gridSlots = List.of();
         layout.clear();
         pending.clear();
+        topSlots.clear();
+        topTarget.clear();
         before.clear();
         cleaned.clear();
         awaiting = false;
@@ -210,6 +217,7 @@ public final class AutoCraft {
                     String recipeId = walker.next();
                     if (recipeId == null) {
                         // done: whatever is still on the cursor or in the grid goes back into the inventory
+                        reportUnfinished(mc);
                         startCleanup();
                         return;
                     }
@@ -229,6 +237,8 @@ public final class AutoCraft {
                 }
                 case WAIT_RESULT -> {
                     if (result.hasItem()) {
+                        if (wrongResult(result)) return;
+                        if (full && gridSets() == 1 && walker.remaining() > 1 && startTopUp()) return;
                         long sets = full ? gridSets() : 1;
                         if (full) fullSets.put(current, sets);
                         if (full && sets > walker.remaining() && AddonConfig.AUTOCRAFTING_FAST.get()) {
@@ -256,14 +266,22 @@ public final class AutoCraft {
                             return;
                         }
                         craft(mc, result);
-                    } else if (++waited > TIMEOUT) {
-                        NeiAddon.LOGGER.info("Autocrafting: no result after the transfer, giving up on this recipe");
-                        walker.abandon();
-                        phase = Phase.NEXT;
+                    } else if (++waited > (syncRetries.containsKey(current) ? TIMEOUT : FIRST_RESULT_TICKS)) {
+                        // a first transfer gets less time: when it did nothing, the screen is fetched and it is tried again
+                        if (syncRetries.merge(current, 1, Integer::sum) <= 1) {
+                            // JEI's transfer did nothing: most likely this side saw an item the server does not have
+                            NeiAddon.LOGGER.info("Autocrafting: no result after the transfer of {}, fetching the screen from the server and trying again", current);
+                            phase = Phase.SYNC;
+                        } else {
+                            NeiAddon.LOGGER.info("Autocrafting: no result after the transfer of {}, giving up on this recipe", current);
+                            walker.abandon();
+                            phase = Phase.NEXT;
+                        }
                     }
                 }
                 case WAIT_ONE_SET -> {
                     if (result.hasItem() && gridSets() == 1) {
+                        if (wrongResult(result)) return;
                         craft(mc, result);
                     } else if (++waited > TIMEOUT) {
                         NeiAddon.LOGGER.info("Autocrafting: the grid did not go back to one set, giving up on this recipe");
@@ -276,19 +294,92 @@ public final class AutoCraft {
                     // (its own guess of the click), and counting the crafts from that guess would count one instead of all
                     // (the click always gets an answer, see forceAnswer)
                     if (menu.getStateId() != clickState && !result.hasItem()) {
-                        walker.crafted(craftsDone());
+                        noteCrafted(craftsDone());
                         phase = Phase.NEXT;
                     } else if (++waited > TIMEOUT) {
-                        NeiAddon.LOGGER.info("Autocrafting stopped: the result did not move (inventory full?)");
+                        if (menu.getStateId() != clickState && result.hasItem() && craftsDoneExact() == 0 && roomFor(result.getItem())
+                            && singleClicks.add(current)) {
+                            // the server answered but the shift-click crafted nothing (some recipes or crafting-table
+                            // mods only take the result a craft at a time): craft this recipe by clicking the result
+                            NeiAddon.LOGGER.info("Autocrafting: shift-clicking the result of {} did nothing, crafting it one click at a time", current);
+                            clicksLeft = Math.min(walker.remaining(), Math.max(1, gridSets()));
+                            awaiting = false;
+                            phase = Phase.CLICKS;
+                            waited = 0;
+                            clicks(mc, result);
+                            return;
+                        }
+                        stoppedOnResult(mc, result);
                         startCleanup();
                     }
                 }
                 case CLICKS -> clicks(mc, result);
                 case CLEANUP -> cleanup(mc);
                 case RESTORE -> restore(mc);
+                case TOPUP -> topUp(mc, result);
+                case RECHECK -> {
+                    // the screen was fetched from the server to see the result slot as the server has it
+                    if (menu.getStateId() == clickState && ++waited <= TIMEOUT) return;
+                    if (settle++ < SETTLE_TICKS) return;
+                    awaiting = false;
+                    waited = 0;
+                    phase = resumeAfterRecheck;
+                    return;
+                }
+                case SYNC -> {
+                    if (awaiting) {
+                        if (menu.getStateId() == clickState && ++waited <= TIMEOUT) return;
+                        // the id also moves with updates the server sent before the answer: give the answer itself a
+                        // moment to arrive before JEI looks at the screen again
+                        if (settle++ < SETTLE_TICKS) return;
+                        awaiting = false;
+                        phase = Phase.NEXT;
+                    } else if (!syncClick(mc)) {
+                        phase = Phase.NEXT;
+                    } else {
+                        return;
+                    }
+                }
             }
             if (was != Phase.WAIT_CLEAR || phase != Phase.NEXT) break;
         }
+    }
+
+    /**
+     * Is the result slot an item the recipe being crafted does not make? Another recipe with the same ingredients can
+     * take priority in the grid (a mod's duplicate of a vanilla tool), and crafting that would never get the wanted item,
+     * so the chain would craft it again and again. Only the item is compared (a result's NBT can vary). When it differs
+     * this gives up on the recipe, tells the player and starts the cleanup; returns true then (do not craft).
+     */
+    /** Recipes whose wrong-looking result was already checked with the server once, and where to go on after the check. */
+    private static final java.util.Set<String> rechecked = new java.util.HashSet<>();
+    private static Phase resumeAfterRecheck = Phase.NEXT;
+
+    private static boolean wrongResult(Slot result) {
+        if (math == null || walker == null || current == null || !result.hasItem()) return false;
+        ItemStack got = result.getItem();
+        ItemStack expected = ItemStack.EMPTY;
+        for (ChainItem item : math.recipeResults) {
+            if (!current.equals(item.recipeId)) continue;
+            ItemStack want = FluidStacks.stackOf(item.item);
+            // a result that cannot be told is not a reason to stop
+            if (want.isEmpty() || want.getItem() == got.getItem()) return false;
+            if (expected.isEmpty()) expected = want;
+        }
+        if (expected.isEmpty()) return false;
+        if (rechecked.add(current) && syncClick(Minecraft.getInstance())) {
+            // this side's result slot can be out of date (a crafting-table mod that works the result out on this side
+            // too, or an update still on its way): fetch the screen from the server and look again before stopping
+            NeiAddon.LOGGER.info("Autocrafting: the result slot shows {} while crafting {}; checking with the server", got.getHoverName()
+                .getString(), current);
+            resumeAfterRecheck = phase;
+            phase = Phase.RECHECK;
+            return true;
+        }
+        walker.abandon();
+        fail("the grid makes " + got.getHoverName().getString() + " instead of " + FluidStacks.name(expected).getString()
+            + " (another recipe with the same ingredients takes priority)");
+        return true;
     }
 
     /** Shift-clicks the result: vanilla crafts as long as the grid has a full set (and the inventory has room). */
@@ -309,7 +400,8 @@ public final class AutoCraft {
         long done = Long.MAX_VALUE;
         for (Map.Entry<Slot, ItemStack> e : before.entrySet()) {
             ItemStack was = e.getValue();
-            if (was.isEmpty()) continue;
+            // a tool is not used up (it wears, or breaks on its last craft): the other slots tell how many crafts were done
+            if (was.isEmpty() || Tools.isTool(was)) continue;
             ItemStack now = e.getKey().getItem();
             long left = ItemStack.isSameItemSameComponents(was, now) ? now.getCount() : 0;
             done = Math.min(done, was.getCount() - left);
@@ -321,18 +413,14 @@ public final class AutoCraft {
     private static long gridSets() {
         long sets = Long.MAX_VALUE;
         for (Slot slot : gridSlots) {
-            if (slot.hasItem()) sets = Math.min(sets, slot.getItem().getCount());
+            if (slot.hasItem() && !Tools.isTool(slot.getItem())) sets = Math.min(sets, slot.getItem().getCount());
         }
         return sets == Long.MAX_VALUE ? 0 : sets;
     }
 
-    /** The slots of the menu's crafting grid (the container behind the slots of a crafting grid), or none if unknown. */
+    /** The slots of the menu's crafting grid, or none if unknown (see {@link CraftSlots#grid}). */
     private static List<Slot> craftingGrid(AbstractContainerMenu m) {
-        List<Slot> grid = new ArrayList<>();
-        for (Slot slot : m.slots) {
-            if (slot.container instanceof CraftingContainer) grid.add(slot);
-        }
-        return grid;
+        return CraftSlots.grid(m);
     }
 
     // ---------------------------------------------------------------- Faster Autocrafting: exact counts by clicking
@@ -357,7 +445,7 @@ public final class AutoCraft {
                     fail("a click on the result crafted " + done + " times instead of once");
                     return;
                 }
-                walker.crafted(1);
+                noteCrafted(1);
                 clicksLeft--;
             }
         }
@@ -375,6 +463,7 @@ public final class AutoCraft {
             fail("the result slot is empty although sets are left in the grid");
             return;
         }
+        if (wrongResult(result)) return;
         boolean fits = carried.isEmpty()
             || ItemStack.isSameItemSameComponents(carried, out) && carried.getCount() + out.getCount() <= carried.getMaxStackSize();
         if (!fits) {
@@ -410,8 +499,18 @@ public final class AutoCraft {
 
     /** Sends a click (pickup, or shift-click) on a slot of the menu and waits for the server's answer. */
     private static void send(Minecraft mc, int slot, boolean quickMove) {
+        send(mc, slot, quickMove, 0);
+    }
+
+    /** A pickup click that does not wait for the server (filling the grid; the server's screen is fetched once at the end). */
+    private static void clickNoWait(Minecraft mc, int slot, int button) {
+        mc.gameMode.handleContainerInput(menu.containerId, slot, button, ContainerInput.PICKUP, mc.player);
+    }
+
+    /** {@code button} 1 (right click) with an item on the cursor puts one of it into the slot. */
+    private static void send(Minecraft mc, int slot, boolean quickMove, int button) {
         forceAnswer();
-        mc.gameMode.handleContainerInput(menu.containerId, slot, 0, quickMove ? ContainerInput.QUICK_MOVE : ContainerInput.PICKUP, mc.player);
+        mc.gameMode.handleContainerInput(menu.containerId, slot, button, quickMove ? ContainerInput.QUICK_MOVE : ContainerInput.PICKUP, mc.player);
         awaiting = true;
         waited = 0;
     }
@@ -424,8 +523,9 @@ public final class AutoCraft {
      * server's id plus one) always differs from it.
      */
     private static void forceAnswer() {
-        menu.incrementStateId();
-        menu.incrementStateId();
+        // far ahead: the server's own id may already be a few steps ahead of this side's (updates still on their way), and
+        // a click whose id happens to be the server's is not answered when this side guessed it right
+        for (int i = 0; i < 1000; i++) menu.incrementStateId();
         clickState = menu.getStateId();
     }
 
@@ -439,7 +539,8 @@ public final class AutoCraft {
         long done = Long.MAX_VALUE;
         for (Map.Entry<Slot, ItemStack> e : before.entrySet()) {
             ItemStack was = e.getValue();
-            if (was.isEmpty()) continue;
+            // a tool is not used up (it wears, or breaks on its last craft): the other slots tell how many crafts were done
+            if (was.isEmpty() || Tools.isTool(was)) continue;
             ItemStack now = e.getKey().getItem();
             long left = ItemStack.isSameItemSameComponents(was, now) ? now.getCount() : 0;
             done = Math.min(done, was.getCount() - left);
@@ -448,7 +549,9 @@ public final class AutoCraft {
     }
 
     private static void fail(String why) {
-        NeiAddon.LOGGER.info("Autocrafting stopped: {}", why);
+        NeiAddon.LOGGER.info("Autocrafting stopped while crafting {}: {}", current, why);
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null) mc.player.sendSystemMessage(net.minecraft.network.chat.Component.literal("§6[NEI Features] §eAutocrafting stopped: " + why + "."));
         startCleanup();
     }
 
@@ -575,5 +678,290 @@ public final class AutoCraft {
         }
         NeiAddon.LOGGER.info("Autocrafting: inventory layout restored ({} clicks)", restoreClicks);
         stop();
+    }
+
+    // ---------------------------------------------------------------- recipes with a tool: several sets around one tool
+
+    /** Most clicks one top-up may take: a bound, so it always ends. */
+    private static final int TOPUP_CLICKS = 600;
+    /** The grid slots to fill, in order, and how many items each should hold. */
+    private static final List<Slot> topSlots = new ArrayList<>();
+    private static final Map<Slot, Integer> topTarget = new HashMap<>();
+    private static int topIndex;
+    /** Where the stack on the cursor was picked up from, to put the rest back there. */
+    private static Slot topSource;
+
+    private static boolean mainSlot(Slot slot) {
+        return slot.container instanceof Inventory && slot.getContainerSlot() < 36 && !gridSlots.contains(slot);
+    }
+
+    /**
+     * JEI only moves one set into the grid when the recipe has a tool (an item of one per stack), so a recipe with a
+     * hammer or a file would craft one at a time. Here the other slots get more of their items from the inventory (whole
+     * or half stacks where they fit, single items for the rest), so the grid holds exactly as many sets as are wanted (or as the tool and the inventory allow)
+     * and one shift-click crafts them all. False when there is no tool in the grid or not enough for two sets.
+     */
+    private static boolean startTopUp() {
+        long sets = walker.remaining();
+        boolean tool = false;
+        Map<Slot, Integer> perSet = new HashMap<>();
+        for (Slot slot : gridSlots) {
+            ItemStack in = slot.getItem();
+            if (in.isEmpty()) continue;
+            if (Tools.isTool(in)) {
+                tool = true;
+                sets = Math.min(sets, Tools.craftsLeft(in));
+            } else {
+                perSet.put(slot, in.getCount());
+                sets = Math.min(sets, Math.min(in.getMaxStackSize(), slot.getMaxStackSize(in)) / in.getCount());
+            }
+        }
+        if (!tool || perSet.isEmpty()) return false;
+        // what the inventory has of each grid item, shared between the grid slots that want it
+        for (Map.Entry<Slot, Integer> e : perSet.entrySet()) {
+            ItemStack in = e.getKey().getItem();
+            long have = 0;
+            int wanted = 0;
+            for (Slot slot : menu.slots) {
+                if (mainSlot(slot) && ItemStack.isSameItemSameComponents(slot.getItem(), in)) have += slot.getItem().getCount();
+            }
+            for (Map.Entry<Slot, Integer> o : perSet.entrySet()) {
+                if (ItemStack.isSameItemSameComponents(o.getKey().getItem(), in)) wanted += o.getValue();
+            }
+            sets = Math.min(sets, 1 + have / Math.max(1, wanted));
+        }
+        if (sets < 2) return false;
+        topSlots.clear();
+        topTarget.clear();
+        for (Slot slot : gridSlots) {
+            Integer per = perSet.get(slot);
+            if (per == null) continue;
+            topSlots.add(slot);
+            topTarget.put(slot, (int) (per * sets));
+        }
+        topIndex = 0;
+        topSource = null;
+        topSynced = false;
+        awaiting = false;
+        waited = 0;
+        phase = Phase.TOPUP;
+        NeiAddon.LOGGER.info("Autocrafting: {} has a tool, filling the grid for {} crafts", current, sets);
+        return true;
+    }
+
+    private static void topUp(Minecraft mc, Slot result) {
+        if (awaiting) {
+            if (menu.getStateId() == clickState) {
+                if (++waited > TIMEOUT) fail("the server did not answer while filling the grid");
+                return;
+            }
+            awaiting = false;
+        }
+        if (topSynced) {
+            // the screen is the server's again: craft what the grid really holds (counted from it, see craftsDone)
+            topSynced = false;
+            topSlots.clear();
+            topTarget.clear();
+            if (!menu.getCarried()
+                .isEmpty()) {
+                fail("something was left on the cursor after filling the grid");
+                return;
+            }
+            if (!result.hasItem() || gridSets() < 1) {
+                fail("the grid is not a full set after filling it");
+                return;
+            }
+            if (wrongResult(result)) return;
+            craft(mc, result);
+            return;
+        }
+        // every click at once: this side applies each one right away, and they are plain moves the server does the same way
+        for (int clicks = 0;; clicks++) {
+            if (clicks >= TOPUP_CLICKS) {
+                fail("filling the grid took too many clicks");
+                return;
+            }
+            ItemStack carried = menu.getCarried();
+            while (topIndex < topSlots.size() && topSlots.get(topIndex)
+                .getItem()
+                .getCount() >= topTarget.get(topSlots.get(topIndex))) topIndex++;
+            int slotId;
+            int button;
+            if (topIndex >= topSlots.size()) {
+                if (carried.isEmpty()) break;
+                Slot back = putBackSlot(carried);
+                if (back == null) {
+                    fail("no room in the inventory for what is on the cursor");
+                    return;
+                }
+                slotId = back.index;
+                button = 0;
+            } else {
+                Slot slot = topSlots.get(topIndex);
+                ItemStack in = slot.getItem();
+                if (in.isEmpty()) {
+                    fail("a grid slot emptied while the grid was being filled");
+                    return;
+                }
+                int need = topTarget.get(slot) - in.getCount();
+                if (!carried.isEmpty() && ItemStack.isSameItemSameComponents(carried, in)) {
+                    // all of the cursor when the slot still wants that many (left click), else one (right click)
+                    slotId = slot.index;
+                    button = carried.getCount() <= need ? 0 : 1;
+                } else if (!carried.isEmpty()) {
+                    Slot back = putBackSlot(carried);
+                    if (back == null) {
+                        fail("no room in the inventory for what is on the cursor");
+                        return;
+                    }
+                    slotId = back.index;
+                    button = 0;
+                } else {
+                    Slot source = null;
+                    for (Slot s : menu.slots) {
+                        if (mainSlot(s) && ItemStack.isSameItemSameComponents(s.getItem(), in)) {
+                            source = s;
+                            break;
+                        }
+                    }
+                    if (source == null) {
+                        // the inventory ran out: craft with what is in
+                        topIndex = topSlots.size();
+                        continue;
+                    }
+                    topSource = source;
+                    // the whole stack when the slot wants all of it, else half of it (right click)
+                    slotId = source.index;
+                    button = source.getItem()
+                        .getCount() <= need ? 0 : 1;
+                }
+            }
+            int before = carried.getCount();
+            clickNoWait(mc, slotId, button);
+            if (menu.getCarried()
+                .getCount() == before && ItemStack.isSameItemSameComponents(menu.getCarried(), carried)) {
+                fail("a click while filling the grid did nothing");
+                return;
+            }
+        }
+        // one empty click outside the slots with a state id the server does not have: it answers with the whole screen
+        topSynced = true;
+        forceAnswer();
+        clickNoWait(mc, -999, 0);
+        awaiting = true;
+        waited = 0;
+        lastWasCraft = false;
+    }
+
+    private static boolean topSynced;
+
+    /** The rest of a picked-up stack goes back where it came from, else into any inventory slot that takes it. */
+    private static Slot putBackSlot(ItemStack carried) {
+        return topSource != null && !topSource.hasItem() && topSource.mayPlace(carried) ? topSource : inventorySlotFor(carried);
+    }
+
+    /** The result of a craft stayed in its slot: says why (in the log, and in chat for the player) as far as it can tell. */
+    private static void stoppedOnResult(Minecraft mc, Slot result) {
+        ItemStack out = result.getItem();
+        String what = out.isEmpty() ? "the result" : out.getHoverName()
+            .getString();
+        String why;
+        if (menu.getStateId() == clickState) why = "the server did not answer the craft";
+        else if (!out.isEmpty() && !roomFor(out)) why = "no room in the inventory for " + what;
+        else why = what + " could not be taken out of the result slot, although the inventory has room";
+        StringBuilder grid = new StringBuilder();
+        for (Slot slot : gridSlots) {
+            ItemStack in = slot.getItem();
+            if (!in.isEmpty()) grid.append(' ')
+                .append(in.getCount())
+                .append('x')
+                .append(RecipeData.idOf(in))
+                .append(Tools.isTool(in) ? "(tool)" : "");
+        }
+        NeiAddon.LOGGER.info("Autocrafting stopped while crafting {}: {} (grid:{})", current, why, grid);
+        if (mc.player != null) mc.player.sendSystemMessage(net.minecraft.network.chat.Component.literal("§6[NEI Features] §eAutocrafting stopped: " + why + "."));
+    }
+
+    /** Is there an inventory slot (main inventory or hotbar) that takes all of the stack? Shift-clicking a result goes there. */
+    private static boolean roomFor(ItemStack stack) {
+        int left = stack.getCount();
+        for (Slot slot : menu.slots) {
+            if (!(slot.container instanceof Inventory) || slot.getContainerSlot() >= 36 || !slot.mayPlace(stack)) continue;
+            ItemStack in = slot.getItem();
+            int max = Math.min(stack.getMaxStackSize(), slot.getMaxStackSize(stack));
+            if (in.isEmpty()) left -= max;
+            else if (ItemStack.isSameItemSameComponents(in, stack)) left -= max - in.getCount();
+            if (left <= 0) return true;
+        }
+        return false;
+    }
+
+    /** Ticks a first transfer may take to show a result before the screen is fetched again and it is retried. */
+    private static final int FIRST_RESULT_TICKS = 10;
+    /** Ticks to wait after the server's answer to a sync click, see the SYNC phase. */
+    private static final int SETTLE_TICKS = 2;
+    private static int settle;
+
+    /** Per recipe: whether it could be crafted the last time the walker asked. */
+    private static final Map<String, Boolean> lastCan = new java.util.LinkedHashMap<>();
+
+    /**
+     * The chain is done as far as it goes: recipes that still could not be crafted at the end are named in chat with what
+     * they lack (JEI's own check against the inventory now), so the player knows why the end result did not get made.
+     */
+    private static void reportUnfinished(Minecraft mc) {
+        List<String> parts = new ArrayList<>();
+        for (Map.Entry<String, Boolean> e : lastCan.entrySet()) {
+            // recipes the chain wanted that never got crafted in this run (in the order they were tried: end results first)
+            if (e.getValue() || parts.size() >= 3 || craftedBy.containsKey(e.getKey())) continue;
+            RecipeLookup.Target<?> target = target(e.getKey());
+            String why = target == null ? "recipe not found" : target.whyNot(menu, mc.player);
+            if (why == null) continue;
+            parts.add(recipeName(e.getKey()) + " (" + why + ")");
+        }
+        NeiAddon.LOGGER.info("Autocrafting finished{}", parts.isEmpty() ? "" : "; could not craft " + String.join("; ", parts));
+        if (!parts.isEmpty() && mc.player != null) mc.player.sendSystemMessage(net.minecraft.network.chat.Component
+            .literal("§6[NEI Features] §eAutocrafting finished, but could not craft " + String.join("; ", parts) + "."));
+    }
+
+    /** Crafts done per recipe in this run. */
+    private static final Map<String, Long> craftedBy = new HashMap<>();
+
+    private static void noteCrafted(long n) {
+        walker.crafted(n);
+        craftedBy.merge(current, n, Long::sum);
+    }
+
+    private static String recipeName(String recipeId) {
+        for (ChainItem item : math.recipeResults) {
+            if (recipeId.equals(item.recipeId)) return FluidStacks.name(FluidStacks.stackOf(item.item))
+                .getString();
+        }
+        return recipeId;
+    }
+
+    /** Recipes whose result is taken by single clicks because shift-clicking it did nothing. */
+    private static final java.util.Set<String> singleClicks = new java.util.HashSet<>();
+
+    /** Per recipe: how often the screen was fetched again after a transfer that did nothing. */
+    private static final Map<String, Integer> syncRetries = new HashMap<>();
+
+    /**
+     * A click that changes nothing (a shift-click on an empty slot of the inventory or the grid) sent with a state id the
+     * server does not have: the server answers with the whole screen, so this side's view is the server's again. False
+     * when no slot is empty.
+     */
+    private static boolean syncClick(Minecraft mc) {
+        settle = 0;
+        for (Slot slot : menu.slots) {
+            if (slot.hasItem() || !(gridSlots.contains(slot) || slot.container instanceof Inventory && slot.getContainerSlot() < 36)) continue;
+            forceAnswer();
+            mc.gameMode.handleContainerInput(menu.containerId, slot.index, 0, ContainerInput.QUICK_MOVE, mc.player);
+            awaiting = true;
+            waited = 0;
+            lastWasCraft = false;
+            return true;
+        }
+        return false;
     }
 }

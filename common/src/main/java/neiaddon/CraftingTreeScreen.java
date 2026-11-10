@@ -39,7 +39,6 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ResultSlot;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -218,7 +217,7 @@ public final class CraftingTreeScreen extends Screen {
         if (mc.player == null) return items;
         AbstractContainerMenu menu = mc.player.containerMenu;
         for (Slot slot : menu.slots) {
-            if (slot.hasItem() && !(slot instanceof ResultSlot) && slot.mayPickup(mc.player)) {
+            if (slot.hasItem() && !CraftSlots.isResult(slot) && slot.mayPickup(mc.player)) {
                 items.merge(RecipeData.idOf(slot.getItem()), (long) slot.getItem().getCount(), Long::sum);
             }
         }
@@ -923,6 +922,8 @@ public final class CraftingTreeScreen extends Screen {
         }
         TreeDraw.tooltip(g, font, mx, my, width, height, seqs, icons, pw, ph, picture == null ? null : (g2, x, y) -> {
             picture.setPosition(x, y);
+            // a layer of its own, above the tooltip box and the item icons under it
+            g2.nextStratum();
             picture.drawRecipe(g2, -1000, -1000);
         });
     }
