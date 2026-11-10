@@ -492,7 +492,7 @@ public final class Bookmarks {
         Page page = page();
         Calculator.StackKey key = new Calculator.StackKey(stack);
         for (Entry e : page.entries) {
-            if (e.isPlain() && e.key.equals(key)) {
+            if (e.isPlain() && e.key.equals(key) && sameRecipeOrNone(e.recipeId, recipeId)) {
                 e.amount += amount;
                 if (e.recipeId == null) e.recipeId = recipeId;
                 if (jeiRecipe && recipeId != null && recipeId.equals(e.recipeId)) e.jeiRecipe = true;
@@ -505,6 +505,29 @@ public final class Bookmarks {
         added.jeiRecipe = jeiRecipe && recipeId != null;
         page.entries.add(insertIndex(page, groupId), added);
         save();
+    }
+
+    /** Adds the output item as a recipe bookmark like JEI's own (see {@link #add}), or removes that bookmark if it is there. */
+    public static void toggleJeiRecipe(ItemStack stack, String recipeId) {
+        if (stack.isEmpty() || recipeId == null) return;
+        Page page = page();
+        Calculator.StackKey key = new Calculator.StackKey(stack);
+        for (Entry e : page.entries) {
+            if (e.isPlain() && e.key.equals(key) && recipeId.equals(e.recipeId) && e.jeiRecipe) {
+                remove(page, e);
+                return;
+            }
+        }
+        Entry added = new Entry(key, 1, NO_GROUP);
+        added.recipeId = recipeId;
+        added.jeiRecipe = true;
+        page.entries.add(insertIndex(page, NO_GROUP), added);
+        save();
+    }
+
+    /** The same item bookmarked from two different recipes is two bookmarks; a bookmark without a recipe matches any. */
+    private static boolean sameRecipeOrNone(String a, String b) {
+        return a == null || b == null || a.equals(b);
     }
 
     private static int insertIndex(Page page, int groupId) {
@@ -574,7 +597,7 @@ public final class Bookmarks {
         Page page = page();
         Calculator.StackKey key = new Calculator.StackKey(stack);
         for (Entry e : page.entries) {
-            if (e.isPlain() && e.key.equals(key)) {
+            if (e.isPlain() && e.key.equals(key) && sameRecipeOrNone(e.recipeId, recipeId)) {
                 remove(page, e);
                 return;
             }

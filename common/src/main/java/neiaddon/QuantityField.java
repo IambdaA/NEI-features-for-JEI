@@ -179,6 +179,8 @@ public final class QuantityField {
             if (event.getButton() == 0) {
                 set(quantity() + (mx >= more ? step() : -step()));
                 AddonConfig.ITEM_QUANTITY.save();
+                // the box shows the typed text while selected: show the new amount there too
+                if (focused) text = quantity() == 0 ? "" : Integer.toString(quantity());
             }
             event.setCanceled(true);
         } else {

@@ -73,6 +73,47 @@ If Loom says it needs another Gradle, run `./gradlew wrapper --gradle-version <t
 - **Storage counts**: while an AE2 terminal or a Refined Storage 2 grid is open (if those mods exist for this version), bookmarks
   show how many of the item the network holds (top left, cyan) and item tooltips get an "In storage: N" line. Read from the
   terminal's own client-side list by reflection; without such a mod, or if its internals changed, nothing is shown.
+- **Tools in crafting chains** (1.3.1): in a chain's tooltip a tool is listed by the durability its crafts take (GregTech
+  tools usually lose more than 1 per craft), not as one tool per recipe, with the number in blue; it is red when all the
+  tools of that kind in the inventory together have less durability left. A worn tool counts as the same tool as a new one in the chain maths.
+- **Give missing ingredients** (1.3.1, key `G`, "Give Missing Ingredients" in Controls): over a crafting-chain group's
+  strip, in creative mode or cheat mode (only then is it listed in the group's hotkeys), gives what that chain is short
+  of: the red ingredients of its Shift tooltip (the amounts plain Shift+C needs), so autocrafting can run. A tool short of
+  durability is given as enough new tools to cover it. Uses the same giving as cheat-mode clicks (JEI's give, so the
+  server decides; creative puts the items straight into the inventory), always into the inventory whatever JEI's give
+  mode says; fluids are skipped.
+- **NTM - Continuum fluids** (1.3.1): NTM shows each of its fluids in JEI's item list as a droplet item (`hbm:fluid_icon`);
+  its builds before 26.2 also register the fluids with the game, so JEI listed each one a second time as a plain fluid.
+  When the droplets are in the list, the plain `hbm` fluids are taken out of it once JEI has loaded (`NtmFluids`), so each
+  fluid shows once, as on 26.2. Recipes still show the fluids where NTM puts them.
+- **Cheat mode and the cursor** (1.3.1): a press the addon uses up (a cheat-mode give, a click on a bookmark) also keeps
+  its release from the screen (`ReleaseGuard`), as JEI does, so an item put on the cursor stays there after the click.
+  With an item on the cursor over JEI's list or the bookmark panel, in creative or cheat mode, a left click deletes it
+  and a right click takes one off (NEI's HeldItemHandler; tooltip "Click to delete"; over JEI's list only when JEI's own
+  cheat mode is off, since JEI then does it). A fluid bookmark is given as filled buckets (its amount in millibuckets,
+  rounded up). A left click on a bookmarked recipe's result (or an item from JEI's recipe bookmark button) opens JEI's
+  recipe screen with all the item's recipes as usual, turned to that recipe's category and page (by reflection; it
+  stays on the first page if that fails).
+- **Bookmark Scale** (`bookmarkScale`, Settings > Bookmarks Panel, 50 to 100 %, default 100): smaller bookmark slots, so
+  more bookmarks (and big crafting chains) fit on one page.
+- **Bookmark fixes** (1.3.1): the bookmarks key over the same item in two different recipes of JEI's recipe screen keeps
+  two bookmarks (one per recipe); pressing it again in the same recipe removes that one (`Bookmarks.add/toggle` match
+  the recipe too). **Bookmark Output as Recipe** (JEI's own option of that name, read by reflection; JEI versions
+  without it, e.g. 15.20, keep bookmarking the item): the key over a recipe's result slot
+  bookmarks the recipe the way JEI's own bookmark key does with that option (the output item carrying the recipe:
+  the recipe type's icon in its corner, the recipe on Shift), and removes it when pressed again; ingredient slots are
+  unchanged. Shift+key still saves the whole recipe.
+  **Handler Icon Scale** (`bookmarkHandlerIconScale`, Bookmarks Panel, 50 to 200 %, default 100): size of the recipe
+  type's icon in a bookmark's corner, never bigger than the slot.
+- **Recipe pictures and the cursor** (1.3.1): a recipe picture in a tooltip is drawn through `Pose.isolated` (1.20.1/1.21.1:
+  flushed, in front of the tooltip, and the pose and depth state restored afterwards; 26.x: in a stratum of its own), so
+  a recipe category that leaves pose or render state changed (GregTech machines) no longer draws the picture under the
+  item or the following bookmarks over the item on the cursor. With an item on the cursor and the delete prompt showing
+  over JEI's list, JEI's own item tooltip is emptied (`HeldItemDelete.onTooltip`) so only the prompt shows.
+- **Autocrafting checks the result** (1.3.1): before the result is taken (shift-click, single clicks, grid top-up) its item
+  is compared with the item the recipe makes. If another recipe with the same ingredients takes priority in the grid
+  (a mod's copy of a vanilla tool), autocrafting gives up on the recipe, says so in chat and puts the grid back, instead
+  of crafting the wrong item again and again. Only the item is compared, not its NBT.
 - **Release note**: a few seconds after joining a world (once per game session) a chat message says this release is an
   ambitious one and asks for issues on GitHub (the word "GitHub" links to the issue tracker). Its `[Turn off this message]`
   link (handled on the client, nothing is sent to the server) or `releaseNote` (Settings > Inventory > Release Note in Chat)
@@ -129,11 +170,21 @@ slow). With Faster Autocrafting (`autocraftingFast`, Settings > Inventory, off b
 result clicked once per wanted run instead: each click waits for the server and must have used exactly one set, the
 cursor is emptied into the inventory when the next result would not fit on it, and anything unexpected stops it. At the
 end, and whenever it stops on its own, the cursor and the grid are put back into the inventory, one checked click at a
-time. Recipes JEI cannot transfer (furnaces,
+time. Recipes with a tool (an item of one per stack that wears instead of being used up: GregTech's hammers, files,
+saws...) get only one set from JEI's transfer, so the other grid slots are then topped up from the inventory, one right
+click per item, to exactly as many sets as are wanted (at most what the tool's durability, the stack sizes and the
+inventory allow; whole or half stacks where they fit, single items for the rest; all those clicks go out at once and
+the server's grid is then fetched once), and one shift-click crafts them; the crafts are counted from the other slots (the tool only wears). When
+a tool breaks, the next transfer takes another one of its kind from the inventory. It works at any crafting table JEI can move crafting recipes into (1.3.1): besides vanilla's, for example Tinkers'
+Crafting Station or Sophisticated Storage's crafting upgrade (`CraftSlots`: the result slot is the game's kind or one
+that looks like it; the grid is found from a crafting container, the screen's own recipe slots, or JEI's transfer info;
+without a grid it crafts one set at a time). Recipes JEI cannot transfer (furnaces,
 machines) are skipped. With Restore Inventory Layout (`autocraftingRestoreLayout`, Settings > Inventory, off by
 default) the items that were in the inventory when autocrafting started are then moved back to their old slots, one checked
 click at a time (a slot is only taken from when it does not already hold its own item; at most 120 clicks); crafted items
-stay where they landed and a slot whose item was used up is left as it is. It stops when the screen closes or the result will not move (inventory full). Not verified in game.
+stay where they landed and a slot whose item was used up is left as it is. Before it starts, and once more for a recipe whose transfer did nothing, it has the server send the whole screen
+(a shift-click on an empty slot with a state id the server does not have), so JEI's transfer never picks an item that
+is only shown on this side. It stops when the screen closes or the result will not move (inventory full). Not verified in game.
 
 ## Chat links (Ctrl+L)
 

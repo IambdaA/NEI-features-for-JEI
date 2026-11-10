@@ -132,6 +132,10 @@ public final class AddonConfig {
         .comment("Extra space above the bookmark panel, in pixels, for a mod that draws on the screen without telling anyone (the panel already moves out of the way of buttons it can find).")
         .defineInRange("bookmarkMarginTop", 0, 0, 400);
 
+    public static final ConfigSpec.IntValue BM_SCALE = B
+        .comment("Size of the bookmark panel's slots in percent (50 to 100): smaller fits more bookmarks, and big crafting chains, on one page.")
+        .defineInRange("bookmarkScale", 100, 50, 100);
+
     public static final ConfigSpec.IntValue BM_MARGIN_LEFT = B
         .comment("Extra space left of the bookmark panel, in pixels.")
         .defineInRange("bookmarkMarginLeft", 0, 0, 400);
@@ -225,6 +229,10 @@ public final class AddonConfig {
     public static final ConfigSpec.BooleanValue BM_HANDLER_ICON = B
         .comment("Show the recipe type's icon instead of the R marker (NEI showRecipeHandlerIcon).")
         .define("bookmarkHandlerIcon", false);
+
+    public static final ConfigSpec.IntValue BM_HANDLER_ICON_SCALE = B
+        .comment("Size of the recipe type's icon in the corner of a bookmark, in percent (50 to 200).")
+        .defineInRange("bookmarkHandlerIconScale", 100, 50, 200);
 
     public static final ConfigSpec.BooleanValue BM_WORLD_SPECIFIC = B
         .comment("Keep a separate bookmark list for every world and server (NEI worldSpecific).")

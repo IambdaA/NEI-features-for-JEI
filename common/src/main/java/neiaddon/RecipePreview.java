@@ -186,6 +186,8 @@ public final class RecipePreview {
         List<FormattedCharSequence> none = List.of();
         TreeDraw.boxAt(event.getGuiGraphics(), font, bx, by, none, bw, r.getHeight(), (g2, px, py) -> {
             picture.setPosition(px, py);
+            // a layer of its own, above the tooltip box and the item icons under it
+            g2.nextStratum();
             picture.drawRecipe(g2, -1000, -1000);
         });
     }

@@ -233,6 +233,11 @@ public final class CollapsibleItems {
 
     // ---------------------------------------------------------------- JEI's list: marker, click, tooltip
 
+    /** Is the item part of a collapsible group (Alt + click on it in JEI's list opens or closes the group)? */
+    static boolean inGroup(ItemStack stack) {
+        return enabled() && !failed && groupOf(stack) != null;
+    }
+
     private static Found groupOf(ItemStack stack) {
         return byItem.get(stack.getItem());
     }

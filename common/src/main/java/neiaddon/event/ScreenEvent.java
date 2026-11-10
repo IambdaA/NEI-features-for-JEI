@@ -109,6 +109,13 @@ public abstract class ScreenEvent extends Event {
             public int getButton() {
                 return button;
             }
+
+            /** A press the addon used up: its release is kept from the screen too (see {@link neiaddon.ReleaseGuard}). */
+            @Override
+            public void setCanceled(boolean canceled) {
+                super.setCanceled(canceled);
+                if (canceled) neiaddon.ReleaseGuard.pressUsed(button);
+            }
         }
     }
 
