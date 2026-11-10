@@ -52,12 +52,9 @@ final class ContainerRules implements ContainerOps {
         ItemStack x = (ItemStack) a;
         ItemStack y = (ItemStack) b;
         if (x.getItem() != y.getItem()) return false;
-        if (x.isDamageableItem()) {
-            x = x.copy();
-            y = y.copy();
-            x.setDamageValue(0);
-            y.setDamageValue(0);
-        }
+        // a tool is the same tool whatever its wear: GregTech keeps its stats and damage in its own data, which a fresh
+        // stack (the recipe's) does not have, so comparing that data would ask for a new tool in every recipe
+        if (x.isDamageableItem() || y.isDamageableItem()) return true;
         return ItemStack.isSameItemSameComponents(x, y);
     }
 
@@ -73,6 +70,14 @@ final class ContainerRules implements ContainerOps {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    private static final ContainerRules INSTANCE = new ContainerRules();
+
+    /** What is left of the stack after one craft (a worn tool, an empty bucket), or EMPTY. The stack is not changed. */
+    static ItemStack leftAfterUse(ItemStack stack) {
+        Object left = INSTANCE.remainder(stack.copy());
+        return left instanceof ItemStack s ? s : ItemStack.EMPTY;
     }
 
     @Override

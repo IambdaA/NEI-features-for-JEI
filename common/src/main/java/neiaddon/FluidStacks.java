@@ -104,6 +104,20 @@ public final class FluidStacks {
         return id.isEmpty() ? null : id;
     }
 
+    /** A filled bucket of the carrier's fluid (what JEI's cheat mode gives for a fluid), or EMPTY when it has none. */
+    public static ItemStack bucketOf(ItemStack carrier) {
+        String id = fluidIdOf(carrier);
+        if (id == null) return ItemStack.EMPTY;
+        try {
+            return BuiltInRegistries.FLUID.getOptional(net.minecraft.resources.ResourceLocation.parse(id))
+                .map(fluid -> new ItemStack(fluid.getBucket()))
+                .filter(bucket -> !bucket.isEmpty() && !bucket.is(Items.BUCKET))
+                .orElse(ItemStack.EMPTY);
+        } catch (RuntimeException e) {
+            return ItemStack.EMPTY;
+        }
+    }
+
     /** The item id string used everywhere in the model: {@code fluid:ns:path}. */
     public static String itemIdOf(ItemStack stack) {
         String id = fluidIdOf(stack);

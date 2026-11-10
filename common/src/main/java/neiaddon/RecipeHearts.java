@@ -339,7 +339,7 @@ public final class RecipeHearts {
         if (mc.player == null) return;
         Map<String, Long> have = new HashMap<>();
         for (net.minecraft.world.inventory.Slot slot : mc.player.containerMenu.slots) {
-            if (slot.hasItem() && !(slot instanceof net.minecraft.world.inventory.ResultSlot)) {
+            if (slot.hasItem() && !CraftSlots.isResult(slot)) {
                 have.merge(RecipeData.idOf(slot.getItem()), (long) slot.getItem()
                     .getCount(), Long::sum);
             }
@@ -389,18 +389,38 @@ public final class RecipeHearts {
         }
         Controller recipe = fresh(hoverLayout, layoutStamp);
         if (recipe != null && recipe.usable()) {
-            Bookmarks.Page page = Bookmarks.page();
-            RecipeData data = recipe.shape.toData(recipe.hoveredResultId());
-            // NEI: if the recipe is already bookmarked in the default group the key removes it, else it adds it
-            if (!Bookmarks.removeRecipe(page, data.recipeId, Bookmarks.NO_GROUP)) {
-                if (Bookmarks.addRecipe(page, data, startRuns(), Bookmarks.NO_GROUP)) {
-                    page.normalize();
-                    Bookmarks.save();
-                }
-            }
+            toggleRecipe(recipe);
             return true;
         }
         return false;
+    }
+
+    private static void toggleRecipe(Controller recipe) {
+        Bookmarks.Page page = Bookmarks.page();
+        RecipeData data = recipe.shape.toData(recipe.hoveredResultId());
+        // NEI: if the recipe is already bookmarked in the default group the key removes it, else it adds it
+        if (!Bookmarks.removeRecipe(page, data.recipeId, Bookmarks.NO_GROUP)) {
+            if (Bookmarks.addRecipe(page, data, startRuns(), Bookmarks.NO_GROUP)) {
+                page.normalize();
+                Bookmarks.save();
+            }
+        }
+    }
+
+    /**
+     * The bookmarks key over a result slot of a recipe in JEI's recipe screen, with "Bookmark Output as Recipe" on (JEI's
+     * option when this JEI has it, else ours): bookmarks the whole recipe, or removes it. Returns true if the key was used.
+     */
+    public static boolean onBookmarkOutputKey(net.minecraft.world.item.ItemStack stack) {
+        Boolean jei = JeiButtons.bookmarkOutputAsRecipe();
+        // JEI's own option decides; a JEI without it (15.20) bookmarks the item, so this does nothing there
+        if (!Boolean.TRUE.equals(jei)) return false;
+        Controller recipe = fresh(hoverLayout, layoutStamp);
+        if (recipe == null || !recipe.usable() || recipe.hoveredResultId() == null || stack.isEmpty()) return false;
+        // what JEI's own bookmark key makes with this option: the output item, carrying the recipe (recipe type icon in
+        // its corner, the recipe on Shift), the same bookmark JEI's recipe bookmark button gives; pressed again it goes
+        Bookmarks.toggleJeiRecipe(stack, recipe.shape.id);
+        return true;
     }
 
     /**

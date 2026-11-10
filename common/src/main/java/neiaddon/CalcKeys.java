@@ -35,6 +35,7 @@ public final class CalcKeys {
     public static final KeyMapping CHAT_LINK = new KeyMapping("key.neiaddon.chat_link", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_L, CATEGORY);
     /** NEI's bookmark.pull_items: pull the hovered item (or group) out of the open chest; Shift: only what is missing. */
     public static final KeyMapping PULL = new KeyMapping("key.neiaddon.pull_items", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V, CATEGORY);
+    public static final KeyMapping GIVE = new KeyMapping("key.neiaddon.give_missing", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_G, CATEGORY);
     /** Over an item or fluid in an Applied Energistics 2 screen: type its name into the terminal's search box. */
     public static final KeyMapping SEARCH_NAME = new KeyMapping("key.neiaddon.ae2_search", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_T, CATEGORY);
     /** NEI's gui.overlay: over a recipe of the recipe screen, fill the open crafting grid with it (Shift: as many crafts as fit). */
@@ -68,7 +69,7 @@ public final class CalcKeys {
 
     /** Every key mapping of the addon, for the loader to register. */
     public static java.util.List<KeyMapping> all() {
-        return java.util.List.of(ADD, TREE, SEARCH_NAME, FAVORITE, CRAFT, FILL, CHAT_LINK, PULL, HIDE, HUD_TOGGLE, HUD_POSITION, TIME_DAWN, TIME_NOON,
+        return java.util.List.of(ADD, TREE, SEARCH_NAME, FAVORITE, CRAFT, FILL, CHAT_LINK, PULL, GIVE, HIDE, HUD_TOGGLE, HUD_POSITION, TIME_DAWN, TIME_NOON,
             TIME_DUSK, TIME_MIDNIGHT, RAIN, HEAL, CREATIVE, ItemZoom.TOGGLE, ItemZoom.HOLD, ItemZoom.ZOOM_IN, ItemZoom.ZOOM_OUT);
     }
 
@@ -218,6 +219,11 @@ public final class CalcKeys {
             }
             if (shift && listed.isPresent() && RecipeHearts.onShiftListItem(listed.get())) {
                 // NEI saveRecipeInBookmark with saveIngredients: the item's favorite recipe
+                event.setCanceled(true);
+                return;
+            }
+            if (listed.isEmpty() && RecipeHearts.onBookmarkOutputKey(hoveredStack(screen))) {
+                // JEI's "Bookmark Output as Recipe": a recipe's result bookmarks the recipe, not the item
                 event.setCanceled(true);
                 return;
             }

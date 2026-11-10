@@ -20,6 +20,11 @@ public final class NeiAddonNeoForgeClient {
     public NeiAddonNeoForgeClient(IEventBus modBus, ModContainer container) {
         NeiAddon.initClient(new NeoClientPlatform());
         modBus.addListener(NeiAddonNeoForgeClient::registerKeys);
+        // the delete prompt holds back JEI's tooltip of the ingredient under it (see HeldItemDelete)
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
+            (net.neoforged.neoforge.client.event.RenderTooltipEvent.Pre event) -> {
+                if (neiaddon.HeldItemDelete.hideTooltip()) event.setCanceled(true);
+            });
         modBus.addListener(NeiAddonNeoForgeClient::registerLayers);
         NeoEvents.install();
         container.registerExtensionPoint(IConfigScreenFactory.class, (mod, parent) -> NeiSettings.create(parent));

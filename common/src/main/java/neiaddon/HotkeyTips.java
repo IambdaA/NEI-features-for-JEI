@@ -103,7 +103,26 @@ public final class HotkeyTips {
             k.put(keys("CTRL", "SHIFT", chatKey()), "Send Recipe to Chat");
         }
         recipeAndCopyKeys(k);
+        if (CollapsibleItems.inGroup(stack)) k.put(keys("ALT", "LMB"), "Open/Close Item Group");
+        if (Pull.available()) k.put(CalcKeys.PULL.getTranslatedKeyMessage()
+            .getString(), "Pull Items");
+        cheatClicks(k);
+        if (k.get("LMB") != null && k.get("LMB").startsWith("Give")) {
+            k.put(keys("SHIFT", "LMB"), "Recipe to make this item");
+            k.put(keys("SHIFT", "RMB"), "Recipes that use this item");
+        }
         return k;
+    }
+
+    /**
+     * In cheat mode (JEI's or this addon's) a click on an item gives it instead of showing recipes (outside JEI's recipe
+     * screen): left click the Stack Controls amount (a bookmark: its own amount), right click one; Shift + click on JEI's
+     * list still shows recipes / uses.
+     */
+    private static void cheatClicks(Map<String, String> k) {
+        if (!JeiGive.cheating() || McCompat.screen() instanceof mezz.jei.api.runtime.IRecipesGui) return;
+        k.put("LMB", "Give Items");
+        k.put("RMB", "Give One Item");
     }
 
     /** NEI's autocrafting keys; only offered while a crafting grid is open. */
@@ -137,7 +156,8 @@ public final class HotkeyTips {
     }
 
     /** Keys that work on an item of the bookmark panel (NEI's BookmarkPanel.handleHotkeys + ShortcutInputHandler). */
-    public static Map<String, String> panelKeys(Bookmarks.Page page, Bookmarks.Entry entry, boolean collapsed, boolean crafting, boolean editable) {
+    public static Map<String, String> panelKeys(Bookmarks.Page page, Bookmarks.Entry entry, boolean collapsed, boolean crafting, boolean editable,
+        boolean bookmarkedRecipe) {
         Map<String, String> k = new HashMap<>();
         String add = addKey();
         if (!entry.isRecipe()) {
@@ -158,6 +178,15 @@ public final class HotkeyTips {
         if (entry.isRecipe() && entry.type != ChainItem.Type.INGREDIENT) craftKeys(k);
         if (entry.type == ChainItem.Type.RESULT) k.put(keys("CTRL", "SHIFT", chatKey()), "Send Recipe to Chat");
         recipeAndCopyKeys(k);
+        if (bookmarkedRecipe) {
+            // the bookmark's own recipe opens first (left click and R)
+            k.put("R", "Show the Bookmarked Recipe");
+            k.put("LMB", "Show the Bookmarked Recipe");
+        }
+        k.remove("SHIFT + LMB");
+        cheatClicks(k);
+        // Shift + click on a bookmark drags it, it never shows recipes
+        k.put(keys("SHIFT", "LMB", "Drag"), "Move Position");
         return k;
     }
 

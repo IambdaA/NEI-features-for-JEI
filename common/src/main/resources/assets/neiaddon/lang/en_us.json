@@ -20,6 +20,7 @@
   "key.neiaddon.toggle_creative": "Toggle Creative Mode",
   "key.neiaddon.chat_link": "Send link to chat (Ctrl +)",
   "key.neiaddon.pull_items": "Pull all Bookmarked Items",
+  "key.neiaddon.give_missing": "Give Missing Ingredients (creative / cheat mode)",
   "neiaddon.tree.title": "Crafting Tree",
   "neiaddon.tree.empty": "No crafting chain to display",
   "neiaddon.tree.overlay": "Use for recipe tree",

@@ -48,6 +48,16 @@ public final class JeiGive {
 
     /** Gives {@code count} of the item the way JEI's cheat mode does; false when it cannot (a fluid, JEI not found). */
     static boolean give(ItemStack stack, long count) {
+        return give(stack, count, false);
+    }
+
+    /** {@code toInventory}: always into the inventory, whatever JEI's give mode (several items given at once). */
+    static boolean give(ItemStack stack, long count, boolean toInventory) {
+        if (FluidStacks.isFluid(stack) && count > 0) {
+            // a fluid is given as filled buckets, as JEI's cheat mode does: the amount is in millibuckets, rounded up
+            ItemStack bucket = FluidStacks.bucketOf(stack);
+            return !bucket.isEmpty() && give(bucket, Math.max(1, (count + 999) / 1000), toInventory);
+        }
         if (stack.isEmpty() || FluidStacks.isMilli(stack) || count <= 0) return false;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null && mc.gameMode != null && mc.player.isCreative()) {
@@ -59,11 +69,12 @@ public final class JeiGive {
             Class<?> internal = internal();
             Object connection = JeiAreas.method(internal, "getServerConnection")
                 .invoke(null);
-            Object config = JeiAreas.invoke(JeiAreas.method(internal, "getClientConfigs")
-                .invoke(null), "getClientConfig");
+            // getClientConfigs(), or getJeiClientConfigs() on older JEI (15.59 in ATM9, 19.25 in ATM10)
+            Object config = JeiButtons.clientConfig();
             // JEI 15: getGiveMode() gives the value; JEI 19 and later: giveMode() gives a config value read with get()
             Object mode = JeiAreas.invoke(config, "giveMode", "getGiveMode");
             if (!(mode instanceof Enum<?>)) mode = JeiAreas.invoke(mode, "get");
+            if (toInventory && mode instanceof Enum<?> e) mode = inventoryMode(e);
             int max = Math.max(1, stack.getMaxStackSize());
             // JEI's "give to the mouse" mode: the mouse holds one stack at most
             long left = String.valueOf(mode)
@@ -153,6 +164,61 @@ public final class JeiGive {
             return;
         }
         if (give(stack.get(), button == 0 ? QuantityField.scrollMultiplier(stack.get()) : 1)) event.setCanceled(true);
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    private static Object inventoryMode(Enum<?> mode) {
+        try {
+            return Enum.valueOf((Class) mode.getDeclaringClass(), "INVENTORY");
+        } catch (IllegalArgumentException e) {
+            return mode;
+        }
+    }
+
+    /** JEI's own cheat mode toggle (not this addon's Cheat Mode). */
+    static boolean jeiCheating() {
+        if (failed) return false;
+        try {
+            Object state = JeiAreas.method(internal(), "getClientToggleState")
+                .invoke(null);
+            return Boolean.TRUE.equals(JeiAreas.invoke(state, "isCheatItemsEnabled"));
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return false;
+        }
+    }
+
+    /** Sends one of JEI's packets to the server; false when JEI is not on the server or the packet is not there. */
+    private static boolean sendJei(String packetClass, Class<?>[] types, Object... args) {
+        try {
+            Object connection = JeiAreas.method(internal(), "getServerConnection")
+                .invoke(null);
+            if (!Boolean.TRUE.equals(JeiAreas.invoke(connection, "isJeiOnServer"))) return false;
+            Object packet = Class.forName(packetClass)
+                .getConstructor(types)
+                .newInstance(args);
+            sendMethod(connection).invoke(connection, packet);
+            return true;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            NeiAddon.LOGGER.warn("Could not send JEI's {}", packetClass, e);
+            return false;
+        }
+    }
+
+    /** Deletes the item on the cursor the way JEI's cheat mode does (the server checks it may). */
+    static boolean deleteHeld(ItemStack held) {
+        return sendJei("mezz.jei.common.network.packets.PacketDeletePlayerItem", new Class<?>[] { ItemStack.class }, held.copy());
+    }
+
+    /** Puts {@code count} of the item on the cursor (JEI's "give to the mouse" mode). */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    static boolean giveToMouse(ItemStack stack, int count) {
+        try {
+            Class modeType = Class.forName("mezz.jei.common.config.GiveMode");
+            return sendJei("mezz.jei.common.network.packets.PacketGiveItemStack", new Class<?>[] { ItemStack.class, modeType },
+                stack.copyWithCount(count), Enum.valueOf(modeType, "MOUSE_PICKUP"));
+        } catch (ClassNotFoundException | RuntimeException e) {
+            return false;
+        }
     }
 
     private static Class<?> internal() throws ClassNotFoundException {

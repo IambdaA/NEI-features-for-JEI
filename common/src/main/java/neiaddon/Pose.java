@@ -66,6 +66,37 @@ final class Pose {
         of(g).popMatrix();
     }
 
+    /**
+     * Runs a recipe picture's drawing (another mod's recipe category can draw anything) in front of everything and
+     * keeps what it does from leaking: the pose it leaves unbalanced or moved, and render state like the depth test
+     * (a leaked pose or depth state drew the bookmarks after a GregTech recipe over the item on the cursor).
+     */
+    static void isolated(GuiGraphics g, Runnable draw) {
+        PoseStack ps = g.pose();
+        PoseStack.Pose top = ps.last();
+        org.joml.Matrix4f matrix = new org.joml.Matrix4f(top.pose());
+        org.joml.Matrix3f normal = new org.joml.Matrix3f(top.normal());
+        g.flush();
+        ps.pushPose();
+        // above the items (150 to 250) and the tooltip box (400) the picture sits in
+        ps.translate(0f, 0f, 150f);
+        try {
+            draw.run();
+        } finally {
+            g.flush();
+            // pops a push the drawing left open
+            for (int i = 0; i < 64 && ps.last() != top && !ps.clear(); i++) ps.popPose();
+            top.pose().set(matrix);
+            top.normal().set(normal);
+            com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
+            com.mojang.blaze3d.systems.RenderSystem.depthFunc(515);
+            com.mojang.blaze3d.systems.RenderSystem.depthMask(true);
+            com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc();
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+        }
+    }
+
     /** Runs {@code draw} in front of items (counts, highlights, badges). */
     static void over(GuiGraphics g, Runnable draw) {
         Pose pose = of(g);
