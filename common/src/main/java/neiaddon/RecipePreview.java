@@ -186,7 +186,7 @@ public final class RecipePreview {
         List<FormattedCharSequence> none = List.of();
         TreeDraw.boxAt(event.getGuiGraphics(), font, bx, by, none, bw, r.getHeight(), (g2, px, py) -> {
             picture.setPosition(px, py);
-            picture.drawRecipe(g2, -1000, -1000);
+            Pose.isolated(g2, () -> picture.drawRecipe(g2, -1000, -1000));
         });
     }
 }

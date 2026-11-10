@@ -59,7 +59,8 @@ import org.lwjgl.glfw.GLFW;
  */
 public final class BookmarkPanel {
 
-    private static final int SLOT = 18;
+    /** Distance between bookmark slots: 18, smaller with Bookmark Scale (set in {@link #layout}). */
+    private static int SLOT = 18;
     private static final int STRIP = 7;
     private static final int PAD = 2;
     private static final int BTN = 16;
@@ -135,6 +136,7 @@ public final class BookmarkPanel {
     // ---------------------------------------------------------------- layout
 
     static void layout(Screen screen) {
+        SLOT = Math.max(9, Math.round(18 * AddonConfig.BM_SCALE.get() / 100f));
         // the JEI recipe window is centred and about half the screen wide
         int left = screen instanceof AbstractContainerScreen<?> c ? neiaddon.platform.ClientPlatform.get().containerBounds(c)[0] : (int) (screen.width * 0.26);
         // JEI's lookup history list (when on) sits above its two buttons at the bottom left; leave it room
@@ -587,6 +589,34 @@ public final class BookmarkPanel {
         return Pull.available() && !page.entries.isEmpty() && pullX() + BTN <= px + pw;
     }
 
+    /** Giving needs creative mode or cheat mode (JEI's or this addon's). */
+    static boolean canGive() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.player != null && mc.player.isCreative() || JeiGive.cheating();
+    }
+
+    /**
+     * The give key over a crafting-chain group's strip: gives what the chain is missing from outside (the red ingredients
+     * of its Shift tooltip), so autocrafting can run: base items in the amounts that are short, and for a tool that is
+     * short of durability as many new tools as cover it. Always into the inventory (JEI's "give to the mouse" mode would
+     * leave only the last item on the cursor). Fluids are skipped (they cannot be given as items).
+     */
+    private static boolean giveMissing(Bookmarks.Page page, int gid) {
+        Map<String, Object[]> give = new LinkedHashMap<>();
+        try {
+            computeShift(page, gid, false, give);
+        } catch (RuntimeException e) {
+            NeiAddon.LOGGER.warn("Could not work out the missing ingredients of group {}", gid, e);
+            return false;
+        }
+        int given = 0;
+        for (Object[] v : give.values()) {
+            if (JeiGive.give((ItemStack) v[0], (Long) v[1], true)) given++;
+        }
+        NeiAddon.LOGGER.info("Gave the missing ingredients of bookmark group {}: {} of {} item kind(s)", gid, given, give.size());
+        return true;
+    }
+
     private static void draw(GuiGraphics g, int mx, int my) {
         Font font = Minecraft.getInstance().font;
         lastMx = mx;
@@ -693,6 +723,14 @@ public final class BookmarkPanel {
             if (recipeResult && !hovered && AddonConfig.BM_MARKER_MODE.get() == 2) g.fill(x, y, x + SLOT, y + SLOT, RESULT_BG);
             if (hovered) g.fill(x, y, x + SLOT, y + SLOT, HIGHLIGHT);
             ItemStack stack = c.entry().key.sample;
+            // Bookmark Scale: what is in the slot is drawn at the slot's size
+            int cellX = x, cellY = y;
+            Pose cellPose = Pose.of(g);
+            cellPose.pushMatrix();
+            cellPose.translate(x, y);
+            cellPose.scale(SLOT / 18f, SLOT / 18f);
+            x = 0;
+            y = 0;
             FluidStacks.item(g, stack, x + 1, y + 1);
             g.renderItemDecorations(font, stack, x + 1, y + 1, null);
             // NEI: amounts are drawn small (half size) bottom right, only when above 0
@@ -713,6 +751,9 @@ public final class BookmarkPanel {
             }
             if (recipeResult && (c.firstOutput() || AddonConfig.BM_MARKER_MODE.get() == 1)) drawRecipeMarker(g, font, c, x, y);
             else if (jeiStyle(c)) drawRecipeMarker(g, font, c, x, y);
+            cellPose.popMatrix();
+            x = cellX;
+            y = cellY;
             if (c == hover) {
                 tipStack = stack;
             }
@@ -720,8 +761,10 @@ public final class BookmarkPanel {
         endSlide();
         drawBorders(g, page, first, last);
 
-        // tooltips
-        if (reorder != null) {
+        // tooltips (none while an item on the cursor would be deleted: that prompt is drawn instead)
+        if (HeldItemDelete.active(McCompat.screen(), mx, my)) {
+            // see HeldItemDelete
+        } else if (reorder != null) {
             Pose.begin(g, Pose.OVER);
             FluidStacks.item(g, reorder.key.sample, mx - 8, my - 8);
             Pose.end(g);
@@ -805,7 +848,9 @@ public final class BookmarkPanel {
             }).orElse(null);
         }
         if (icon != null && icon.getWidth() > 0 && icon.getHeight() > 0) {
-            float f = 6.4f / Math.max(icon.getWidth(), icon.getHeight());
+            int biggest = Math.max(icon.getWidth(), icon.getHeight());
+            // the Handler Icon Scale setting, never bigger than the slot
+            float f = Math.min(6.4f * AddonConfig.BM_HANDLER_ICON_SCALE.get() / 100f, 16f) / biggest;
             Pose pose = Pose.of(g);
             pose.pushMatrix();
             // an item icon draws 150 above the pose: this puts it just in front of the slot's item and well behind tooltips (400)
@@ -935,7 +980,14 @@ public final class BookmarkPanel {
      * One icon list of a tooltip (NEI's ItemsTooltipLineHandler): {@code amounts} is empty when no amounts are drawn,
      * {@code active} is the highlighted item (-1 for none).
      */
-    private record Section(String label, List<ItemStack> stacks, List<Long> amounts, int maxRows, int active, int missing) {}
+    /** {@code durability}: indices of tools, whose amount is durability (drawn blue) instead of a count. */
+    private record Section(String label, List<ItemStack> stacks, List<Long> amounts, int maxRows, int active, int missing,
+        java.util.Set<Integer> durability) {
+
+        Section(String label, List<ItemStack> stacks, List<Long> amounts, int maxRows, int active, int missing) {
+            this(label, stacks, amounts, maxRows, active, missing, java.util.Set.of());
+        }
+    }
 
     /** NEI's tooltip over the group strip / page label: "Bookmarks Group", its hotkeys, then the crafting chain. */
     private static GroupTip groupTip(Bookmarks.Page page, int gid, boolean label) {
@@ -956,6 +1008,8 @@ public final class BookmarkPanel {
                 k.put(CalcKeys.TREE.getTranslatedKeyMessage()
                     .getString(), "Open Crafting Tree");
                 HotkeyTips.craftKeys(k);
+                if (canGive()) k.put(CalcKeys.GIVE.getTranslatedKeyMessage()
+                    .getString(), "Give Missing Ingredients");
             }
             HotkeyTips.pullKeys(k);
         }
@@ -993,6 +1047,7 @@ public final class BookmarkPanel {
                 : math.requiredAmount.getOrDefault(item, item.amount());
             if (amount > 0) sum(inputs, item, amount);
         }
+        toolsByDurability(math, inputs, inputs, null);
         List<Section> out = new ArrayList<>();
         addSection(out, "Results", outputs);
         addSection(out, "Ingredients", inputs);
@@ -1011,7 +1066,7 @@ public final class BookmarkPanel {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return have;
         for (net.minecraft.world.inventory.Slot slot : mc.player.containerMenu.slots) {
-            if (slot.hasItem() && !(slot instanceof net.minecraft.world.inventory.ResultSlot) && slot.mayPickup(mc.player)) {
+            if (slot.hasItem() && !CraftSlots.isResult(slot) && slot.mayPickup(mc.player)) {
                 have.merge(RecipeData.idOf(slot.getItem()), (long) slot.getItem().getCount(), Long::sum);
             }
         }
@@ -1042,11 +1097,13 @@ public final class BookmarkPanel {
     private static Section sectionOf(String label, List<Map.Entry<String, Object[]>> entries, int missing) {
         List<ItemStack> stacks = new ArrayList<>();
         List<Long> amounts = new ArrayList<>();
+        java.util.Set<Integer> durability = new java.util.HashSet<>();
         for (Map.Entry<String, Object[]> e : entries) {
+            if (e.getValue().length > 2) durability.add(stacks.size());
             stacks.add((ItemStack) e.getValue()[0]);
             amounts.add((Long) e.getValue()[1]);
         }
-        return new Section(label, stacks, amounts, tipRows(), -1, missing);
+        return new Section(label, stacks, amounts, tipRows(), -1, missing, durability);
     }
 
     /** Recomputed twice a second, not every frame. */
@@ -1066,6 +1123,11 @@ public final class BookmarkPanel {
     }
 
     private static List<Section> computeShift(Bookmarks.Page page, int gid, boolean ctrl) {
+        return computeShift(page, gid, ctrl, null);
+    }
+
+    /** {@code give}, when not null, gets what is short: id -> {stack, how many to give}. */
+    private static List<Section> computeShift(Bookmarks.Page page, int gid, boolean ctrl, Map<String, Object[]> give) {
         ChainMath m = page.hasRecipes(gid) ? Bookmarks.autocraftChain(page, gid) : null;
         if (m == null) return List.of();
         Map<String, Long> have = inventoryCounts();
@@ -1107,6 +1169,16 @@ public final class BookmarkPanel {
             if (e.getKey().type == ChainItem.Type.RESULT && e.getValue() != 0) sumInto(needed, e.getKey(), e.getValue());
         }
 
+        Map<String, Object[]> shortTools = new LinkedHashMap<>();
+        toolsByDurability(m, inputs, available, shortTools);
+        if (give != null) {
+            for (Map.Entry<String, Object[]> e : inputs.entrySet()) {
+                Object[] v = shortTools.containsKey(e.getKey()) ? shortTools.get(e.getKey()) : e.getValue();
+                if (v.length > 2) continue; // a tool with enough durability (never in inputs, but be sure)
+                give.put(e.getKey(), new Object[] { v[0], v[1] });
+            }
+        }
+
         // items that are short stay on top of the ingredients, the ones the inventory covers follow
         List<Map.Entry<String, Object[]>> ingredients = new ArrayList<>(byAmount(inputs));
         int missing = ingredients.size();
@@ -1121,6 +1193,47 @@ public final class BookmarkPanel {
         if (!needed.isEmpty()) out.add(sectionOf("Required Crafts", byAmount(needed), 0));
         if (!ingredients.isEmpty()) out.add(sectionOf("Ingredients", ingredients, missing));
         return out;
+    }
+
+    /**
+     * Tools (a hammer, a file) are listed by the durability the chain's crafts take from them instead of by how many
+     * there are: one tool does every craft that uses it until it wears out. Short (red) when the tools of that kind in
+     * the inventory have less durability left than that.
+     */
+    private static void toolsByDurability(ChainMath m, Map<String, Object[]> inputs, Map<String, Object[]> available,
+        Map<String, Object[]> shortTools) {
+        Map<String, java.util.Set<String>> options = new LinkedHashMap<>();
+        Map<String, long[]> need = new LinkedHashMap<>();
+        Map<String, ItemStack> samples = new LinkedHashMap<>();
+        for (ChainItem item : m.recipeIngredients) {
+            ChainItem pref = m.preferredItems.get(item);
+            if (pref != null && m.requiredAmount.containsKey(pref)) continue; // the chain crafts this one
+            ItemStack stack = stackFor(item);
+            if (!Tools.isTool(stack) || item.amount() <= 0) continue;
+            String key = item.item;
+            options.computeIfAbsent(key, k -> new java.util.HashSet<>(item.options))
+                .addAll(item.options);
+            samples.putIfAbsent(key, stack);
+            long per = Math.max(1, Tools.durabilityPerCraft(stack));
+            need.computeIfAbsent(key, k -> new long[1])[0] += item.amount() * per;
+        }
+        for (Map.Entry<String, long[]> e : need.entrySet()) {
+            java.util.Set<String> ids = options.get(e.getKey());
+            ids.add(e.getKey());
+            for (String id : ids) {
+                inputs.remove(id);
+                available.remove(id);
+            }
+            long needed = e.getValue()[0];
+            long have = Tools.durabilityInInventory(ids);
+            (have >= needed ? available : inputs).put(e.getKey(), new Object[] { samples.get(e.getKey()), needed, "durability" });
+            if (have < needed && shortTools != null) {
+                // new tools to cover the durability that is short
+                ItemStack sample = samples.get(e.getKey());
+                long perTool = Math.max(1, sample.getMaxDamage() - sample.getDamageValue());
+                shortTools.put(e.getKey(), new Object[] { sample, (needed - have + perTool - 1) / perTool });
+            }
+        }
     }
 
     private static void sum(Map<String, Object[]> into, ChainItem item, long amount) {
@@ -1138,11 +1251,13 @@ public final class BookmarkPanel {
         });
         List<ItemStack> stacks = new ArrayList<>();
         List<Long> amounts = new ArrayList<>();
+        java.util.Set<Integer> durability = new java.util.HashSet<>();
         for (Map.Entry<String, Object[]> e : sorted) {
+            if (e.getValue().length > 2) durability.add(stacks.size());
             stacks.add((ItemStack) e.getValue()[0]);
             amounts.add((Long) e.getValue()[1]);
         }
-        out.add(new Section(label, stacks, amounts, tipRows(), -1, 0));
+        out.add(new Section(label, stacks, amounts, tipRows(), -1, 0, durability));
     }
 
     private static final int TIP_SLOT = 18;
@@ -1227,7 +1342,7 @@ public final class BookmarkPanel {
                 if (!sec.amounts().isEmpty()) {
                     String amount = format(sec.amounts().get(index));
                     Pose.begin(g, Pose.OVER);
-                    g.drawString(font, amount, sx + 17 - font.width(amount), sy + 9, index < sec.missing() ? 0xFFFF5555 : 0xFFFFFFFF, true);
+                    g.drawString(font, amount, sx + 17 - font.width(amount), sy + 9, index < sec.missing() ? 0xFFFF5555 : sec.durability().contains(index) ? 0xFF6EB6FF : 0xFFFFFFFF, true);
                     Pose.end(g);
                 }
             }
@@ -1256,7 +1371,8 @@ public final class BookmarkPanel {
         List<Component> tip = new ArrayList<>();
         tip.add(body.isEmpty() ? FluidStacks.name(stack) : body.get(0));
         for (String line : HotkeyTips.hotkeyLines(
-            HotkeyTips.panelKeys(page, entry, isCollapsed(page, cell.groupId()), isChain(page, cell.groupId()), single(cell)))) {
+            HotkeyTips.panelKeys(page, entry, isCollapsed(page, cell.groupId()), isChain(page, cell.groupId()), single(cell),
+                tipRecipe(cell) != null && entry.type != ChainItem.Type.INGREDIENT))) {
             tip.add(Component.literal(line));
         }
         for (int i = 1; i < body.size(); i++) tip.add(body.get(i));
@@ -1283,7 +1399,7 @@ public final class BookmarkPanel {
                 Rect2i r = picture.getRect();
                 TreeDraw.tooltip(g, font, mx, my, screen.width, screen.height, lines, List.of(), r.getWidth(), r.getHeight(), (g2, px2, py2) -> {
                     picture.setPosition(px2, py2);
-                    picture.drawRecipe(g2, -1000, -1000);
+                    Pose.isolated(g2, () -> picture.drawRecipe(g2, -1000, -1000));
                 });
                 return;
             }
@@ -1307,6 +1423,13 @@ public final class BookmarkPanel {
     }
 
     // ---------------------------------------------------------------- input
+
+    /** Is the point over the panel (laid out for the screen)? */
+    static boolean contains(Screen s, double mx, double my) {
+        if (!applies(s)) return false;
+        layout(s);
+        return inPanel(mx, my);
+    }
 
     private static boolean inPanel(double mx, double my) {
         if (!active || !in(mx, my, px, py, pw, footY + BTN - py)) return false;
@@ -1428,6 +1551,8 @@ public final class BookmarkPanel {
             && JeiGive.give(e.key.sample, button == 0 ? cheatAmount(c) : 1)) {
             // NEI Cheat Mode (not in the recipe screen): a click gives the item (left: see cheatAmount, right: one);
             // R / U over the bookmark still show its recipes
+        } else if (button == 0 && showBookmarkedRecipe(c)) {
+            // the recipe the bookmark was made from (a recipe's result, or an item from JEI's recipe bookmark button)
         } else if (button == 0) {
             showRecipes(e.key.sample, RecipeIngredientRole.OUTPUT);
         } else if (button == 1) {
@@ -1450,6 +1575,31 @@ public final class BookmarkPanel {
         if (pullShown(page) && in(mx, my, pullX(), footY, BTN, BTN)) return true;
         if (in(mx, my, px, hdrY(), pw, BTN)) return true;
         return stripRowAt(mx, my) >= 0 || cellAt(mx, my) != null;
+    }
+
+    /** Is the key one of JEI's "show recipes" keys (R)? */
+    private static boolean jeiShowRecipeKey(InputConstants.Key key) {
+        for (net.minecraft.client.KeyMapping k : Minecraft.getInstance().options.keyMappings) {
+            if (k.getName()
+                .startsWith("key.jei.showRecipe") && McCompat.matches(k, key)) return true;
+        }
+        return false;
+    }
+
+    /** A click on a bookmarked recipe's result opens JEI on that recipe; false when the bookmark has no recipe. */
+    private static boolean showBookmarkedRecipe(Cell c) {
+        String recipeId = tipRecipe(c);
+        var rt = Calculator.runtime;
+        if (recipeId == null || rt == null || c.entry().type == ChainItem.Type.INGREDIENT) return false;
+        try {
+            RecipeLookup.Target<?> target = RecipeLookup.findTarget(recipeId, c.entry().key.sample);
+            if (target == null) return false;
+            target.show(List.of(FluidStacks.focus(rt, RecipeIngredientRole.OUTPUT, c.entry().key.sample)));
+            return true;
+        } catch (RuntimeException ex) {
+            NeiAddon.LOGGER.warn("Could not open the bookmarked recipe {}", recipeId, ex);
+            return false;
+        }
     }
 
     static void showRecipes(ItemStack stack, RecipeIngredientRole role) {
@@ -1674,6 +1824,11 @@ public final class BookmarkPanel {
         buildCells(page);
         Cell c = cellAt(lastMx, lastMy);
         final int gid = hoveredGroup(page, lastMx, lastMy);
+        if (c != null && jeiShowRecipeKey(key) && showBookmarkedRecipe(c)) {
+            // JEI's show-recipes key (R) over a bookmarked recipe opens it, like a left click
+            event.setCanceled(true);
+            return;
+        }
 
         if (ctrl() && McCompat.matches(CalcKeys.CHAT_LINK, key)) {
             // NEI: over a group handle the whole group, over a recipe's result with Shift that recipe, else the item
@@ -1682,6 +1837,10 @@ public final class BookmarkPanel {
                 : shift() && c.entry().type == ChainItem.Type.RESULT ? Bookmarks.shareRecipe(page, c.entry())
                 : Bookmarks.shareItem(c.entry().key.sample, amountOf(c));
             if (ShareClient.send(payload)) event.setCanceled(true);
+            return;
+        }
+        if (gid >= 0 && McCompat.matches(CalcKeys.GIVE, key) && isChain(page, gid) && page.hasRecipes(gid) && canGive()) {
+            if (giveMissing(page, gid)) event.setCanceled(true);
             return;
         }
         if (McCompat.matches(CalcKeys.PULL, key)) {

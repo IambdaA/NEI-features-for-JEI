@@ -25,6 +25,11 @@ final class ForgeClient {
             event.registerAbove(VanillaGuiOverlay.CROSSHAIR.id(), HighlightTips.LAYER_ID, (gui, graphics, partialTick, width, height) -> tips.render(graphics, partialTick));
         });
         ForgeEvents.install();
+        // the delete prompt holds back JEI's tooltip of the ingredient under it (see HeldItemDelete)
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.addListener(
+            (net.minecraftforge.client.event.RenderTooltipEvent.Pre event) -> {
+                if (neiaddon.HeldItemDelete.hideTooltip()) event.setCanceled(true);
+            });
         ModLoadingContext.get()
             .registerExtensionPoint(
                 ConfigScreenHandler.ConfigScreenFactory.class,

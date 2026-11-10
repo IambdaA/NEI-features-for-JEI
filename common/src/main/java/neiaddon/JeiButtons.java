@@ -205,7 +205,7 @@ public final class JeiButtons {
     private static Method configsGetter;
 
     /** JEI's client config: Internal.getClientConfigs() (getJeiClientConfigs() on JEI 15.59), then getClientConfig(). */
-    private static Object clientConfig() throws ReflectiveOperationException {
+    static Object clientConfig() throws ReflectiveOperationException {
         if (configsGetter == null) {
             Class<?> internal = Class.forName("mezz.jei.common.Internal");
             configsGetter = JeiAreas.method(internal, "getClientConfigs");
@@ -219,6 +219,16 @@ public final class JeiButtons {
     private static Object configValue(Object config, String... names) throws ReflectiveOperationException {
         Object value = JeiAreas.invoke(config, names);
         return value instanceof Boolean || value == null ? value : JeiAreas.invoke(value, "get");
+    }
+
+    /** JEI's "Bookmark Output as Recipe" (config: bookmarks); null when this JEI version has no such option or it is unreadable. */
+    public static Boolean bookmarkOutputAsRecipe() {
+        try {
+            Object value = configValue(clientConfig(), "isBookmarkOutputAsRecipeEnabled", "bookmarkOutputAsRecipe");
+            return value instanceof Boolean b ? b : null;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return null;
+        }
     }
 
     /** Is JEI's search bar set to "Bottom Center" (config: search / centerSearch)? False when unreadable. */

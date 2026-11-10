@@ -66,6 +66,48 @@ public final class RecipeLookup {
         }
 
         /**
+         * Opens JEI's recipe screen for the focus as usual (all its recipes), then turns to this recipe's category and to
+         * the page that starts with it. JEI has no API for that, so its recipe screen is driven by reflection; if that
+         * fails the screen simply stays on its first page.
+         */
+        public void show(java.util.List<mezz.jei.api.recipe.IFocus<?>> focuses) {
+            var gui = Calculator.runtime.getRecipesGui();
+            gui.show(focuses);
+            try {
+                Object logic = JeiAreas.field(gui.getClass(), "logic")
+                    .get(gui);
+                java.lang.reflect.Method setCategory = logic.getClass()
+                    .getMethod("setRecipeCategory", IRecipeCategory.class);
+                setCategory.setAccessible(true);
+                setCategory.invoke(logic, category);
+                Object state = JeiAreas.field(logic.getClass(), "state")
+                    .get(logic);
+                java.util.List<?> recipes = (java.util.List<?>) JeiAreas.invoke(JeiAreas.invoke(state, "getFocusedRecipes"), "getRecipes");
+                int index = recipes.indexOf(recipe);
+                if (index <= 0) return;
+                java.lang.reflect.Method setIndex = null;
+                for (Class<?> c = state.getClass(); c != null && setIndex == null; c = c.getSuperclass()) {
+                    try {
+                        setIndex = c.getDeclaredMethod("setRecipeIndex", int.class);
+                    } catch (NoSuchMethodException ignored) {}
+                }
+                if (setIndex != null) {
+                    setIndex.setAccessible(true);
+                    setIndex.invoke(state, index);
+                } else {
+                    // older JEI (15.20, 19.25) has no setter, only the field
+                    JeiAreas.field(state.getClass(), "recipeIndex")
+                        .setInt(state, index);
+                }
+                Object listener = JeiAreas.field(logic.getClass(), "stateListener")
+                    .get(logic);
+                JeiAreas.invoke(listener, "onStateChange");
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+                NeiAddon.LOGGER.debug("Could not turn JEI's recipe screen to the bookmarked recipe", e);
+            }
+        }
+
+        /**
          * The recipe type's icon (shown on bookmarks), or null: the category's own icon, else a picture of its first catalyst,
          * as JEI's own bookmark list does (JEI's crafting category has no icon of its own, so it shows the crafting table).
          */
@@ -116,6 +158,61 @@ public final class RecipeLookup {
         /** Moves the ingredients for one craft into the grid (JEI sends the request to the server). */
         public boolean transfer(AbstractContainerMenu menu, Player player) {
             return transfer(menu, player, false);
+        }
+
+        /**
+         * Why the open container cannot take this recipe now, for the player: the ingredients JEI found missing (from the
+         * slots its transfer error names), else the error's kind; null when it can.
+         */
+        @SuppressWarnings("removal")
+        public String whyNot(AbstractContainerMenu menu, Player player) {
+            IJeiRuntime rt = Calculator.runtime;
+            if (rt == null) return null;
+            IRecipeTransferHandler<AbstractContainerMenu, T> handler = handler(rt, menu);
+            if (handler == null) return "it is not made in this crafting grid";
+            Object error = handler.transferRecipe(menu, recipe, slots, player, false, false);
+            if (error == null) return null;
+            Map<String, Integer> missing = new java.util.LinkedHashMap<>();
+            try {
+                for (Class<?> c = error.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+                    for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                        if (!java.util.Collection.class.isAssignableFrom(f.getType())) continue;
+                        f.setAccessible(true);
+                        Object value = f.get(error);
+                        if (!(value instanceof java.util.Collection<?> list)) continue;
+                        for (Object o : list) {
+                            if (o instanceof mezz.jei.api.gui.ingredient.IRecipeSlotView view) {
+                                missing.merge(view.getDisplayedIngredient()
+                                    .map(ti -> nameOf(rt, ti))
+                                    .orElse("?"), 1, Integer::sum);
+                            }
+                        }
+                    }
+                }
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+                missing.clear();
+            }
+            if (missing.isEmpty()) {
+                try {
+                    return "JEI says " + JeiAreas.invoke(error, "getType");
+                } catch (ReflectiveOperationException | RuntimeException e) {
+                    return "JEI cannot move it into the grid";
+                }
+            }
+            StringBuilder out = new StringBuilder("missing ");
+            for (Map.Entry<String, Integer> e : missing.entrySet()) {
+                if (out.length() > 8) out.append(", ");
+                out.append(e.getKey());
+                if (e.getValue() > 1) out.append(" x")
+                    .append(e.getValue());
+            }
+            return out.toString();
+        }
+
+        private static <I> String nameOf(IJeiRuntime rt, mezz.jei.api.ingredients.ITypedIngredient<I> ingredient) {
+            return rt.getIngredientManager()
+                .getIngredientHelper(ingredient.getType())
+                .getDisplayName(ingredient.getIngredient());
         }
 
         /** The same, and with {@code max} as many crafts as the grid takes (what Shift does on JEI's "+" button). */
