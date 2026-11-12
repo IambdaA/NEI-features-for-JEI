@@ -23,7 +23,8 @@ import net.minecraft.world.item.ItemStack;
 
 /**
  * Finds a recipe again from the id saved in the favorites file (see {@link RecipeShape#idOf}). The result is cached
- * until JEI reloads. Recipes whose id is not found (mod removed, recipe changed) simply resolve to null.
+ * until JEI reloads. Recipes whose id is not found (mod removed, recipe changed) simply resolve to null. Under EMI,
+ * recipes JEI does not have (EMI blocks JEI's plugins) are looked up in EMI.
  */
 public final class RecipeLookup {
 
@@ -34,11 +35,23 @@ public final class RecipeLookup {
     private static final Map<String, String> onlyRecipes = new HashMap<>();
     /** Counts the JEI reloads, so pictures of recipes kept elsewhere know when to be dropped. */
     private static int generation;
+    /** The EMI reload count the caches were last checked against (see {@link #checkEmi}). */
+    private static int emiGeneration;
 
     private RecipeLookup() {}
 
     public static int generation() {
+        checkEmi();
         return generation;
+    }
+
+    /** Drops the caches when EMI has reloaded since they were filled: its recipes may have changed. */
+    private static void checkEmi() {
+        if (EmiCompat.recipesAvailable()) EmiCompat.loading();
+        if (EmiCompat.generation() != emiGeneration) {
+            emiGeneration = EmiCompat.generation();
+            reset();
+        }
     }
 
     public static void reset() {
@@ -51,26 +64,38 @@ public final class RecipeLookup {
 
     /**
      * A recipe as JEI's own "+" button sees it: what its transfer handler needs to fill a crafting grid with the
-     * recipe's ingredients.
+     * recipe's ingredients. A recipe found in EMI has no JEI slots, and is shown, filled and explained by EMI (see
+     * {@link #ofEmi}); then the JEI parts may be null too.
      */
     public static final class Target<T> {
 
         private final IRecipeCategory<T> category;
         private final T recipe;
         private final IRecipeSlotsView slots;
+        /** The EMI side of a recipe found in EMI, or null for a JEI recipe. */
+        private final EmiCompat.RecipeHandle emi;
 
         Target(IRecipeCategory<T> category, T recipe, IRecipeSlotsView slots) {
+            this(category, recipe, slots, null);
+        }
+
+        private Target(IRecipeCategory<T> category, T recipe, IRecipeSlotsView slots, EmiCompat.RecipeHandle emi) {
             this.category = category;
             this.recipe = recipe;
             this.slots = slots;
+            this.emi = emi;
         }
 
         /**
          * Opens JEI's recipe screen for the focus as usual (all its recipes), then turns to this recipe's category and to
          * the page that starts with it. JEI has no API for that, so its recipe screen is driven by reflection; if that
-         * fails the screen simply stays on its first page.
+         * fails the screen simply stays on its first page. A recipe found in EMI is opened in EMI.
          */
         public void show(java.util.List<mezz.jei.api.recipe.IFocus<?>> focuses) {
+            if (emi != null) {
+                emi.show();
+                return;
+            }
             var gui = Calculator.runtime.getRecipesGui();
             gui.show(focuses);
             try {
@@ -112,6 +137,10 @@ public final class RecipeLookup {
          * as JEI's own bookmark list does (JEI's crafting category has no icon of its own, so it shows the crafting table).
          */
         public mezz.jei.api.gui.drawable.IDrawable icon() {
+            if (emi != null) {
+                mezz.jei.api.gui.drawable.IDrawable icon = emi.icon();
+                if (icon != null || category == null) return icon;
+            }
             mezz.jei.api.gui.drawable.IDrawable own = category.getIcon();
             IJeiRuntime rt = Calculator.runtime;
             if (own != null || rt == null) return own;
@@ -128,7 +157,7 @@ public final class RecipeLookup {
         /** A drawable copy of the recipe (for tooltips), or null. */
         public IRecipeLayoutDrawable<T> layout() {
             IJeiRuntime rt = Calculator.runtime;
-            if (rt == null) return null;
+            if (rt == null || category == null || recipe == null) return null;
             return rt.getRecipeManager()
                 .createRecipeLayoutDrawable(
                     category,
@@ -149,6 +178,7 @@ public final class RecipeLookup {
         @SuppressWarnings("removal")
         /** Can the open container take this recipe right now (a handler exists and every ingredient is in the inventory)? */
         public boolean canTransfer(AbstractContainerMenu menu, Player player) {
+            if (emi != null) return emi.canFill(menu);
             IJeiRuntime rt = Calculator.runtime;
             if (rt == null) return false;
             IRecipeTransferHandler<AbstractContainerMenu, T> handler = handler(rt, menu);
@@ -166,6 +196,7 @@ public final class RecipeLookup {
          */
         @SuppressWarnings("removal")
         public String whyNot(AbstractContainerMenu menu, Player player) {
+            if (emi != null) return emi.whyNot(menu);
             IJeiRuntime rt = Calculator.runtime;
             if (rt == null) return null;
             IRecipeTransferHandler<AbstractContainerMenu, T> handler = handler(rt, menu);
@@ -218,10 +249,32 @@ public final class RecipeLookup {
         /** The same, and with {@code max} as many crafts as the grid takes (what Shift does on JEI's "+" button). */
         @SuppressWarnings("removal")
         public boolean transfer(AbstractContainerMenu menu, Player player, boolean max) {
+            if (emi != null) return emi.fill(menu, max);
             IJeiRuntime rt = Calculator.runtime;
             if (rt == null) return false;
             IRecipeTransferHandler<AbstractContainerMenu, T> handler = handler(rt, menu);
             return handler != null && handler.transferRecipe(menu, recipe, slots, player, max, true) == null;
+        }
+
+        /**
+         * The transfer target of a recipe found in EMI: the JEI category and recipe it maps to when there are both (so the
+         * JEI picture and icon work), else a target with only EMI's side.
+         */
+        static Target<?> ofEmi(EmiCompat.RecipeHandle handle) {
+            IRecipeCategory<?> category = handle.jeiCategory();
+            Object recipe = handle.jeiRecipe();
+            if (category != null && recipe != null && category.getRecipeType()
+                .getRecipeClass()
+                .isInstance(recipe)) {
+                return typed(category, recipe, handle);
+            }
+            return new Target<Object>(null, null, null, handle);
+        }
+
+        private static <T> Target<T> typed(IRecipeCategory<T> category, Object recipe, EmiCompat.RecipeHandle handle) {
+            return new Target<>(category, category.getRecipeType()
+                .getRecipeClass()
+                .cast(recipe), null, handle);
         }
     }
 
@@ -242,12 +295,30 @@ public final class RecipeLookup {
      * (and it has ingredients), else null. The answer is kept until JEI reloads.
      */
     public static String onlyRecipeFor(ItemStack stack) {
+        checkEmi();
         if (stack.isEmpty()) return null;
         String key = RecipeData.idOf(stack);
         String known = onlyRecipes.get(key);
         if (known != null) return known.isEmpty() ? null : known;
         IJeiRuntime rt = Calculator.runtime;
         if (rt == null) return null;
+        if (EmiCompat.recipesAvailable()) {
+            if (EmiCompat.loading()) return null;
+            List<RecipeShape> emi = EmiCompat.recipesFor(stack);
+            // EMI may have started reloading since the check above: cache nothing then
+            if (emi == null && EmiCompat.loading()) return null;
+            if (emi != null) {
+                String emiFound = "";
+                if (emi.size() == 1 && !emi.get(0).inputs.isEmpty()) {
+                    RecipeShape shape = emi.get(0);
+                    emiFound = shape.id;
+                    cache.put(emiFound, shape);
+                    missing.remove(emiFound);
+                }
+                onlyRecipes.put(key, emiFound);
+                return emiFound.isEmpty() ? null : emiFound;
+            }
+        }
         String found = "";
         try {
             IFocus<?> focus = FluidStacks.focus(rt, RecipeIngredientRole.OUTPUT, stack);
@@ -295,6 +366,7 @@ public final class RecipeLookup {
 
     /** The recipe's transfer target, or null if the recipe cannot be found. */
     public static Target<?> findTarget(String recipeId, ItemStack hint) {
+        checkEmi();
         if (!targets.containsKey(recipeId)) {
             // a recipe registered from a heart has a cached shape but no transfer target: search for it for real
             RecipeShape cached = cache.remove(recipeId);
@@ -309,6 +381,7 @@ public final class RecipeLookup {
 
     /** Makes a recipe findable by its id without asking JEI (used by tests, and for recipes read from a layout). */
     public static void register(RecipeShape shape) {
+        checkEmi();
         cache.put(shape.id, shape);
         missing.remove(shape.id);
     }
@@ -320,6 +393,7 @@ public final class RecipeLookup {
      * @return a fresh copy of the recipe's shape, or null
      */
     public static RecipeShape find(String recipeId, ItemStack hint) {
+        checkEmi();
         RecipeShape cached = cache.get(recipeId);
         if (cached != null) return cached.copy();
         if (missing.contains(recipeId)) return null;
@@ -346,8 +420,16 @@ public final class RecipeLookup {
         } catch (RuntimeException e) {
             NeiAddon.LOGGER.warn("Could not look up recipe {}", recipeId, e);
         }
+        if (found == null && EmiCompat.recipesAvailable()) {
+            EmiCompat.Found emi = EmiCompat.find(recipeId, hint);
+            if (emi != null) {
+                found = emi.shape();
+                targets.put(recipeId, Target.ofEmi(emi.handle()));
+            }
+        }
         if (found == null) {
-            missing.add(recipeId);
+            // while EMI is still loading its recipes, the miss is not remembered
+            if (!EmiCompat.loading()) missing.add(recipeId);
             return null;
         }
         cache.put(recipeId, found);

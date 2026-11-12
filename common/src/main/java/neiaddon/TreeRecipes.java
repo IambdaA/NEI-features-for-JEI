@@ -9,8 +9,10 @@ import mezz.jei.api.recipe.IRecipeManager;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.runtime.IJeiRuntime;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import neiaddon.event.SubscribeEvent;
@@ -23,8 +25,6 @@ import neiaddon.event.ScreenEvent;
  */
 public final class TreeRecipes {
 
-    private static final String JEI_RECIPES_GUI = "mezz.jei.gui.recipes.RecipesGui";
-
     private TreeRecipes() {}
 
     // ---------------------------------------------------------------- recipe types
@@ -33,14 +33,30 @@ public final class TreeRecipes {
     public record Info(IDrawable icon, String title) {}
 
     private static final Map<String, Info> INFOS = new HashMap<>();
+    /** The EMI reload count the cached infos were made against (see {@link #info}). */
+    private static int emiGeneration;
 
     public static void reset() {
         INFOS.clear();
     }
 
-    /** NEI's handler name -> JEI's recipe type uid. Never null; unknown types get no icon and the id as name. */
+    /**
+     * NEI's handler name -> JEI's recipe type uid (or EMI's category id). Never null; unknown types get no icon and the id
+     * as name. A lookup made while EMI is still loading is not kept.
+     */
     public static Info info(String handlerName) {
-        return INFOS.computeIfAbsent(handlerName, TreeRecipes::lookup);
+        int generation = EmiCompat.generation();
+        if (generation != emiGeneration) {
+            emiGeneration = generation;
+            INFOS.clear();
+        }
+        Info info = INFOS.get(handlerName);
+        if (info == null) {
+            info = lookup(handlerName);
+            // loading() can notice the end of a load and move the generation: then this answer is from before it
+            if (!EmiCompat.loading() && EmiCompat.generation() == generation) INFOS.put(handlerName, info);
+        }
+        return info;
     }
 
     private static Info lookup(String handlerName) {
@@ -55,6 +71,11 @@ public final class TreeRecipes {
                     category.getIcon(),
                     category.getTitle()
                         .getString());
+            }
+            // under EMI the recipe types JEI does not know are EMI's categories (GregTech machines, for one)
+            if (EmiCompat.recipesAvailable()) {
+                String name = EmiCompat.categoryName(handlerName);
+                if (name != null) return new Info(EmiCompat.categoryIcon(handlerName), name);
             }
         } catch (RuntimeException e) {
             NeiAddon.LOGGER.warn("Could not read recipe type {}", handlerName, e);
@@ -71,29 +92,48 @@ public final class TreeRecipes {
     /** The tree that is waiting for a recipe from JEI's recipe screen, or null. */
     private static CraftingTreeScreen waiting;
 
-    static void waitFor(CraftingTreeScreen tree) {
+    /** True while the tree asks the recipe viewer for recipes (see {@link #lookup}). */
+    private static boolean lookingUp;
+
+    /**
+     * The tree asks for the recipes or usages of one of its items ({@code show} opens the recipe screen) and waits for
+     * the player to pick one with "+". EMI opens the player's inventory first when the open screen isn't a container
+     * screen, then its recipe screen over it, both within {@code show}: that inventory doesn't end the wait.
+     */
+    static void lookup(CraftingTreeScreen tree, Runnable show) {
         waiting = tree;
+        lookingUp = true;
+        boolean shown = false;
+        try {
+            show.run();
+            shown = true;
+        } finally {
+            lookingUp = false;
+            if (!shown) waiting = null;
+        }
+        // the viewer stopped on another screen (the inventory, with no recipe screen over it): no "+" there
+        Screen now = Minecraft.getInstance().screen;
+        if (waiting != null && !(now instanceof CraftingTreeScreen) && !RecipeHearts.isRecipesScreen(now)) waiting = null;
     }
 
     static void stopWaiting() {
         waiting = null;
     }
 
-    /** Anything but JEI's recipe screen (or the tree itself) opening ends the wait, so "+" never shows up elsewhere. */
+    /** Anything but a recipe screen (or the tree itself) opening ends the wait, so "+" never shows up elsewhere. */
     @SubscribeEvent
     static void onOpening(ScreenEvent.Opening event) {
         Screen next = event.getNewScreen();
         if (waiting == null) return;
         if (next instanceof CraftingTreeScreen) return;
-        if (next != null && next.getClass()
-            .getName()
-            .equals(JEI_RECIPES_GUI)) return;
+        if (RecipeHearts.isRecipesScreen(next)) return;
+        if (lookingUp && next instanceof AbstractContainerScreen<?>) return;
         waiting = null;
     }
 
     private static final String[] PLUS = { "..X..", "..X..", "XXXXX", "..X..", "..X.." };
 
-    static final IDrawable PLUS_ICON = new IDrawable() {
+    public static final IDrawable PLUS_ICON = new IDrawable() {
 
         @Override
         public int getWidth() {
@@ -116,7 +156,7 @@ public final class TreeRecipes {
     };
 
     /** Is a crafting tree waiting for a recipe from JEI's recipe screen (the "+" button shows)? */
-    static boolean waiting() {
+    public static boolean waiting() {
         return waiting != null;
     }
 
@@ -125,7 +165,17 @@ public final class TreeRecipes {
     static Controller create(IRecipeLayoutDrawable<?> layout) {
         if (waiting == null) return null;
         try {
-            RecipeShape shape = RecipeShape.read(layout);
+            return create(RecipeShape.read(layout));
+        } catch (RuntimeException e) {
+            NeiAddon.LOGGER.warn("Could not create the tree button for a recipe", e);
+            return null;
+        }
+    }
+
+    /** The "+" of a recipe shape while a tree waits, else null. For a recipe viewer other than JEI's. */
+    public static Controller create(RecipeShape shape) {
+        if (waiting == null) return null;
+        try {
             RecipeData data = shape.toData(null);
             if (data.isEmpty()) return null;
             return new Controller(data);
@@ -136,7 +186,7 @@ public final class TreeRecipes {
     }
 
     /** The "+" of one recipe; knows nothing of JEI's button API (older JEI has none). */
-    static final class Controller {
+    public static final class Controller {
 
         private final RecipeData data;
 
@@ -145,14 +195,15 @@ public final class TreeRecipes {
         }
 
         /** A click on the "+"; {@code simulate}: only say whether it would be used. */
-        boolean press(boolean simulate) {
+        public boolean press(boolean simulate) {
             CraftingTreeScreen tree = waiting;
             if (tree == null) return false;
             if (!simulate) tree.addRecipe(data);
             return true;
         }
 
-        Component tooltip() {
+        /** The "+" button's tooltip: its name for the tree's overlay button. */
+        public Component tooltip() {
             return Component.translatable("neiaddon.tree.overlay");
         }
     }

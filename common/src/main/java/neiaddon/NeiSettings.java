@@ -29,6 +29,8 @@ import org.lwjgl.glfw.GLFW;
  * <li>the option's name on the left and a text field on the right for a number or a color,</li>
  * <li>the option's name on the left and a row of 20 x 20 icon buttons (Utilities, Gamemodes): a lit button is on, left
  * click turns one on and right click off.</li>
+ * <li>JEI's own settings ({@link JeiSettings}), one page per JEI category: the same layouts as above, a toggle or a
+ * choice, or a text field that JEI checks when the field is left (a red outline when JEI refuses the text).</li>
  * </ul>
  * The mouse and keys come through screen events, like the other screens of this addon. The screen does not pause the
  * game, and Esc goes back to the screen the settings were opened from.
@@ -47,6 +49,8 @@ public final class NeiSettings extends Screen {
     private static final int RIGHT_PAD = 20;
     private static final int BAR_W = 6;
     private static final int MAX_FIELD_W = 100;
+    /** Longest text a JEI field takes (JEI's colour list is several hundred characters). */
+    private static final int JEI_TEXT_MAX = 8192;
     private static final int ICON = 24;
     private static final int SHEET = 512;
 
@@ -57,7 +61,7 @@ public final class NeiSettings extends Screen {
     private static final ResourceLocation TILE = ResourceLocation.parse("minecraft:textures/gui/menu_background.png");
 
     private enum Kind {
-        PAGE, ACTION, TOGGLE, NUMBER, CHOICE, COLOR, ICONS
+        PAGE, ACTION, TOGGLE, NUMBER, CHOICE, COLOR, ICONS, JEI_TOGGLE, JEI_CHOICE, JEI_TEXT, HEADER
     }
 
     /** One icon button of an icon row: its name (the tooltip), the yes/no it sets and where its picture is on the sheet. */
@@ -79,6 +83,12 @@ public final class NeiSettings extends Screen {
         Runnable action;
         boolean prefixed;
         List<Icon> icons;
+        /** JEI's config value of a JEI_ entry (read live, never cached); null for the other kinds. */
+        Object jei;
+        /** Text typed into a JEI_TEXT field that JEI refused, shown until it is fixed. */
+        String edit;
+        /** A JEI_TEXT field whose text JEI refused: its outline is red. */
+        boolean bad;
 
         Entry(Kind kind, String label, String tip) {
             this.kind = kind;
@@ -173,6 +183,21 @@ public final class NeiSettings extends Screen {
             e.prefixed = true;
             return this;
         }
+
+        /** A section title inside a page (one of JEI's categories): centered text, not clickable. */
+        Page header(String title) {
+            add(Kind.HEADER, title, "");
+            return this;
+        }
+
+        /** One of JEI's config values: a toggle, a choice or a typed text, with its name on the left. */
+        Page jei(Object v) {
+            Kind kind = JeiSettings.isToggle(v) ? Kind.JEI_TOGGLE : JeiSettings.choices(v).isEmpty() ? Kind.JEI_TEXT : Kind.JEI_CHOICE;
+            Entry e = add(kind, JeiSettings.name(v), JeiSettings.description(v));
+            e.jei = v;
+            e.prefixed = true;
+            return this;
+        }
     }
 
     // ---------------------------------------------------------------- the pages (NEI's structure)
@@ -232,7 +257,7 @@ public final class NeiSettings extends Screen {
             .toggle("Generate Single-Recipe Favorites", "An item with exactly one recipe uses it as its favorite when it has none of its own. Used by Shift+A, Shift+F and recipe trees.",
                 AddonConfig.FAVORITES_AUTO);
         Page history = new Page("History Panel")
-            .toggle("History As Wide As Item List", "Keeps JEI's lookup history (right side) as wide as the item list. Overwrites JEI's history column setting. Extra (not in NEI).",
+            .toggle("History As Wide As Preferred Side", "Keeps JEI's lookup history as wide as the panel on its side: the item list on the right, the bookmark panel on the left. Overwrites JEI's history column setting. Extra (not in NEI).",
                 AddonConfig.HISTORY_MATCH_LIST);
         Page inventory = new Page("Inventory")
             .cycle("Recipe Mode: no utility buttons. Utility Mode: the buttons picked under Utilities. Cheat Mode: all of them, and a click on an item (JEI's list or the bookmark panel) gives it, as with JEI's cheat mode. The buttons send commands and giving needs cheat rights, so the server must let you use them.",
@@ -255,10 +280,11 @@ public final class NeiSettings extends Screen {
             .toggle("Show Hotkeys", "List the keys that work on an item in its tooltip while Alt is held.", AddonConfig.SHOW_HOTKEYS)
             .toggle("Show Item Quantity Widget", "The quantity field above the JEI item list.", AddonConfig.QUANTITY_WIDGET)
             .enabled("Autocrafting", "Allow autocrafting of bookmarked recipes and craftables.", AddonConfig.AUTOCRAFTING)
-            .enabled("Collapsible Item Groups", "Families of items (wool colours, spawn eggs, potions...) show as one entry in JEI's item list; Alt+click opens or closes a group. The groups are in config/neiaddon/collapsibleitems.cfg. While a group is closed its other items are out of JEI's list (a search shows them again).", AddonConfig.COLLAPSIBLE_ITEMS)
+            .enabled("Collapsible Item Groups", "Families of items (wool colours, spawn eggs, potions...) show as one entry in JEI's item list; Alt+click opens or closes a group. The groups are in config/neiaddon/collapsibleitems.cfg. While a group is closed its other items are out of JEI's list (a search shows them again). Not with EMI, which shows its own item list.", AddonConfig.COLLAPSIBLE_ITEMS)
             .enabled("Restore Inventory Layout", "After autocrafting, move the items that were in your inventory back to the slots they were in before (one checked click at a time, after the grid is emptied). Crafted items stay where they landed; items that were used up leave their slot as it is. Extra (not in NEI).", AddonConfig.AUTOCRAFTING_RESTORE)
             .enabled("Faster Autocrafting", "When a full crafting grid would make more than is wanted, click the result once per wanted craft instead of crafting one set at a time. Each click waits for the server and is checked; if anything is off, autocrafting stops and puts the cursor and grid back into the inventory. Extra (not in NEI).", AddonConfig.AUTOCRAFTING_FAST)
             .toggle("Release Note in Chat", "On joining a world, a chat message asks you to report issues with this release on GitHub. Its [Turn off this message] link turns this off. Extra (not in NEI).", AddonConfig.RELEASE_NOTE)
+            .toggle("EMI Note in Chat", "With EMI installed, on joining a world, a chat message asks you to report anything missing or off with EMI on GitHub. Its [Turn off this message] link turns this off. Extra (not in NEI).", AddonConfig.EMI_NOTE)
             .enabled("Item Untranslator", "Also find items by their English name when the game is not in English. Applies after the next JEI reload.", AddonConfig.UNTRANSLATE)
             .number("Item Quantity", "Amount for \"with count\" actions and the Ctrl+Alt+scroll step. 0 = one stack.", AddonConfig.ITEM_QUANTITY, 0,
                 Integer.MAX_VALUE);
@@ -280,8 +306,16 @@ public final class NeiSettings extends Screen {
             })
             .sub(world)
             .sub(tools)
-            .action("JEI Options", "JEI's own settings (extra, not in NEI).", () -> {
-                if (JeiSettings.available()) McCompat.setScreen(new JeiSettings(holder[0]));
+            .action("JEI Options", "JEI's own settings. Only in a world. Extra (not in NEI).", () -> {
+                List<JeiSettings.Category> categories = JeiSettings.categories();
+                if (categories.isEmpty()) return;
+                // one page in JEI's own order, each category under its title
+                Page jeiPage = new Page("JEI Options");
+                for (JeiSettings.Category category : categories) {
+                    jeiPage.header(category.title());
+                    for (Object value : category.values()) jeiPage.jei(value);
+                }
+                McCompat.setScreen(new NeiSettings(holder[0], jeiPage));
             })
             .action("Report Issues", "Opens the NEI Features for JEI issue tracker on GitHub in your browser (after a confirmation), to report a bug or ask for something. Extra (not in NEI).",
                 () -> net.minecraft.client.gui.screens.ConfirmLinkScreen.confirmLinkNow(holder[0], ReleaseNote.URL));
@@ -335,11 +369,15 @@ public final class NeiSettings extends Screen {
         return switch (e.kind) {
             case TOGGLE -> e.names[(Boolean) e.value.get() ? 1 : 0];
             case CHOICE -> e.names[Math.max(0, Math.min((Integer) e.value.get(), e.names.length - 1))];
+            case JEI_TOGGLE -> JeiSettings.isOn(e.jei) ? "Yes" : "No";
+            case JEI_CHOICE -> JeiSettings.shown(e.jei);
             default -> e.label;
         };
     }
 
+    /** The text of a field when it is not being edited. */
     private static String display(Entry e) {
+        if (e.kind == Kind.JEI_TEXT) return e.edit != null ? e.edit : JeiSettings.text(e.jei);
         return e.kind == Kind.COLOR ? String.format("#%06X", (Integer) e.value.get()) : String.valueOf(e.value.get());
     }
 
@@ -417,12 +455,12 @@ public final class NeiSettings extends Screen {
         int cx = contentX();
         int cw = contentW();
         switch (e.kind) {
-            case TOGGLE, CHOICE -> {
+            case TOGGLE, CHOICE, JEI_TOGGLE, JEI_CHOICE -> {
                 if (!e.prefixed) return new Box(cx, cw);
                 int w = Math.max(60, font.width(shown(e)) + 8);
                 return new Box(cx + cw - w, w);
             }
-            case NUMBER, COLOR -> {
+            case NUMBER, COLOR, JEI_TEXT -> {
                 int prefixW = font.width(e.label) + PREFIX_X;
                 int w = Math.max(60, Math.min(MAX_FIELD_W, cw - prefixW) - 16);
                 return new Box(cx + cw - w, w);
@@ -480,19 +518,37 @@ public final class NeiSettings extends Screen {
         boolean focused = focus == e;
         String t = focused ? text : display(e);
         int pad = e.kind == Kind.COLOR ? 20 : 4;
-        g.fill(x, y, x + w, y + BTN_H, focused ? 0xFFFFFFFF : 0xFFA0A0A0);
+        g.fill(x, y, x + w, y + BTN_H, e.bad ? 0xFFFF5555 : focused ? 0xFFFFFFFF : 0xFFA0A0A0);
         g.fill(x + 1, y + 1, x + w - 1, y + BTN_H - 1, 0xFF000000);
         if (e.kind == Kind.COLOR) {
             g.fill(x + 4, y + 4, x + 16, y + BTN_H - 4, 0xFFFFFFFF);
             g.fill(x + 5, y + 5, x + 15, y + BTN_H - 5, 0xFF000000 | (Integer) e.value.get());
         }
         int inner = w - pad - 4;
-        boolean cut = font.width(t) > inner;
-        String visible = cut ? font.plainSubstrByWidth(t, inner, true) : t;
+        String visible = t;
+        int caretX = 0;
+        if (focused) {
+            // a long text shows the part that fits, ending at the caret when the text before it does not fit
+            int start = windowStart(font, t, caret, inner);
+            if (font.width(t) > inner) visible = font.plainSubstrByWidth(t.substring(start), inner);
+            caretX = font.width(t.substring(start, Math.max(start, Math.min(caret, t.length()))));
+        } else if (font.width(t) > inner) {
+            visible = e.kind == Kind.JEI_TEXT ? font.plainSubstrByWidth(t, inner) : font.plainSubstrByWidth(t, inner, true);
+        }
         g.drawString(font, visible, x + pad, y + 6, 0xFFE0E0E0, true);
         if (focused && (System.currentTimeMillis() / 500) % 2 == 0) {
-            int cx = x + pad + (cut ? font.width(visible) : font.width(t.substring(0, Math.min(caret, t.length()))));
+            int cx = x + pad + caretX;
             g.fill(cx, y + 5, cx + 1, y + 15, 0xFFD0D0D0);
+        }
+    }
+
+    /** A JEI row's tooltip: the full name when the label is cut short, the description, the valid values of a typed text. */
+    private static void jeiTip(Entry e, Font font, int avail, List<String> tip) {
+        if (font.width(e.label) > avail) tip.add(e.label);
+        if (!e.tip.isEmpty()) tip.add(e.tip);
+        if (e.kind == Kind.JEI_TEXT) {
+            String valid = JeiSettings.validValues(e.jei);
+            if (!valid.isEmpty()) tip.add(valid);
         }
     }
 
@@ -524,14 +580,18 @@ public final class NeiSettings extends Screen {
                 Box b = box(e, font);
                 boolean inRow = mouseY >= y && mouseY < y + BTN_H && mouseY >= LIST_TOP && mouseY < lb && mouseX >= cx && mouseX < cx + cw;
                 boolean overBox = inRow && mouseX >= b.x() && mouseX < b.x() + b.w();
+                int avail = Math.max(0, b.x() - cx - PREFIX_X - 4);
                 if (e.prefixed) {
-                    int avail = Math.max(0, b.x() - cx - PREFIX_X - 4);
                     g.drawString(font, font.plainSubstrByWidth(e.label, avail), cx + PREFIX_X, y + 6, 0xFFFFFFFF, true);
                 }
                 switch (e.kind) {
                     case PAGE, ACTION -> button(g, font, b.x(), y, b.w(), BTN_H, e.label, overBox ? 2 : 1);
-                    case TOGGLE, CHOICE -> button(g, font, b.x(), y, b.w(), BTN_H, shown(e), overBox ? 2 : 1);
-                    case NUMBER, COLOR -> field(g, font, b.x(), y, b.w(), e);
+                    case TOGGLE, CHOICE, JEI_TOGGLE, JEI_CHOICE -> button(g, font, b.x(), y, b.w(), BTN_H, shown(e), overBox ? 2 : 1);
+                    case NUMBER, COLOR, JEI_TEXT -> field(g, font, b.x(), y, b.w(), e);
+                    case HEADER -> {
+                        String t = font.plainSubstrByWidth(e.label, cw);
+                        g.drawString(font, t, cx + (cw - font.width(t)) / 2, y + 6, 0xFFFFFF55, true);
+                    }
                     case ICONS -> {
                         for (int k = 0; k < e.icons.size(); k++) {
                             Icon ic = e.icons.get(k);
@@ -546,7 +606,10 @@ public final class NeiSettings extends Screen {
                         }
                     }
                 }
-                if (inRow && tip.isEmpty() && !e.tip.isEmpty() && (e.kind != Kind.ICONS || mouseX < b.x())) tip.add(e.tip);
+                if (inRow && tip.isEmpty() && (e.kind != Kind.ICONS || mouseX < b.x())) {
+                    if (e.jei != null) jeiTip(e, font, avail, tip);
+                    else if (!e.tip.isEmpty()) tip.add(e.tip);
+                }
             }
         } finally {
             g.disableScissor();
@@ -584,10 +647,28 @@ public final class NeiSettings extends Screen {
         caret = text.length();
     }
 
+    /** Leaves the field: a JEI text is handed to JEI (red when it refuses), any other value is saved. */
     private void blur() {
         Entry e = focus;
         focus = null;
-        if (e != null) e.value.save();
+        if (e == null) return;
+        if (e.kind == Kind.JEI_TEXT) {
+            // a text left as JEI has it is not handed back: JEI may refuse its own value (one edited by hand out of range)
+            if (e.edit == null && text.equals(JeiSettings.text(e.jei))) return;
+            e.bad = !JeiSettings.setText(e.jei, text);
+            e.edit = e.bad ? text : null;
+        } else {
+            e.value.save();
+        }
+    }
+
+    /** Esc in a JEI text: the typed text is thrown away and nothing is set. */
+    private void discard() {
+        Entry e = focus;
+        focus = null;
+        if (e == null) return;
+        e.edit = null;
+        e.bad = false;
     }
 
     private static Long parse(Entry e, String s) {
@@ -605,7 +686,7 @@ public final class NeiSettings extends Screen {
     /** NEI's number fields take the value as soon as the text is a valid one; what is not valid is dropped on leaving. */
     private void apply() {
         Entry e = focus;
-        if (e == null) return;
+        if (e == null || e.kind == Kind.JEI_TEXT) return;
         Long v = parse(e, text);
         if (v != null && v >= e.min && v <= e.max) setInt(e, (int) (long) v, false);
     }
@@ -666,7 +747,15 @@ public final class NeiSettings extends Screen {
                 int n = e.names.length;
                 setInt(e, ((Integer) e.value.get() + (button == 1 ? -1 : 1) + n) % n, true);
             }
-            case NUMBER -> clickField(e, b, font, mx);
+            case JEI_TOGGLE -> {
+                click();
+                JeiSettings.toggle(e.jei);
+            }
+            case JEI_CHOICE -> {
+                click();
+                JeiSettings.cycle(e.jei, button == 1);
+            }
+            case NUMBER, JEI_TEXT -> clickField(e, b, font, mx);
             case COLOR -> {
                 if (mx < b.x() + 18) {
                     click();
@@ -696,17 +785,34 @@ public final class NeiSettings extends Screen {
     }
 
     private void clickField(Entry e, Box b, Font font, double mx) {
+        boolean focused = focus == e;
         focus(e);
         int pad = e.kind == Kind.COLOR ? 20 : 4;
         int inner = b.w() - pad - 4;
+        // the caret goes where the click is in the text the field showed: a focused field shows the part around the
+        // caret, a long JEI text its start; any other long text its end, so the caret goes there
+        int start = 0;
         if (font.width(text) > inner) {
-            caret = text.length();
-            return;
+            if (focused) {
+                start = windowStart(font, text, caret, inner);
+            } else if (e.kind != Kind.JEI_TEXT) {
+                caret = text.length();
+                return;
+            }
         }
+        String shown = text.substring(start);
         int rel = (int) mx - (b.x() + pad);
         int c = 0;
-        while (c < text.length() && font.width(text.substring(0, c + 1)) - font.width(text.substring(c, c + 1)) / 2 <= rel) c++;
-        caret = c;
+        while (c < shown.length() && font.width(shown.substring(0, c + 1)) - font.width(shown.substring(c, c + 1)) / 2 <= rel) c++;
+        caret = start + c;
+    }
+
+    /** Where the shown part of a focused field's text starts: the part that fits ends at the caret when the text before it does not fit. */
+    private static int windowStart(Font font, String t, int caret, int inner) {
+        if (font.width(t) <= inner) return 0;
+        String before = t.substring(0, Math.min(caret, t.length()));
+        return before.length() - font.plainSubstrByWidth(before, inner, true)
+            .length();
     }
 
     private void dragTo(double my) {
@@ -751,7 +857,9 @@ public final class NeiSettings extends Screen {
         if (!(event.getScreen() instanceof NeiSettings s) || s.focus == null) return;
         event.setCanceled(true);
         int code = event.getKeyCode();
-        if (code == GLFW.GLFW_KEY_ENTER || code == GLFW.GLFW_KEY_KP_ENTER || code == GLFW.GLFW_KEY_ESCAPE) {
+        if (code == GLFW.GLFW_KEY_ESCAPE && s.focus.kind == Kind.JEI_TEXT) {
+            s.discard();
+        } else if (code == GLFW.GLFW_KEY_ENTER || code == GLFW.GLFW_KEY_KP_ENTER || code == GLFW.GLFW_KEY_ESCAPE) {
             s.blur();
         } else if (code == GLFW.GLFW_KEY_BACKSPACE && s.caret > 0) {
             s.text = s.text.substring(0, s.caret - 1) + s.text.substring(s.caret);
@@ -776,6 +884,14 @@ public final class NeiSettings extends Screen {
         if (!(event.getScreen() instanceof NeiSettings s) || s.focus == null) return;
         event.setCanceled(true);
         int c = event.getCodePoint();
+        if (s.focus.kind == Kind.JEI_TEXT) {
+            if (c >= ' ' && s.text.length() < JEI_TEXT_MAX) {
+                String typed = new String(Character.toChars(c));
+                s.text = s.text.substring(0, s.caret) + typed + s.text.substring(s.caret);
+                s.caret += typed.length();
+            }
+            return;
+        }
         boolean color = s.focus.kind == Kind.COLOR;
         boolean ok = color ? c < 128 && (Character.digit(c, 16) >= 0 || c == '#' || c == 'x' || c == 'X') : c >= '0' && c <= '9';
         if (!ok || s.text.length() >= (color ? 8 : 10)) return;

@@ -4,13 +4,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import mezz.jei.api.gui.IRecipeLayoutDrawable;
 import mezz.jei.api.gui.drawable.IDrawable;
 import mezz.jei.api.gui.ingredient.IRecipeSlotRichTooltipCallback;
-import mezz.jei.api.gui.ingredient.IRecipeSlotDrawable;
 import mezz.jei.api.gui.ingredient.IRecipeSlotView;
-import mezz.jei.api.gui.inputs.RecipeSlotUnderMouse;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -52,9 +49,9 @@ public final class RecipeHearts {
     /** The recipes of the open recipe screen, as their hearts report them every frame (for the highlight of owned items). */
     private static final List<Controller> visible = new ArrayList<>();
     private static Controller hoverHeart;
-    private static Controller hoverLayout;
+    private static Controller hoverView;
     private static long heartStamp;
-    private static long layoutStamp;
+    private static long viewStamp;
     private static int hoverX, hoverY;
 
     private RecipeHearts() {}
@@ -62,12 +59,30 @@ public final class RecipeHearts {
     /** The heart of a recipe layout, or null when it cannot be made (see {@link JeiRecipeButtons}, {@link RecipeButtonsFallback}). */
     static Controller create(IRecipeLayoutDrawable<?> layout, boolean injectHints) {
         try {
-            return new Controller(layout, injectHints);
+            return new Controller(new JeiRecipeView(layout), injectHints);
         } catch (RuntimeException e) {
             NeiAddon.LOGGER.warn("Could not create the favorite button for a recipe", e);
             return null;
         }
     }
+
+    /** The heart of a recipe view, or null when it cannot be made. For a recipe viewer other than JEI's (no hints added). */
+    public static Controller create(RecipeView view) {
+        try {
+            return new Controller(view, false);
+        } catch (RuntimeException e) {
+            // called for every recipe on every EMI page: one warning, then debug
+            if (!warnedCreate) {
+                warnedCreate = true;
+                NeiAddon.LOGGER.warn("Could not create the favorite button for a recipe", e);
+            } else {
+                NeiAddon.LOGGER.debug("Could not create the favorite button for a recipe", e);
+            }
+            return null;
+        }
+    }
+
+    private static boolean warnedCreate;
 
     // ---------------------------------------------------------------- the icon
 
@@ -126,7 +141,7 @@ public final class RecipeHearts {
      */
     public static final class Controller {
 
-        private final IRecipeLayoutDrawable<?> layout;
+        private final RecipeView view;
         final RecipeShape shape;
         private final List<String> resultIds = new ArrayList<>();
         private int selected;
@@ -135,15 +150,15 @@ public final class RecipeHearts {
         /** True when the hint of fluid result slots is part of JEI's own tooltip (see {@link #injectHints}). */
         private boolean hintsInjected;
 
-        Controller(IRecipeLayoutDrawable<?> layout, boolean injectHints) {
-            this.layout = layout;
-            this.shape = RecipeShape.read(layout);
+        Controller(RecipeView view, boolean injectHints) {
+            this.view = view;
+            this.shape = view.shape();
             RecipeLookup.register(shape);
             for (RecipeData.Part part : shape.toData(null).results) resultIds.add(part.itemId());
             String favorite = Favorites.itemFor(shape.id);
             int at = favorite == null ? -1 : resultIds.indexOf(favorite);
             selected = Math.max(0, at);
-            hintsInjected = injectHints && injectHints();
+            hintsInjected = injectHints && view instanceof JeiRecipeView jei && injectHints(jei.layout());
         }
 
         /**
@@ -152,7 +167,7 @@ public final class RecipeHearts {
          * does not work the hint is drawn in a box of its own instead ({@link #onRenderHint}).
          */
         @SuppressWarnings("unchecked")
-        private boolean injectHints() {
+        private boolean injectHints(IRecipeLayoutDrawable<?> layout) {
             IRecipeSlotRichTooltipCallback callback = (slot, tooltip) -> {
                 if (slot.getRole() != RecipeIngredientRole.OUTPUT || !usable()) return;
                 List<RecipeShape.Alt> alts = RecipeShape.altsOf(slot);
@@ -207,22 +222,24 @@ public final class RecipeHearts {
         }
 
         /** Whether the heart is shown at all (a recipe without inputs or results has none). */
-        boolean shown() {
+        public boolean shown() {
             return usable();
         }
 
-        IDrawable icon() {
+        /** The heart's icon: red when this recipe is the favorite of the selected result, else grey. */
+        public IDrawable icon() {
             return isOn() ? ICON_ON : ICON_OFF;
         }
 
         /** A click on the heart; {@code simulate}: only say whether it would be used. */
-        boolean press(boolean simulate) {
+        public boolean press(boolean simulate) {
             if (!usable()) return false;
             if (!simulate) toggle();
             return true;
         }
 
-        List<Component> tooltipLines() {
+        /** The heart's tooltip lines: favorite state, the selected result, and the bookmark hint. */
+        public List<Component> tooltipLines() {
             List<Component> tooltip = new ArrayList<>();
             tooltip.add(Component.translatable(isOn() ? "neiaddon.recipe.unfavorite" : "neiaddon.recipe.favorite"));
             if (resultIds.size() > 1) {
@@ -241,7 +258,7 @@ public final class RecipeHearts {
         }
 
         /** Every frame the recipe is drawn: where the heart is and where the mouse is (for the keys over recipes). */
-        void frame(Rect2i buttonArea, int mouseX, int mouseY) {
+        public void frame(Rect2i buttonArea, int mouseX, int mouseY) {
             long now = System.nanoTime();
             seen = now;
             if (!visible.contains(this)) visible.add(this);
@@ -254,13 +271,13 @@ public final class RecipeHearts {
             } else if (hoverHeart == this) {
                 hoverHeart = null;
             }
-            if (layout.isMouseOver(mouseX, mouseY)) {
-                hoverLayout = this;
-                layoutStamp = now;
+            if (view.isMouseOver(mouseX, mouseY)) {
+                hoverView = this;
+                viewStamp = now;
                 hoverX = mouseX;
                 hoverY = mouseY;
-            } else if (hoverLayout == this) {
-                hoverLayout = null;
+            } else if (hoverView == this) {
+                hoverView = null;
             }
         }
 
@@ -269,12 +286,9 @@ public final class RecipeHearts {
          * accepts several items counts when any of them is held.
          */
         void drawPresent(GuiGraphics g, Map<String, Long> have) {
-            Rect2i origin = layout.getRect();
-            for (IRecipeSlotView view : layout.getRecipeSlotsView()
-                .getSlotViews()) {
-                if (view.getRole() != RecipeIngredientRole.INPUT || !(view instanceof IRecipeSlotDrawable slot)) continue;
+            for (RecipeView.Input input : view.inputs()) {
                 boolean present = false;
-                for (RecipeShape.Alt alt : RecipeShape.altsOf(view)) {
+                for (RecipeShape.Alt alt : input.alts()) {
                     Long held = have.get(alt.id());
                     if (held != null && held >= alt.count()) {
                         present = true;
@@ -282,10 +296,9 @@ public final class RecipeHearts {
                     }
                 }
                 if (!present) continue;
-                // the slot's own rectangle (getAreaIncludingBackground puts the slot's background at the wrong place)
-                Rect2i area = slot.getRect();
-                int x = origin.getX() + area.getX();
-                int y = origin.getY() + area.getY();
+                Rect2i area = input.area();
+                int x = area.getX();
+                int y = area.getY();
                 int w = area.getWidth();
                 int h = area.getHeight();
                 // in front of the item
@@ -295,22 +308,12 @@ public final class RecipeHearts {
 
         /** Everything the result slot under the mouse accepts, or an empty list when the mouse is not over a result slot. */
         List<RecipeShape.Alt> hoveredResultAlts() {
-            Optional<RecipeSlotUnderMouse> under = layout.getSlotUnderMouse(hoverX, hoverY);
-            if (under.isPresent() && under.get()
-                .slot()
-                .getRole() == RecipeIngredientRole.OUTPUT) {
-                return RecipeShape.altsOf(
-                    under.get()
-                        .slot());
-            }
-            return List.of();
+            return view.altsAt(hoverX, hoverY, true);
         }
 
         /** Everything the slot under the mouse accepts (inputs too), or an empty list. */
         List<RecipeShape.Alt> slotAlts() {
-            Optional<RecipeSlotUnderMouse> under = layout.getSlotUnderMouse(hoverX, hoverY);
-            return under.isPresent() ? RecipeShape.altsOf(under.get()
-                .slot()) : List.of();
+            return view.altsAt(hoverX, hoverY, false);
         }
 
         /** The result under the mouse if the mouse is over a result slot, else null. */
@@ -323,7 +326,7 @@ public final class RecipeHearts {
 
     /** Everything the recipe slot under the mouse accepts, or an empty list (the ingredient directory). */
     static List<RecipeShape.Alt> hoveredSlotAlts() {
-        Controller recipe = fresh(hoverLayout, layoutStamp);
+        Controller recipe = fresh(hoverView, viewStamp);
         return recipe == null ? List.of() : recipe.slotAlts();
     }
 
@@ -362,10 +365,18 @@ public final class RecipeHearts {
     // ---------------------------------------------------------------- keys
 
     static boolean onRecipesScreen() {
-        Screen s = McCompat.screen();
-        return s != null && s.getClass()
+        return isRecipesScreen(McCompat.screen());
+    }
+
+    /**
+     * Is {@code s} JEI's or EMI's recipe screen? (Matched by class name: neither class is part of this addon's API, and
+     * EMI's is not a compile-time type here.)
+     */
+    public static boolean isRecipesScreen(Screen s) {
+        if (s == null) return false;
+        return s.getClass()
             .getName()
-            .equals(JEI_RECIPES_GUI);
+            .equals(JEI_RECIPES_GUI) || EmiCompat.isRecipeScreen(s);
     }
 
     private static Controller fresh(Controller c, long stamp) {
@@ -374,7 +385,7 @@ public final class RecipeHearts {
 
     /** Is the mouse over a heart or a recipe of the JEI recipe screen right now? */
     public static boolean hovering() {
-        return fresh(hoverHeart, heartStamp) != null || fresh(hoverLayout, layoutStamp) != null;
+        return fresh(hoverHeart, heartStamp) != null || fresh(hoverView, viewStamp) != null;
     }
 
     /**
@@ -387,7 +398,7 @@ public final class RecipeHearts {
             RecipeTree.save(heart.shape);
             return true;
         }
-        Controller recipe = fresh(hoverLayout, layoutStamp);
+        Controller recipe = fresh(hoverView, viewStamp);
         if (recipe != null && recipe.usable()) {
             toggleRecipe(recipe);
             return true;
@@ -415,7 +426,7 @@ public final class RecipeHearts {
         Boolean jei = JeiButtons.bookmarkOutputAsRecipe();
         // JEI's own option decides; a JEI without it (15.20) bookmarks the item, so this does nothing there
         if (!Boolean.TRUE.equals(jei)) return false;
-        Controller recipe = fresh(hoverLayout, layoutStamp);
+        Controller recipe = fresh(hoverView, viewStamp);
         if (recipe == null || !recipe.usable() || recipe.hoveredResultId() == null || stack.isEmpty()) return false;
         // what JEI's own bookmark key makes with this option: the output item, carrying the recipe (recipe type icon in
         // its corner, the recipe on Shift), the same bookmark JEI's recipe bookmark button gives; pressed again it goes
@@ -433,7 +444,7 @@ public final class RecipeHearts {
 
     /** The id of the recipe the mouse is over in JEI's recipe screen (NEI's focused recipe), or null. */
     public static String hoveredRecipeId() {
-        Controller recipe = fresh(hoverLayout, layoutStamp);
+        Controller recipe = fresh(hoverView, viewStamp);
         return recipe != null && recipe.usable() ? recipe.shape.id : null;
     }
 
@@ -442,7 +453,7 @@ public final class RecipeHearts {
      * result, or removes it when it already is. Returns true if the key was used.
      */
     public static boolean onFavoriteResultKey() {
-        Controller recipe = fresh(hoverLayout, layoutStamp);
+        Controller recipe = fresh(hoverView, viewStamp);
         if (recipe == null || !recipe.usable()) return false;
         String result = recipe.hoveredResultId();
         if (result == null || !recipe.resultIds.contains(result)) return false;
@@ -459,12 +470,12 @@ public final class RecipeHearts {
      * used.
      */
     public static boolean onFillKey(boolean max) {
-        Controller recipe = fresh(hoverLayout, layoutStamp);
+        Controller recipe = fresh(hoverView, viewStamp);
         if (recipe == null) return false;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return false;
         try {
-            boolean done = RecipeLookup.transfer(recipe.layout, mc.player.containerMenu, mc.player, max);
+            boolean done = recipe.view.transfer(mc.player.containerMenu, mc.player, max);
             NeiAddon.LOGGER.info("Fill key over recipe {}: {}", recipe.shape.id, done ? "moved" : "refused");
             return true;
         } catch (RuntimeException e) {
@@ -505,7 +516,7 @@ public final class RecipeHearts {
      * recipe. Null when there is none.
      */
     public static RecipeData sharedRecipe(ItemStack stack, boolean useFavorites) {
-        Controller recipe = fresh(hoverLayout, layoutStamp);
+        Controller recipe = fresh(hoverView, viewStamp);
         if (recipe != null && recipe.usable()) return recipe.shape.toData(recipe.hoveredResultId());
         Controller heart = fresh(hoverHeart, heartStamp);
         if (heart != null && heart.usable()) return heart.shape.toData(RecipeData.idOf(stack));
@@ -567,7 +578,7 @@ public final class RecipeHearts {
      */
     static List<String> resultTooltipLines(ItemStack stack) {
         if (!onRecipesScreen()) return List.of();
-        Controller recipe = fresh(hoverLayout, layoutStamp);
+        Controller recipe = fresh(hoverView, viewStamp);
         if (recipe == null || !recipe.usable()) return List.of();
         List<RecipeShape.Alt> alts = recipe.hoveredResultAlts();
         if (alts.isEmpty()) return List.of();
@@ -593,7 +604,7 @@ public final class RecipeHearts {
     @SubscribeEvent(priority = EventPriority.LOWEST)
     static void onRenderHint(ScreenEvent.Render.Post event) {
         if (!onRecipesScreen()) return;
-        Controller recipe = fresh(hoverLayout, layoutStamp);
+        Controller recipe = fresh(hoverView, viewStamp);
         if (recipe == null || !recipe.usable() || recipe.hintsInjected) return;
         if (Math.abs(event.getMouseX() - hoverX) > 1 || Math.abs(event.getMouseY() - hoverY) > 1) return;
         String result = recipe.hoveredResultId();

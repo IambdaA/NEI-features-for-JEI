@@ -93,8 +93,9 @@ public final class CollapsibleItems {
 
     private CollapsibleItems() {}
 
+    /** Off with EMI: EMI shows its own item list, which changes to JEI's list don't reach. */
     private static boolean enabled() {
-        return AddonConfig.COLLAPSIBLE_ITEMS.get();
+        return AddonConfig.COLLAPSIBLE_ITEMS.get() && !EmiCompat.installed();
     }
 
     // ---------------------------------------------------------------- the groups

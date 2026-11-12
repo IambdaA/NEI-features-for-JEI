@@ -81,6 +81,11 @@ public final class ShareClient {
             ReleaseNote.dismiss();
             return;
         }
+        if (command.equals(EmiNote.COMMAND)) {
+            event.setCanceled(true);
+            EmiNote.dismiss();
+            return;
+        }
         if (command.equals(JeiPlusPlusNote.COMMAND)) {
             event.setCanceled(true);
             JeiPlusPlusNote.dismiss();
