@@ -56,6 +56,52 @@ public final class CalcKeys {
     public static final KeyMapping HEAL = unbound("key.neiaddon.heal");
     public static final KeyMapping CREATIVE = unbound("key.neiaddon.toggle_creative");
 
+    /** JEI's show-recipes keys ("key.jei.showRecipe", "key.jei.showRecipe2"); R when JEI has none. */
+    public static boolean isShowRecipe(InputConstants.Key key) {
+        return jeiKey(key, "key.jei.showRecipe", GLFW.GLFW_KEY_R);
+    }
+
+    /** JEI's show-uses keys ("key.jei.showUses", "key.jei.showUses2"); U when JEI has none. */
+    public static boolean isShowUses(InputConstants.Key key) {
+        return jeiKey(key, "key.jei.showUses", GLFW.GLFW_KEY_U);
+    }
+
+    /** The name of the key that shows recipes, for the hints; null when all of JEI's are unbound or on the mouse. */
+    public static String showRecipeName() {
+        return jeiKeyName("key.jei.showRecipe", "R");
+    }
+
+    /** The name of the key that shows uses, for the hints; null when all of JEI's are unbound or on the mouse. */
+    public static String showUsesName() {
+        return jeiKeyName("key.jei.showUses", "U");
+    }
+
+    /** Whether the key is one of JEI's keys whose name starts with {@code prefix}; the fallback key when JEI has none. */
+    private static boolean jeiKey(InputConstants.Key key, String prefix, int fallback) {
+        boolean any = false;
+        for (KeyMapping k : Minecraft.getInstance().options.keyMappings) {
+            if (!k.getName()
+                .startsWith(prefix)) continue;
+            any = true;
+            if (McCompat.matches(k, key)) return true;
+        }
+        return !any && key.getType() == InputConstants.Type.KEYSYM && key.getValue() == fallback;
+    }
+
+    /** The first of those JEI keys that is bound to a keyboard key, by name; the fallback name when JEI has none. */
+    private static String jeiKeyName(String prefix, String fallback) {
+        boolean any = false;
+        for (KeyMapping k : Minecraft.getInstance().options.keyMappings) {
+            if (!k.getName()
+                .startsWith(prefix)) continue;
+            any = true;
+            if (!k.isUnbound() && k.saveString()
+                .startsWith("key.keyboard.")) return k.getTranslatedKeyMessage()
+                    .getString();
+        }
+        return any ? null : fallback;
+    }
+
     private static java.lang.reflect.Method setBookmarkEnabled;
     private static java.lang.reflect.Method isBookmarkEnabled;
     private static Object toggleState;

@@ -26,6 +26,15 @@ public final class ItemZoom {
     private static final int SLOT = 16;
     private static final int MIN_SCALE = 2;
     private static final int MAX_ZOOM = 1000;
+    /**
+     * The depth the zoom is drawn at: in front of the screen's items and the bookmark panel (its items, counts and small
+     * text reach 350) but behind tooltips (400), which are drawn before it. The zoomed item's middle sits here (the game
+     * draws an item 150 in front of the pose, see {@link #ITEM_LIFT}); a 3D model reaches about 10 in front of and
+     * behind its middle, and the depth is not scaled with the zoom. At 400 the model cut through the tooltip.
+     */
+    private static final float DEPTH = Pose.TOOLTIP - 25f;
+    /** How far in front of the pose the game draws an item (GuiGraphics.renderItem). */
+    private static final float ITEM_LIFT = 150f;
 
     /** NEI: itemzoom.toggle = Z with Shift. */
     public static final KeyMapping TOGGLE = new KeyMapping("key.neiaddon.itemzoom_toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_Z, CalcKeys.CATEGORY);
@@ -138,6 +147,12 @@ public final class ItemZoom {
         draw(event);
     }
 
+    /** The height of the text under the item: a gap, its name, then the two hint lines after another gap. */
+    private static int textHeight(Font font, boolean name, boolean help) {
+        if (!name && !help) return 0;
+        return 10 + (name ? font.lineHeight : 0) + (help ? 10 + 2 * font.lineHeight : 0);
+    }
+
     private static void draw(ScreenEvent.Render event) {
         Screen s = event.getScreen();
         if (!active(s) || !(AddonConfig.ZOOM_ENABLED.get() || holdDown)) return;
@@ -162,25 +177,35 @@ public final class ItemZoom {
         if (right) x += s.width - avail;
 
         Font font = Minecraft.getInstance().font;
+        boolean showName = AddonConfig.ZOOM_NAME.get();
+        boolean showHelp = AddonConfig.ZOOM_ENABLED.get() && AddonConfig.ZOOM_HELP.get();
+        // the zoom keeps 6 above the controls at the bottom of its side (the bookmark panel's page bar, the quantity
+        // field): moved up when its text would reach them, and without the hint when even that leaves no room
+        int limit = (right ? (QuantityField.visible(s) ? QuantityField.y(s) : s.height) : BookmarkPanel.controlsTop(s)) - 6;
+        if (showHelp && size + textHeight(font, showName, true) > limit) showHelp = false;
+        float height = size + textHeight(font, showName, showHelp);
+        if (y + height > limit) y = Math.max(0, limit - height);
         GuiGraphics g = event.getGuiGraphics();
         Pose pose = Pose.of(g);
         pose.pushMatrix();
         pose.identity();
-        pose.translateZ(Pose.OVER);
+        pose.translateZ(DEPTH - ITEM_LIFT);
         try {
             pose.translate(x, y);
             pose.scale(scale, scale);
             g.renderFakeItem(stack, 0, 0);
+            // the name and the hint at the same depth, so the item list's icons don't cover them
             pose.identity();
+            pose.translateZ(DEPTH);
             float centerX = x + size / 2;
             int textY = (int) (y + size) + 10;
-            if (AddonConfig.ZOOM_NAME.get()) {
+            if (showName) {
                 String name = font.plainSubstrByWidth(stack.getHoverName()
                     .getString(), avail);
                 g.drawString(font, name, (int) (centerX - font.width(name) / 2f), textY, 0xFF000000 | AddonConfig.ZOOM_NAME_COLOR.get(), true);
                 textY += font.lineHeight;
             }
-            if (AddonConfig.ZOOM_ENABLED.get() && AddonConfig.ZOOM_HELP.get()) {
+            if (showHelp) {
                 String[] lines = { "Item Zoom", "Shift + " + TOGGLE.getTranslatedKeyMessage()
                     .getString() + " toggles" };
                 textY += 10;

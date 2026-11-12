@@ -16,7 +16,8 @@
   "entrypoints": {
     "main": [ "neiaddon.fabric.NeiAddonFabric" ],
     "client": [ "neiaddon.fabric.NeiAddonFabricClient" ],
-    "jei_mod_plugin": [ "neiaddon.NeiAddonJeiPlugin" ]
+    "jei_mod_plugin": [ "neiaddon.NeiAddonJeiPlugin" ],
+    "emi": [ "neiaddon.emi.NeiAddonEmiPlugin" ]
   },
   "mixins": [
     {

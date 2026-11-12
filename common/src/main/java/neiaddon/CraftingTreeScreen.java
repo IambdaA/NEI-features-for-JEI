@@ -115,6 +115,7 @@ public final class CraftingTreeScreen extends Screen {
 
     private final Map<String, IRecipeLayoutDrawable<?>> pictures = new HashMap<>();
     private final Set<String> noPicture = new HashSet<>();
+    private int pictureGeneration = RecipeLookup.generation();
 
     private CraftingTreeScreen(Screen prev, Bookmarks.Page page, int gid) {
         super(Component.translatable("neiaddon.tree.title"));
@@ -1055,6 +1056,12 @@ public final class CraftingTreeScreen extends Screen {
     }
 
     private IRecipeLayoutDrawable<?> picture(String recipeId, ItemStack hint) {
+        // the recipe lookup's generation also moves when EMI (re)loads its recipes
+        if (pictureGeneration != RecipeLookup.generation()) {
+            pictureGeneration = RecipeLookup.generation();
+            pictures.clear();
+            noPicture.clear();
+        }
         if (pictures.containsKey(recipeId)) return pictures.get(recipeId);
         if (noPicture.contains(recipeId)) return null;
         try {
@@ -1253,8 +1260,8 @@ public final class CraftingTreeScreen extends Screen {
 
     private void lookup(ItemStack stack, boolean usages) {
         if (stack.isEmpty()) return;
-        TreeRecipes.waitFor(this);
-        BookmarkPanel.showRecipes(stack, usages ? RecipeIngredientRole.INPUT : RecipeIngredientRole.OUTPUT);
+        TreeRecipes.lookup(this,
+            () -> BookmarkPanel.showRecipes(stack, usages ? RecipeIngredientRole.INPUT : RecipeIngredientRole.OUTPUT));
     }
 
     private void deleteRecipe(TreeSlot target) {
@@ -1464,16 +1471,16 @@ public final class CraftingTreeScreen extends Screen {
             return true;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (!McCompat.ctrl() && (code == GLFW.GLFW_KEY_R || code == GLFW.GLFW_KEY_U)) {
-            // NEI recipe.recipe / recipe.usage over an item of the tree or the stats panel; over a crafting slot of the
-            // stats panel R opens the recipe's result
+        if (!McCompat.ctrl() && (CalcKeys.isShowRecipe(key) || CalcKeys.isShowUses(key))) {
+            // NEI recipe.recipe / recipe.usage over an item of the tree or the stats panel (JEI's show-recipes / show-uses
+            // keys); over a crafting slot of the stats panel the show-recipes key opens the recipe's result
             ItemStack stack = hoveredStack();
             if (stack.isEmpty() && hoveredStat != null) {
                 TreeStats.Row row = rowOf(hoveredStat);
                 if (row.recipeId != null) stack = stackOf(row.item, row.payload);
             }
             if (!stack.isEmpty()) {
-                lookup(stack, code == GLFW.GLFW_KEY_U);
+                lookup(stack, !CalcKeys.isShowRecipe(key));
                 return true;
             }
         }

@@ -51,7 +51,7 @@ public final class AddonConfig {
         .define("craftablesFavoritesOnly", false);
 
     public static final ConfigSpec.BooleanValue HISTORY_MATCH_LIST = B
-        .comment("Keep JEI's lookup history list as wide as the item list (only acts when the history is shown on the right). Overwrites JEI's own history column setting while on.")
+        .comment("Keep JEI's lookup history list as wide as the panel on its side: the item list on the right, the bookmark panel on the left (not while the panel is hidden). Overwrites JEI's own history column setting while on.")
         .define("historyMatchesListWidth", true);
 
     // NEI: inventory.showItemQuantityWidget / hotkeysHelpText / autocrafting
@@ -119,6 +119,10 @@ public final class AddonConfig {
     public static final ConfigSpec.BooleanValue RELEASE_NOTE = B
         .comment("On joining a world, a chat message asks to report issues with this release on GitHub.")
         .define("releaseNote", true);
+
+    public static final ConfigSpec.BooleanValue EMI_NOTE = B
+        .comment("With EMI installed, on joining a world a chat message asks to report anything missing or off with EMI on GitHub.")
+        .define("emiNote", true);
 
     public static final ConfigSpec.BooleanValue WARN_JEI_PLUS_PLUS = B
         .comment("On joining a world, say in chat that JEI++ (when installed) clashes with this addon.")

@@ -75,7 +75,16 @@ public final class RecipeShape {
     }
 
     public RecipeShape copy() {
-        RecipeShape c = new RecipeShape(id);
+        return copyAs(id);
+    }
+
+    /** A copy of this shape carrying another id. */
+    public RecipeShape withId(String newId) {
+        return copyAs(newId);
+    }
+
+    private RecipeShape copyAs(String newId) {
+        RecipeShape c = new RecipeShape(newId);
         c.leadResult = leadResult;
         for (Slot s : inputs) {
             Slot n = new Slot(s.alts);
@@ -161,6 +170,33 @@ public final class RecipeShape {
         return shape;
     }
 
+    /** A shape with one slot per non-empty list of alternatives, in order (for recipes read from EMI). */
+    public static RecipeShape of(String id, List<List<Alt>> inputs, List<List<Alt>> outputs) {
+        RecipeShape shape = new RecipeShape(id);
+        for (List<Alt> alts : inputs) {
+            if (!alts.isEmpty()) shape.inputs.add(new Slot(new ArrayList<>(alts)));
+        }
+        for (List<Alt> alts : outputs) {
+            if (!alts.isEmpty()) shape.outputs.add(new Slot(new ArrayList<>(alts)));
+        }
+        return shape;
+    }
+
+    /** The alternative for an item stack and its amount (items that stand for a fluid keep the amount in their data). */
+    public static Alt altOf(ItemStack stack, long amount) {
+        String id = RecipeData.idOf(stack);
+        long count = Math.max(1, amount);
+        // items that stand for a fluid (NTM - Continuum) keep the amount in their data; the tooltip says it in mB
+        long milli = StackIds.milliAmount(stack, id);
+        if (milli > 0) count = milli;
+        return new Alt(McCompat.copyWithCount(stack, 1), (int) Math.min(Integer.MAX_VALUE, count));
+    }
+
+    /** The alternative for a fluid, given in millibuckets (the carrier stack of {@link FluidStacks}). */
+    public static Alt fluidAlt(ResourceLocation fluidId, long milliBuckets) {
+        return new Alt(FluidStacks.carrier(fluidId), (int) Math.max(1, Math.min(Integer.MAX_VALUE, milliBuckets)));
+    }
+
     /** Every item and fluid the slot accepts, each once. */
     public static List<Alt> altsOf(IRecipeSlotView slot) {
         List<Alt> alts = new ArrayList<>();
@@ -170,11 +206,7 @@ public final class RecipeShape {
             if (s.isEmpty()) continue;
             String id = RecipeData.idOf(s);
             if (!seen.add(id)) continue;
-            long amount = Math.max(1, s.getCount());
-            // items that stand for a fluid (NTM - Continuum) keep the amount in their data; the tooltip says it in mB
-            long milli = StackIds.milliAmount(s, id);
-            if (milli > 0) amount = milli;
-            alts.add(new Alt(McCompat.copyWithCount(s, 1), (int) Math.min(Integer.MAX_VALUE, amount)));
+            alts.add(altOf(s, s.getCount()));
         }
         addFluids(slot, alts, seen);
         return alts;
@@ -198,11 +230,11 @@ public final class RecipeShape {
             Fluid base = helper.getFluidIngredientType()
                 .getBase(fluid);
             if (base == null || base == Fluids.EMPTY) continue;
-            ItemStack carrier = FluidStacks.carrier(BuiltInRegistries.FLUID.getKey(base));
-            if (!seen.add(RecipeData.idOf(carrier))) continue;
+            ResourceLocation fluidId = BuiltInRegistries.FLUID.getKey(base);
+            if (!seen.add(RecipeData.idOf(FluidStacks.carrier(fluidId)))) continue;
             long milliBuckets = ClientPlatform.get()
                 .fluidAmount(fluid) / unitsPerMilliBucket;
-            alts.add(new Alt(carrier, (int) Math.max(1, Math.min(Integer.MAX_VALUE, milliBuckets))));
+            alts.add(fluidAlt(fluidId, milliBuckets));
         }
     }
 
@@ -226,6 +258,26 @@ public final class RecipeShape {
         } catch (RuntimeException ignored) {}
         if (identifier != null) return type + "|" + identifier;
         return type + "#" + hash(slots);
+    }
+
+    /** The same id {@link #idOf(IRecipeCategory, Object, IRecipeSlotsView)} gives, for a recipe built from its alternatives. */
+    public static String idFor(String type, String identifier, List<List<Alt>> inputs, List<List<Alt>> outputs) {
+        if (identifier != null) return type + "|" + identifier;
+        StringBuilder sb = new StringBuilder();
+        for (List<Alt> slot : inputs) appendAlts(sb, "INPUT:", slot);
+        for (List<Alt> slot : outputs) appendAlts(sb, "OUTPUT:", slot);
+        return type + "#" + digest(sb.toString());
+    }
+
+    private static void appendAlts(StringBuilder sb, String role, List<Alt> alts) {
+        sb.append(role);
+        for (Alt alt : alts) {
+            sb.append(alt.id())
+                .append('x')
+                .append(alt.count())
+                .append(',');
+        }
+        sb.append(';');
     }
 
     /**
@@ -291,17 +343,20 @@ public final class RecipeShape {
             }
             sb.append(';');
         }
+        return digest(sb.toString());
+    }
+
+    /** The first 8 bytes of the SHA-1 of the text, in hex (the text's hash if SHA-1 is missing). */
+    private static String digest(String text) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-1")
                 .digest(
-                    sb.toString()
-                        .getBytes(StandardCharsets.UTF_8));
+                    text.getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder();
             for (int i = 0; i < 8; i++) hex.append(String.format("%02x", digest[i]));
             return hex.toString();
         } catch (NoSuchAlgorithmException e) {
-            return Integer.toHexString(sb.toString()
-                .hashCode());
+            return Integer.toHexString(text.hashCode());
         }
     }
 }

@@ -39,7 +39,7 @@ Not tried in game yet: expect a few compile errors on the first build.
 - **Crafting calculator** (per group): steps and raw materials; click a step = other recipe, right click = treat as raw, +/- adjust amounts. Works with any recipe type JEI knows.
 - **Keys (Controls, NEI defaults)**: `A` toggles a bookmark for the hovered item or fluid (JEI list, recipe screen or inventory slot; a fluid is bookmarked as one bucket, Ctrl keeps the slot's amount; over a bookmark it removes it; Ctrl+A keeps the stack size), `Shift+A` over a group strip or the page label removes the group, `T` over a group strip or the label opens the crafting tree window when that group is in crafting-chain mode, `B` hides/shows the panel. `R`/`U` are JEI's own keys and already match NEI. Ignored while the JEI search box has focus.
 - **More NEI features (settings under Inventory and Tools, keys in Controls):**
-  - The settings screen (mod list button, or the N button in JEI's bottom-left button row) is laid out like NEI's options screen: a column of at most 320 px with a thin scroll bar, the tiled header and footer, the page's name at the top and a Back button. Inventory holds Cheat Mode, the Utilities and Gamemodes icon rows (a lit icon is on: left click turns one on, right click off), the sub pages Bookmarks Panel, Recipes GUI, History Panel, Craftables Panel, Item Zoom Panel and Favorites, and the yes/no options with NEI's names and value texts (Yes / No, Enabled / Disabled). A number or a color is a text field (a valid value applies as you type; a color also has a swatch that opens the color picker). The root also has KeyBindings (the controls screen), World (Highlight Tooltips), Tools > Data Dumps, JEI Options and Report Issues (opens the GitHub issue tracker after vanilla's link confirmation). It does not pause the game and Esc goes back to where you came from. NEI's Item Panel Sorting, Search Widget, Item IDs, item panel scale, mouse wheel transfer and per-world (W) overrides are not here: this addon has nothing for them.
+  - The settings screen (mod list button, or the N button in JEI's bottom-left button row) is laid out like NEI's options screen: a column of at most 320 px with a thin scroll bar, the tiled header and footer, the page's name at the top and a Back button. Inventory holds Cheat Mode, the Utilities and Gamemodes icon rows (a lit icon is on: left click turns one on, right click off), the sub pages Bookmarks Panel, Recipes GUI, History Panel, Craftables Panel, Item Zoom Panel and Favorites, and the yes/no options with NEI's names and value texts (Yes / No, Enabled / Disabled). A number or a color is a text field (a valid value applies as you type; a color also has a swatch that opens the color picker). The root also has KeyBindings (the controls screen), World (Highlight Tooltips), Tools > Data Dumps, JEI Options and Report Issues (opens the GitHub issue tracker after vanilla's link confirmation). It does not pause the game and Esc goes back to where you came from. JEI Options (`JeiSettings`: reflection on JEI's config manager, so only in a world) is one page with all of JEI's values in JEI's order, with a title row per JEI config category from JEI's lang key `jei.config.<file>.<category>` (categories with the same title are merged). A true/false value is a Yes / No button, a value with at most 64 valid values cycles (right click goes back), anything else is a text field that goes to JEI on Enter or when the field is left: red when JEI refuses it, Esc throws the typed text away. A text left as it was is not handed back, because JEI's `set` refuses the value it already has. JEI's values are read every frame, so a change to JEI's file shows at once. NEI's Item Panel Sorting, Search Widget, Item IDs, item panel scale, mouse wheel transfer and per-world (W) overrides are not here: this addon has nothing for them.
   - `generateSingleRecipeFavorites` (off, as NEI): an item with exactly one recipe in JEI uses it as its favorite when it has no own favorite (used by Shift+A, Shift+F, the recipe tree and the crafting key). `favoritesDepth` (default 9, 0 to 100): how many levels a saved recipe tree goes down.
   - `recipeTooltipInList` / `recipeTooltipInRecipeScreen` (off): the favorite recipe of the hovered item as a picture in a small box beside its tooltip, in JEI's item list, lookup history and craftables panel (the craftables panel shows the recipe it crafts the item with) / in JEI's recipe screen (JEI draws those tooltips itself, so the picture cannot be a part of them as in NEI).
   - `bookmarkItemsWithRecipe` (on) and `bookmarkRecipeWithCount` (on here, off in NEI): the bookmarks key (A) over an item inside a recipe of JEI's recipe screen saves the recipe with the item, and the item's bookmark tooltip then shows that recipe's picture (same rules as for recipe bookmarks). A recipe saved with Shift+A over a recipe, a favorite item or a heart starts with a count of one run, or without a count when the option is off (Ctrl+Shift+A then saves it with one).
@@ -124,10 +124,22 @@ Not tried in game yet: expect a few compile errors on the first build.
   a recipe category that leaves pose or render state changed (GregTech machines) no longer draws the picture under the
   item or the following bookmarks over the item on the cursor. With an item on the cursor and the delete prompt showing
   over JEI's list, JEI's own item tooltip is emptied (`HeldItemDelete.onTooltip`) so only the prompt shows.
+- **Item zoom keeps clear of the bottom controls** (1.4.0): the zoomed item, its name and the hint end 6 above the
+  controls at the bottom of their side (the bookmark panel's page bar, or JEI's buttons and lookup history with the
+  panel hidden; on the right the quantity field) and move up when they would reach them (`BookmarkPanel.controlsTop`).
+  With no room even at the top, the hint is left out.
+- **Item zoom stays under tooltips** (1.4.0): the zoomed item's middle is drawn at z 375 (`ItemZoom.DEPTH`,
+  `Pose.TOOLTIP - 25`): in front of the item list and the bookmark panel (its items, counts and small text reach 350)
+  and behind tooltips (400). The game draws an item 150 in front of the pose and the zoom scales only x and y, so a 3D
+  model keeps about 10 of depth on each side of its middle; at 400 (`Pose.OVER` + 150, before) it cut through the
+  tooltip. The name and the hint are drawn at the same depth (they were at 0, under the item list's icons).
+- **JEI plugin uid** (1.4.0): `neiaddon_jei:main`, not the mod id. EMI skips the JEI plugin of every mod that has an
+  EMI plugin, matched by this namespace, and the addon has both (see the EMI section below).
 - **Autocrafting checks the result** (1.3.1): before the result is taken (shift-click, single clicks, grid top-up) its item
   is compared with the item the recipe makes. If another recipe with the same ingredients takes priority in the grid
-  (a mod's copy of a vanilla tool), autocrafting gives up on the recipe, says so in chat and puts the grid back, instead
-  of crafting the wrong item again and again. Only the item is compared, not its NBT.
+  (a mod's copy of a vanilla tool), autocrafting gives up on the recipe, says so in chat (with both items' ids when
+  their names are the same) and puts the grid back, instead of crafting the wrong item again and again. Only the item
+  is compared, not its NBT.
 - **Release note**: a few seconds after joining a world (once per game session) a chat message says this release is an
   ambitious one and asks for issues on GitHub (the word "GitHub" links to the issue tracker). Its `[Turn off this message]`
   link (handled on the client, nothing is sent to the server) or `releaseNote` (Settings > Inventory > Release Note in Chat)
@@ -165,7 +177,10 @@ This addon is licensed under the GNU Lesser General Public License, version 3 or
   on JEI's list shows recipes instead of giving, nothing is given while JEI's recipe screen is open, and R / U over a bookmark
   still show its recipes (Shift+click on a bookmark stays this addon's reorder). Wheel over it: 1, Shift 10, Ctrl 64.
   Stored in the addon's client config (`itemQuantity`). Its place is a guess at JEI's layout; JEI is asked to keep its item
-  grid out of it through the extra-areas handler.
+  grid out of it through the extra-areas handler. With JEI's lookup history on, the history sits above the field: JEI has
+  no API for that, so `JeiAreas.keepHistoryAbove` (each frame, after JEI's own layout) moves JEI's history and shrinks
+  its item list through JEI's `updateBounds`, and checks the moved history keeps its size. If anything fails (one log
+  warning), or the list would have no room left, JEI keeps its layout and the field goes above the history instead.
 
 ## Autocrafting (Shift+C)
 
@@ -192,7 +207,26 @@ the server's grid is then fetched once), and one shift-click crafts them; the cr
 a tool breaks, the next transfer takes another one of its kind from the inventory. It works at any crafting table JEI can move crafting recipes into (1.3.1): besides vanilla's, for example Tinkers'
 Crafting Station or Sophisticated Storage's crafting upgrade (`CraftSlots`: the result slot is the game's kind or one
 that looks like it; the grid is found from a crafting container, the screen's own recipe slots, or JEI's transfer info;
-without a grid it crafts one set at a time). Recipes JEI cannot transfer (furnaces,
+without a grid it crafts one set at a time). Sophisticated Storage's crafting upgrade keeps its grid and
+result slot outside the menu's slot list (clicks still reach them by index): `CraftSlots.upgradeSlots` reads them from
+the menu's open crafting upgrade (`getUpgradeContainers()`, else the first one, as its JEI transfer picks), and
+autocrafting refuses to start, with a chat line, while that upgrade refills its grid from the storage
+(`shouldRefillCraftingGrid()`), since it would keep crafting from the storage. Leftovers (`GIVE_BACK`, after the
+cleanup): once the first sync is done, the counts of the table's own storage (slots not on the player's inventory, not
+the grid or the result) and of the player's main inventory are noted; at the end, per item, what the storage gave up
+(but no more than the player gained) is moved back with checked clicks, into the slots it came from, else a slot of
+the same kind (class, container and item handler) holding it or empty; the rest of a picked-up stack goes back to its
+slot; at most 200 clicks. It is needed because JEI clears the grid into its transfer info's inventory slots in order,
+and Tinkers lists the player's first. Items are told apart by id only, so when an item was both taken from the storage
+and crafted, the storage gets back up to what it gave. Items crafted on the way (results of the chain's recipes that
+were not asked for) all go into the storage slots the crafting took from; the player keeps the asked-for amount of the chain's
+top recipes' results (only leftovers of those items beyond it go back). A second pass (`reclaiming`) then moves to the player what the storage gained:
+all of the asked-for items, and of anything else no more than the player lost (the player's own tools, which a
+Sophisticated storage takes from the grid's shift-click), into the slot each came from first. The give-back runs
+whenever the table has storage slots, also when they were empty at the start. Verified in game on 1.20.1 (ATM9 Expert, Forge: Tinkers with
+and without Faster Autocrafting, Sophisticated, the refill refusal, the vanilla table; 1.20.1 Fabric: the vanilla
+table) and 1.21.1 (ATM10, NeoForge: Sophisticated, the vanilla table); not on 1.21.1 Fabric, 26.1.2 and 26.2.
+Recipes JEI cannot transfer (furnaces,
 machines) are skipped. With Restore Inventory Layout (`autocraftingRestoreLayout`, Settings > Inventory, off by
 default) the items that were in the inventory when autocrafting started are then moved back to their old slots, one checked
 click at a time (a slot is only taken from when it does not already hold its own item; at most 120 clicks); crafted items
@@ -259,3 +293,32 @@ Port of NEI's `GuiCraftingTree`. The pure parts are in `chain/` (`TreeMath`, `Tr
 - Not checked in game: only compiled against stand-in classes and run through the maths checks. Risks: item and texture
   drawing under the pose scale, the second JEI button factory, the inventory snapshot read from the open menu, the
   recipe picture in the badge tooltip.
+
+
+## EMI (optional, 1.20.1)
+
+- EMI's API is a compile-only dependency of each loader (`emi_version` in gradle.properties); nothing needs EMI at run time. Without EMI no EMI class is loaded.
+- EMI skips the JEI plugin of every mod that has an EMI plugin (its `PluginCallerMixin`, matched by the JEI plugin uid's
+  namespace against the mod ids from `@EmiEntrypoint` / the `"emi"` entrypoint; same in 1.1.22 and on Fabric). So the
+  JEI plugin uid is `neiaddon_jei:main`, not `neiaddon:main`. With `neiaddon:main` the addon got no JEI runtime under EMI
+  and nothing that reads the hovered item worked.
+- Only the `neiaddon.emi` package uses EMI's types, and only once EMI has loaded `neiaddon.emi.NeiAddonEmiPlugin` itself: Forge through the `@EmiEntrypoint` annotation, Fabric through the `"emi"` entrypoint in fabric.mod.json. `neiaddon.EmiCompat` (no EMI types) holds the hooks it sets.
+- Exclusion area: the left column while the bookmark panel is shown (`BookmarkPanel.emiArea`: x 0 to the column's right edge, the full screen height), the quantity field and the craftables panel (`EmiCompat.areas`, each source guarded on its own), so EMI's sidebars are placed around them. EMI's left sidebar (favorites, by default) gets no room at all while the panel is shown, not even a strip above or beside it when another mod's buttons push the panel down; it comes back with B. EMI's own bottom-left buttons are fixed widgets, not moved by exclusion areas. `BookmarkPanel.extraAreas()` stays empty: JEI must not get the panel's area.
+- EMI's layout (`emi.EmiLayout`, reads the internal `dev.emi.emi.screen.EmiScreenManager` by reflection through `EmiCompat.layout`): the item list grid (`getSearchPanel().space`: `tx`, `ty` in pixels, `tw`, `th` in 18 px slots; none while the panel's `isVisible()` is false), the search box (`search`) and the bottom-left buttons (`emi`, `tree`, read as vanilla `AbstractWidget`s). Used only when JEI's own list area is missing (`JeiAreas.list()` null, which is the case under EMI): the quantity field takes the item list's x and width and sits on the bottom row, or just above EMI's search box when that box is under the list; the N and S buttons follow EMI's last shown button at its y. A failure, at setup or later, clears the hook with one warning and both go back to their places without EMI.
+- EMI note (`EmiNote`, like `ReleaseNote`): with EMI installed, a chat message a few seconds after joining (after the release note) says the addon works with EMI and links the issues page; its "turn off" link runs `/neiaddon_hide_emi_note`, caught in `ShareClient`, and clears `emiNote`.
+- Cheat mode: `BookmarkPanel.canGive` also accepts `EmiApi.isCheatMode`, read once per call through `EmiCompat.cheatMode` (a failure logs one warning and counts as off).
+- Only EMI API members that exist in EMI 1.1.22 are used (`addGenericExclusionArea`, `EmiExclusionArea`, `Bounds`, `EmiApi.isCheatMode`, `addAlias`, `EmiStack.of`). Must keep working on EMI 1.1.22.
+- EMI's recipes (`EmiBridge`, `EmiTarget`): favorites, trees and transfer look recipes up in EMI too.
+- EMI's recipe screen (`dev.emi.emi.screen.RecipeScreen`, internal): the hearts and the tree's "+" (`EmiRecipeButtons`,
+  reads `currentPage`) and the recipe search (`EmiRecipeSearch`, swaps the private `recipes` map and re-initialises the
+  screen) are drawn from the addon's own screen events through `EmiCompat`, by reflection. A failure turns that part off
+  with one warning. Details and test results: `docs/emi-compat.md` in the project folder.
+- EMI's item list: EMI shows its own list and takes clicks on its stacks (and, on container screens, its keys) before
+  the addon. `EmiCompat.installed()` (EMI's mod is loaded, from the loader's mod list, so known before EMI loads the
+  plugin) turns off what can't work there: `JeiGive` gives nothing from the list, the list hint has no cheat clicks
+  and no A line (except on EMI's recipe screen, where the addon reads keys first; elsewhere Shift + A, which EMI
+  leaves alone, is listed when the item has no favorite recipe), Subsets lists mods only (EMI's
+  search has no creative tab filter; JEI's `setFilterText` sets EMI's search), collapsible groups are off. The
+  Item Untranslator's English names (`Untranslator.englishNames()`) are added as EMI aliases too.
+- Checked in game with EMI 1.1.24 on both loaders (see `docs/emi-compat.md`). Not checked: giving items through the
+  panel in EMI cheat mode (only `canGive` was probed).

@@ -27,7 +27,9 @@ public class NeiAddonJeiPlugin implements IModPlugin {
 
     @Override
     public ResourceLocation getPluginUid() {
-        return new ResourceLocation(NeiAddon.MODID, "main");
+        // not the mod id on purpose: EMI skips the JEI plugin of every mod that also has an EMI plugin (matched by this
+        // namespace), and the addon needs its JEI plugin next to its EMI one
+        return new ResourceLocation(NeiAddon.MODID + "_jei", "main");
     }
 
     @Override

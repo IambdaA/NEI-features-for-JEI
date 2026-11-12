@@ -15,6 +15,11 @@ repositories {
         name = 'BlameJared'
         url = 'https://maven.blamejared.com/'
     }
+    maven {
+        name = 'TerraformersMC'
+        url = 'https://maven.terraformersmc.com/'
+        content { includeGroup 'dev.emi' }
+    }
 }
 
 base {
@@ -33,6 +38,8 @@ dependencies {
 
     // JEI API at compile time, full JEI at runtime (so the dev client has it). JEI is an optional dependency of this mod.
     modCompileOnly "mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"
+    // EMI API only: the EMI plugin class is loaded by EMI itself, so nothing needs EMI at run time
+    modCompileOnly "dev.emi:emi-fabric:${emi_version}:api"
     modCompileOnly "mezz.jei:jei-${minecraft_version}-fabric-api:${jei_version}"
     modLocalRuntime "mezz.jei:jei-${minecraft_version}-fabric:${jei_version}"
     modLocalRuntime "net.mezzdev.config:mezz_config-${minecraft_version}-fabric:${mezz_config_version}"

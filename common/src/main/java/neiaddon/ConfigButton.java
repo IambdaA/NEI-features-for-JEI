@@ -35,7 +35,8 @@ public final class ConfigButton {
         if (button == 1) {
             return List.of(Component.literal(TIPS[1])
                 .getVisualOrderText(),
-                Component.literal("Show only one mod or creative tab in JEI's list (sets JEI's search)")
+                Component.literal(EmiCompat.installed() ? "Show only one mod in EMI's list (sets EMI's search)"
+                    : "Show only one mod or creative tab in JEI's list (sets JEI's search)")
                     .withStyle(ChatFormatting.GRAY)
                     .getVisualOrderText());
         }
@@ -56,14 +57,17 @@ public final class ConfigButton {
     }
 
     /**
-     * After JEI's last button, moved further right past any widget another mod put in that row (ATM9's "Dark Mode"
-     * button, for one), so the two never sit on top of each other.
+     * After JEI's last button (with EMI: after EMI's own bottom-left buttons), moved further right past any widget another
+     * mod put in that row (ATM9's "Dark Mode" button, for one), so the two never sit on top of each other.
      */
     private static int startX() {
         Screen s = Minecraft.getInstance().screen;
-        int x = JeiButtons.configX();
+        List<Rect2i> emi = EmiCompat.buttonAreas();
+        int x = emi.isEmpty() ? JeiButtons.configX() : emi.get(emi.size() - 1)
+            .getX() + emi.get(emi.size() - 1)
+                .getWidth() + 2;
         if (s == null) return x;
-        int y = JeiButtons.configY(s.height);
+        int y = rowY(s);
         int size = JeiButtons.size();
         int w = LABELS.length * (size + 2) - 2;
         List<Rect2i> widgets = ScreenAreas.widgets(s);
@@ -81,13 +85,20 @@ public final class ConfigButton {
         return x;
     }
 
+    /** The row's top: EMI's last bottom-left button's (the one the row follows) when EMI shows them, else JEI's button row's. */
+    private static int rowY(Screen s) {
+        List<Rect2i> emi = EmiCompat.buttonAreas();
+        return emi.isEmpty() ? JeiButtons.configY(s.height) : emi.get(emi.size() - 1)
+            .getY();
+    }
+
     /** Is the point over the subsets button (S)? */
     static boolean overSubsets(Screen s, double mx, double my) {
         return s != null && visible(s) && over(s, mx, my) == 1;
     }
 
     private static int over(Screen s, double mx, double my) {
-        int y = JeiButtons.configY(s.height);
+        int y = rowY(s);
         if (my < y || my >= y + JeiButtons.size()) return -1;
         for (int i = 0; i < LABELS.length; i++) {
             if (mx >= buttonX(i) && mx < buttonX(i) + JeiButtons.size()) return i;
@@ -107,7 +118,7 @@ public final class ConfigButton {
         try {
             int hover = over(s, event.getMouseX(), event.getMouseY());
             for (int i = 0; i < LABELS.length; i++) {
-                BookmarkPanel.button(g, Minecraft.getInstance().font, buttonX(i), JeiButtons.configY(s.height), JeiButtons.size(),
+                BookmarkPanel.button(g, Minecraft.getInstance().font, buttonX(i), rowY(s), JeiButtons.size(),
                     JeiButtons.size(), LABELS[i], hover == i);
             }
             if (hover >= 0) {
@@ -126,7 +137,7 @@ public final class ConfigButton {
         int hit = over(s, event.getMouseX(), event.getMouseY());
         if (hit < 0) return;
         if (hit == 1) {
-            if (event.getButton() == 0) Subsets.toggle(s, buttonX(1), JeiButtons.configY(s.height));
+            if (event.getButton() == 0) Subsets.toggle(s, buttonX(1), rowY(s));
             event.setCanceled(true);
             return;
         }

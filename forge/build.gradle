@@ -17,6 +17,11 @@ repositories {
         name = 'BlameJared'
         url = 'https://maven.blamejared.com/'
     }
+    maven {
+        name = 'TerraformersMC'
+        url = 'https://maven.terraformersmc.com/'
+        content { includeGroup 'dev.emi' }
+    }
 }
 
 base {
@@ -53,6 +58,8 @@ legacyForge {
 dependencies {
     // JEI API at compile time, full JEI at runtime (so the dev client has it).
     modCompileOnly "mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"
+    // EMI API only: the EMI plugin class is loaded by EMI itself, so nothing needs EMI at run time
+    modCompileOnly "dev.emi:emi-forge:${emi_version}:api"
     modCompileOnly "mezz.jei:jei-${minecraft_version}-forge-api:${jei_version}"
     modRuntimeOnly "mezz.jei:jei-${minecraft_version}-forge:${jei_version}"
 }

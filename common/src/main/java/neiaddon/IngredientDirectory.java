@@ -1,9 +1,9 @@
 package neiaddon;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import java.util.ArrayList;
 import java.util.List;
 import mezz.jei.api.recipe.RecipeIngredientRole;
-import mezz.jei.api.runtime.IRecipesGui;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -19,8 +19,8 @@ import org.lwjgl.glfw.GLFW;
 /**
  * The ingredient directory: a middle click on a recipe slot that cycles through several items (any planks, any wool...)
  * opens a list of every item the slot accepts, next to the mouse (JEI++'s ingredient list). In the list a left click shows
- * an item's recipes, a right click its uses, R / U do the same and the bookmark key bookmarks it; the mouse wheel scrolls,
- * and Esc or a click outside closes it.
+ * an item's recipes, a right click its uses, JEI's show-recipes / show-uses keys (R / U) do the same and the bookmark key
+ * bookmarks it; the mouse wheel scrolls, and Esc or a click outside closes it.
  */
 public final class IngredientDirectory {
 
@@ -85,7 +85,7 @@ public final class IngredientDirectory {
         double mx = event.getMouseX();
         double my = event.getMouseY();
         if (open()) {
-            if (!(s instanceof IRecipesGui)) {
+            if (!RecipeHearts.isRecipesScreen(s)) {
                 close();
                 return;
             }
@@ -103,7 +103,7 @@ public final class IngredientDirectory {
             }
             return;
         }
-        if (event.getButton() != 2 || !(s instanceof IRecipesGui)) return;
+        if (event.getButton() != 2 || !RecipeHearts.isRecipesScreen(s)) return;
         List<RecipeShape.Alt> alts = RecipeHearts.hoveredSlotAlts();
         if (alts.size() < 2) return;
         List<ItemStack> list = new ArrayList<>();
@@ -140,9 +140,10 @@ public final class IngredientDirectory {
         }
         ItemStack stack = hoveredStack();
         if (stack.isEmpty()) return;
-        if (code == GLFW.GLFW_KEY_R || code == GLFW.GLFW_KEY_U) {
+        InputConstants.Key key = InputConstants.Type.KEYSYM.getOrCreate(code);
+        if (CalcKeys.isShowRecipe(key) || CalcKeys.isShowUses(key)) {
             close();
-            BookmarkPanel.showRecipes(stack, code == GLFW.GLFW_KEY_R ? RecipeIngredientRole.OUTPUT : RecipeIngredientRole.INPUT);
+            BookmarkPanel.showRecipes(stack, CalcKeys.isShowRecipe(key) ? RecipeIngredientRole.OUTPUT : RecipeIngredientRole.INPUT);
             event.setCanceled(true);
         }
     }
@@ -150,7 +151,7 @@ public final class IngredientDirectory {
     @SubscribeEvent(priority = EventPriority.LOWEST)
     static void onRender(ScreenEvent.Render.Post event) {
         if (!open()) return;
-        if (!(event.getScreen() instanceof IRecipesGui)) {
+        if (!RecipeHearts.isRecipesScreen(event.getScreen())) {
             close();
             return;
         }

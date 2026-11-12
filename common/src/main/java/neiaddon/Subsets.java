@@ -81,12 +81,15 @@ public final class Subsets {
             .compareToIgnoreCase(b.label()));
         built.add(new Line("Mods", null, true));
         built.addAll(mods);
-        built.add(new Line("Creative Tabs", null, true));
-        for (CreativeModeTab tab : CreativeModeTabs.allTabs()) {
-            if (tab.getType() != CreativeModeTab.Type.CATEGORY) continue;
-            String name = tab.getDisplayName()
-                .getString();
-            if (!name.isBlank()) built.add(new Line(name, "\"%" + name.replace("\"", "") + "\"", false));
+        // EMI's search has no creative tab filter (only @mod, #tag and $tooltip), so the tabs are left out there
+        if (!EmiCompat.installed()) {
+            built.add(new Line("Creative Tabs", null, true));
+            for (CreativeModeTab tab : CreativeModeTabs.allTabs()) {
+                if (tab.getType() != CreativeModeTab.Type.CATEGORY) continue;
+                String name = tab.getDisplayName()
+                    .getString();
+                if (!name.isBlank()) built.add(new Line(name, "\"%" + name.replace("\"", "") + "\"", false));
+            }
         }
         lines = built;
         scroll = 0;

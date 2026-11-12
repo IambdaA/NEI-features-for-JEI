@@ -1,7 +1,6 @@
 package neiaddon;
 
 import java.util.List;
-import mezz.jei.api.runtime.IRecipesGui;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -33,7 +32,7 @@ public final class HeldItemDelete {
 
     /** Is a click at the point a delete? */
     static boolean active(Screen s, double mx, double my) {
-        if (s == null || s instanceof IRecipesGui || Calculator.runtime == null) return false;
+        if (s == null || RecipeHearts.isRecipesScreen(s) || Calculator.runtime == null) return false;
         AbstractContainerMenu menu = menuOf(s);
         if (menu == null || menu.getCarried()
             .isEmpty() || !BookmarkPanel.canGive()) return false;

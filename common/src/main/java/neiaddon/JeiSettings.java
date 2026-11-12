@@ -1,300 +1,263 @@
 package neiaddon;
 
 import java.lang.reflect.Method;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.screens.Screen;
+import java.util.concurrent.ConcurrentHashMap;
+import net.minecraft.locale.Language;
 import net.minecraft.network.chat.Component;
-import net.minecraft.util.FormattedCharSequence;
-import neiaddon.event.EventPriority;
-import neiaddon.event.SubscribeEvent;
-import neiaddon.event.ScreenEvent;
-import org.lwjgl.glfw.GLFW;
 
 /**
- * JEI only opens a settings screen when another mod provides one, so this lists JEI's own config values (read through
- * JEI's config manager API by reflection, so a JEI without it just leaves the button greyed out) and edits them:
- * click toggles a yes/no, click cycles a fixed list of choices (right click goes back), and any other value is typed
- * in and applied with Enter. Wheel scrolls. JEI saves its config file itself when a value is set.
+ * JEI's own config values, read through JEI's config manager by reflection (a JEI without that API gives no categories)
+ * and written back through the same API, which saves JEI's file itself. {@link NeiSettings} shows them as the "JEI
+ * Options" pages of the NEI Options page. Nothing here draws or takes input; every reflective call degrades to a
+ * fallback, and reading the config logs one warning.
  */
-public final class JeiSettings extends Screen {
+final class JeiSettings {
 
-    private static final int ROW = 22;
-    private static final int TOP = 36;
-    private static final int BOTTOM = 36;
-    private static final int VALUE_W = 150;
+    /** One page of JEI's settings: its title and the config values under it. */
+    record Category(String title, List<Object> values) {}
 
-    /** One JEI config value, or a category header when {@code value} is null. */
-    private static final class Row {
+    /** Longest choice list shown as cycling choices; longer lists are typed in instead. */
+    private static final int MAX_CHOICES = 64;
+    /** Per class, the public methods already looked up, by name and argument count (empty when the class has none). */
+    private static final ClassValue<Map<String, Optional<Method>>> METHODS = new ClassValue<>() {
 
-        final String header;
-        final Object value;
-        String edit;
-        boolean bad;
-
-        Row(String header, Object value) {
-            this.header = header;
-            this.value = value;
+        @Override
+        protected Map<String, Optional<Method>> computeValue(Class<?> type) {
+            return new ConcurrentHashMap<>();
         }
-    }
+    };
 
-    private final Screen parent;
-    private final List<Row> rows = new ArrayList<>();
-    private int scroll;
-    private Row editing;
+    private JeiSettings() {}
 
-    JeiSettings(Screen parent) {
-        super(Component.literal("JEI settings"));
-        this.parent = parent;
-        load();
-    }
-
-    /** Can JEI's config values be read? */
-    public static boolean available() {
-        return !new JeiSettings(null).rows.isEmpty();
-    }
-
-    private void load() {
+    /** JEI's config files as pages: categories with the same title merged, categories without values left out. */
+    static List<Category> categories() {
+        Map<String, List<Object>> byTitle = new LinkedHashMap<>();
         try {
-            if (Calculator.runtime == null) return;
+            if (Calculator.runtime == null) return List.of();
             Object manager = Calculator.runtime.getClass()
                 .getMethod("getConfigManager")
                 .invoke(Calculator.runtime);
             Collection<?> files = (Collection<?>) call(manager, "getConfigFiles");
             for (Object file : files) {
                 for (Object category : (List<?>) call(file, "getCategories")) {
-                    List<Row> values = new ArrayList<>();
-                    for (Object value : (Collection<?>) call(category, "getConfigValues")) values.add(new Row(null, value));
+                    List<Object> values = new ArrayList<>((Collection<?>) call(category, "getConfigValues"));
                     if (values.isEmpty()) continue;
-                    rows.add(new Row(String.valueOf(call(category, "getName")), null));
-                    rows.addAll(values);
+                    byTitle.computeIfAbsent(title(file, category), k -> new ArrayList<>()).addAll(values);
                 }
             }
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             NeiAddon.LOGGER.warn("Could not read JEI's config values", e);
-            rows.clear();
+            return List.of();
         }
+        List<Category> out = new ArrayList<>();
+        for (Map.Entry<String, List<Object>> e : byTitle.entrySet()) out.add(new Category(e.getKey(), e.getValue()));
+        return out;
     }
 
-    private static Object call(Object target, String name, Object... args) throws ReflectiveOperationException {
-        for (Method m : target.getClass()
-            .getMethods()) {
-            if (m.getName()
-                .equals(name) && m.getParameterCount() == args.length) {
-                m.setAccessible(true);
-                return m.invoke(target, args);
-            }
-        }
-        throw new NoSuchMethodException(name);
+    /** Can JEI's config values be read? */
+    static boolean available() {
+        return !categories().isEmpty();
     }
 
-    // ---------------------------------------------------------------- value access
-
-    private static String nameOf(Row r) throws ReflectiveOperationException {
-        Object localized = call(r.value, "getLocalizedName");
-        return localized instanceof Component c ? c.getString() : String.valueOf(call(r.value, "getName"));
+    /** The lang key {@code jei.config.<file>.<category>} when JEI has it, else the category name made readable. */
+    private static String title(Object file, Object category) throws ReflectiveOperationException {
+        String name = String.valueOf(call(category, "getName"));
+        String base = fileBase(file);
+        if (base == null) return pretty(name);
+        String key = "jei.config." + base + "." + name;
+        return Language.getInstance()
+            .has(key) ? Language.getInstance()
+                .getOrDefault(key) : pretty(name);
     }
 
-    private static String shown(Row r) {
+    /** The file's name without the {@code jei-} prefix and the {@code .ini} suffix, or null when JEI does not say. */
+    private static String fileBase(Object file) {
         try {
-            Object serializer = call(r.value, "getSerializer");
-            return String.valueOf(call(serializer, "serialize", call(r.value, "getValue")));
-        } catch (ReflectiveOperationException | RuntimeException e) {
+            String base = ((Path) call(file, "getPath")).getFileName()
+                .toString();
+            if (base.endsWith(".ini")) base = base.substring(0, base.length() - 4);
+            if (base.startsWith("jei-")) base = base.substring(4);
+            return base;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return null;
+        }
+    }
+
+    // ---------------------------------------------------------------- one value (read live, every call)
+
+    /** The value's name: JEI's localized name, else its raw name made readable, else "?". */
+    static String name(Object v) {
+        try {
+            if (call(v, "getLocalizedName") instanceof Component c && !c.getString()
+                .isEmpty()) return c.getString();
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {}
+        try {
+            return pretty(String.valueOf(call(v, "getName")));
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             return "?";
         }
     }
 
-    private static boolean apply(Row r, Object value) {
+    /** The value's description: JEI's localized one, else its own, else "". */
+    static String description(Object v) {
         try {
-            call(r.value, "set", value);
-            return true;
-        } catch (ReflectiveOperationException | RuntimeException e) {
+            if (call(v, "getLocalizedDescription") instanceof Component c && !c.getString()
+                .isEmpty()) return c.getString();
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {}
+        try {
+            Object d = call(v, "getDescription");
+            return d == null ? "" : String.valueOf(d);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return "";
+        }
+    }
+
+    /** A yes / no value. */
+    static boolean isToggle(Object v) {
+        try {
+            return call(v, "getValue") instanceof Boolean;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             return false;
         }
     }
 
-    private static List<Object> choices(Row r) {
+    /** The fixed list of values a choice cycles through, or nothing when there is none or it is too long. */
+    static List<Object> choices(Object v) {
         try {
-            Object serializer = call(r.value, "getSerializer");
-            Optional<?> all = (Optional<?>) call(serializer, "getAllValidValues");
-            if (all.isEmpty()) return List.of();
-            return new ArrayList<>((Collection<?>) all.get());
-        } catch (ReflectiveOperationException | RuntimeException e) {
+            Optional<?> all = (Optional<?>) call(call(v, "getSerializer"), "getAllValidValues");
+            if (all.isEmpty() || !(all.get() instanceof Collection<?> c) || c.isEmpty() || c.size() > MAX_CHOICES) return List.of();
+            return new ArrayList<>(c);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             return List.of();
         }
     }
 
-    private static void click(Row r, int button) {
+    /** Flips a yes / no value. False when JEI refuses it. */
+    static boolean toggle(Object v) {
         try {
-            Object current = call(r.value, "getValue");
-            if (current instanceof Boolean b) {
-                apply(r, !b);
-                return;
-            }
-            List<Object> all = choices(r);
-            if (!all.isEmpty() && all.size() <= 64) {
-                int i = all.indexOf(current);
-                int next = (i + (button == 1 ? -1 : 1) + all.size()) % all.size();
-                apply(r, all.get(next));
-            }
-        } catch (ReflectiveOperationException | RuntimeException ignored) {}
-    }
-
-    private static boolean typed(Row r) {
-        try {
-            Object current = call(r.value, "getValue");
-            return !(current instanceof Boolean) && choices(r).isEmpty();
-        } catch (ReflectiveOperationException | RuntimeException e) {
+            if (!(call(v, "getValue") instanceof Boolean b)) return false;
+            return store(v, !b);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             return false;
         }
     }
 
-    private void commit() {
-        Row r = editing;
-        editing = null;
-        if (r == null || r.edit == null) return;
+    /** Moves a choice to the next value, or the previous one with {@code back}, wrapping around. */
+    static void cycle(Object v, boolean back) {
         try {
-            Object serializer = call(r.value, "getSerializer");
-            Object result = call(serializer, "deserialize", r.edit);
-            Optional<?> parsed = (Optional<?>) call(result, "getResult");
-            r.bad = parsed.isEmpty() || !Boolean.TRUE.equals(call(serializer, "isValid", parsed.get())) || !apply(r, parsed.get());
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            r.bad = true;
+            Object current = call(v, "getValue");
+            List<Object> all = choices(v);
+            if (all.isEmpty()) return;
+            int i = all.indexOf(current);
+            int next = (i + (back ? -1 : 1) + all.size()) % all.size();
+            store(v, all.get(next));
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {}
+    }
+
+    /** Is a yes / no value on? */
+    static boolean isOn(Object v) {
+        try {
+            return Boolean.TRUE.equals(call(v, "getValue"));
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return false;
         }
-        r.edit = r.bad ? r.edit : null;
     }
 
-    // ---------------------------------------------------------------- layout and drawing
-
-    private int listHeight() {
-        return height - TOP - BOTTOM;
+    /** A choice's current value, made readable ("Mouse Pickup"); "?" when it cannot be read. */
+    static String shown(Object v) {
+        return pretty(text(v));
     }
 
-    private int maxScroll() {
-        int over = rows.size() * ROW - listHeight();
-        return over <= 0 ? 0 : (over + ROW - 1) / ROW * ROW;
+    /** A typed value as JEI writes it in its file; "?" when it cannot be read. */
+    static String text(Object v) {
+        try {
+            Object serializer = call(v, "getSerializer");
+            return String.valueOf(call(serializer, "serialize", call(v, "getValue")));
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return "?";
+        }
     }
 
-    private int left() {
-        return Math.max(10, width / 2 - 230);
+    /** Parses typed text and sets the value if JEI accepts it. False when any step fails. */
+    static boolean setText(Object v, String s) {
+        try {
+            Object serializer = call(v, "getSerializer");
+            Object result = call(serializer, "deserialize", s);
+            if (!(call(result, "getResult") instanceof Optional<?> parsed) || parsed.isEmpty()) return false;
+            if (!Boolean.TRUE.equals(call(serializer, "isValid", parsed.get()))) return false;
+            return store(v, parsed.get());
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return false;
+        }
     }
 
-    private int right() {
-        return Math.min(width - 10, width / 2 + 230);
+    /** What JEI accepts for a typed value, or "" when JEI says nothing. */
+    static String validValues(Object v) {
+        try {
+            Object text = call(call(v, "getSerializer"), "getValidValuesDescription");
+            return text == null ? "" : String.valueOf(text);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return "";
+        }
     }
 
-    private int rowAt(double mx, double my) {
-        if (my < TOP || my >= height - BOTTOM) return -1;
-        int i = (int) (my - TOP + scroll) / ROW;
-        return i >= 0 && i < rows.size() && TOP + (i + 1) * ROW - scroll <= height - BOTTOM ? i : -1;
+    /**
+     * Sets the value through JEI. JEI's set returns whether it took the value; no answer counts as taken. JEI also says no
+     * to the value it already has, so that one counts as taken without asking.
+     */
+    private static boolean store(Object v, Object value) throws ReflectiveOperationException {
+        if (Objects.equals(call(v, "getValue"), value)) return true;
+        Object ok = call(v, "set", value);
+        return !Boolean.FALSE.equals(ok);
     }
 
-    private boolean overDone(double mx, double my) {
-        int x = width / 2 - 100;
-        return mx >= x && mx < x + 200 && my >= height - BOTTOM + 8 && my < height - BOTTOM + 28;
+    /**
+     * Words of a raw id made readable: split at {@code _}, {@code -}, spaces and lower-to-upper case changes, each word
+     * with a capital first letter and the rest lower case: {@code MOUSE_PICKUP} gives "Mouse Pickup", {@code searchColors}
+     * gives "Search Colors".
+     */
+    static String pretty(String raw) {
+        if (raw == null || raw.isEmpty()) return raw == null ? "" : raw;
+        StringBuilder out = new StringBuilder();
+        for (String word : raw.split("[_\\- ]+|(?<=\\p{Ll})(?=\\p{Lu})")) {
+            if (word.isEmpty()) continue;
+            if (out.length() > 0) out.append(' ');
+            out.append(Character.toUpperCase(word.charAt(0)))
+                .append(word.substring(1)
+                    .toLowerCase(Locale.ROOT));
+        }
+        return out.toString();
     }
 
-    @Override
-    public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
-        super.render(g, mouseX, mouseY, delta);
-        Font font = Minecraft.getInstance().font;
-        g.drawString(font, title, (width - font.width(title)) / 2, 14, 0xFFFFFFFF, true);
-        scroll = Math.max(0, Math.min(scroll, maxScroll()));
-        List<FormattedCharSequence> tip = null;
-        for (int i = 0; i < rows.size(); i++) {
-            int y = TOP + i * ROW - scroll;
-            if (y < TOP || y + ROW > height - BOTTOM) continue;
-            Row r = rows.get(i);
-            if (r.value == null) {
-                g.drawString(font, r.header, left(), y + 7, 0xFFFFFF55, true);
-                continue;
-            }
-            boolean hover = rowAt(mouseX, mouseY) == i;
-            try {
-                String name = nameOf(r);
-                g.drawString(font, font.plainSubstrByWidth(name, right() - left() - VALUE_W - 10), left() + 6, y + 7, 0xFFFFFFFF, true);
-                if (hover && mouseX < right() - VALUE_W) {
-                    Object description = call(r.value, "getLocalizedDescription");
-                    if (description instanceof Component c) tip = new ArrayList<>(font.split(c, 260));
+    private static Object call(Object target, String name, Object... args) throws ReflectiveOperationException {
+        // the pages read JEI's values every frame: each method is looked up once per class
+        Map<String, Optional<Method>> known = METHODS.get(target.getClass());
+        String key = name + "/" + args.length;
+        Optional<Method> m = known.get(key);
+        if (m == null) {
+            m = Optional.empty();
+            for (Method found : target.getClass()
+                .getMethods()) {
+                if (found.getName()
+                    .equals(name) && found.getParameterCount() == args.length) {
+                    found.setAccessible(true);
+                    m = Optional.of(found);
+                    break;
                 }
-            } catch (ReflectiveOperationException | RuntimeException ignored) {}
-            int bx = right() - VALUE_W;
-            String text = r == editing ? r.edit + ((System.currentTimeMillis() / 500) % 2 == 0 ? "_" : "")
-                : r.edit != null ? r.edit : shown(r);
-            BookmarkPanel.button(g, font, bx, y + 1, VALUE_W, ROW - 2, font.plainSubstrByWidth(text, VALUE_W - 6),
-                hover && mouseX >= bx);
-            if (r.bad) g.fill(bx, y + ROW - 3, bx + VALUE_W, y + ROW - 1, 0xFFFF5555);
+            }
+            known.put(key, m);
         }
-        BookmarkPanel.button(g, font, width / 2 - 100, height - BOTTOM + 8, 200, 20, "Done", overDone(mouseX, mouseY));
-        if (tip != null) g.renderTooltip(font, tip, mouseX, mouseY);
-    }
-
-    @Override
-    public void onClose() {
-        McCompat.setScreen(parent);
-    }
-
-    // ---------------------------------------------------------------- input (screen events, so no Screen method signatures)
-
-    @SubscribeEvent(priority = EventPriority.HIGH)
-    static void onMousePressed(ScreenEvent.MouseButtonPressed.Pre event) {
-        if (!(event.getScreen() instanceof JeiSettings s)) return;
-        event.setCanceled(true);
-        double mx = event.getMouseX();
-        double my = event.getMouseY();
-        if (s.overDone(mx, my)) {
-            s.commit();
-            s.onClose();
-            return;
-        }
-        s.commit();
-        int i = s.rowAt(mx, my);
-        if (i < 0 || mx < s.right() - VALUE_W || mx >= s.right()) return;
-        Row r = s.rows.get(i);
-        if (r.value == null) return;
-        if (typed(r)) {
-            s.editing = r;
-            r.edit = shown(r);
-            r.bad = false;
-        } else {
-            click(r, event.getButton());
-        }
-    }
-
-    @SubscribeEvent(priority = EventPriority.HIGH)
-    static void onScroll(ScreenEvent.MouseScrolled.Pre event) {
-        if (!(event.getScreen() instanceof JeiSettings s)) return;
-        s.scroll -= (int) Math.signum(event.getScrollDelta()) * ROW;
-        s.scroll = Math.max(0, Math.min(s.scroll, s.maxScroll()));
-        event.setCanceled(true);
-    }
-
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
-    static void onKey(ScreenEvent.KeyPressed.Pre event) {
-        if (!(event.getScreen() instanceof JeiSettings s) || s.editing == null) return;
-        event.setCanceled(true);
-        int code = event.getKeyCode();
-        Row r = s.editing;
-        if (code == GLFW.GLFW_KEY_ENTER || code == GLFW.GLFW_KEY_KP_ENTER) {
-            s.commit();
-        } else if (code == GLFW.GLFW_KEY_ESCAPE) {
-            r.edit = null;
-            r.bad = false;
-            s.editing = null;
-        } else if (code == GLFW.GLFW_KEY_BACKSPACE && !r.edit.isEmpty()) {
-            r.edit = r.edit.substring(0, r.edit.length() - 1);
-        }
-    }
-
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
-    static void onChar(ScreenEvent.CharacterTyped.Pre event) {
-        if (!(event.getScreen() instanceof JeiSettings s) || s.editing == null) return;
-        event.setCanceled(true);
-        if (event.getCodePoint() >= ' ' && s.editing.edit.length() < 200) s.editing.edit += event.getCodePoint();
+        if (m.isEmpty()) throw new NoSuchMethodException(name);
+        return m.get()
+            .invoke(target, args);
     }
 }
