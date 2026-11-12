@@ -33,7 +33,7 @@ or bookmark group to see the keys that work on it right there.
 - **Ctrl + click** on N cycles between Recipe Mode, Utility Mode and Cheat Mode (see [Cheat mode](#cheat-mode)).
 - The settings are laid out like NEI's options screen: **Inventory** holds most options and the sub-pages (Bookmarks
   Panel, Recipes GUI, History Panel, Craftables Panel, Item Zoom Panel, Favorites); **World** holds Highlight Tooltips;
-  **Tools** holds Data Dumps. **JEI Options** opens JEI's own settings and **Report Issues** opens the issue tracker.
+  **Tools** holds Data Dumps. **JEI Options** has JEI's own settings on one page in the same style, with a title row for each JEI category (in a world only), and **Report Issues** opens the issue tracker.
 - Settings are saved in `config/neiaddon-client.toml`.
 
 ### Bookmark panel
@@ -123,7 +123,10 @@ Open a crafting table (or your inventory for 2x2 recipes) and press **Shift + C*
 
 - It moves the ingredients with JEI's recipe transfer and crafts as many sets at once as fit. JEI must be installed on
   the server in multiplayer.
-- It works at any crafting table JEI can fill, such as Tinkers' Crafting Station.
+- It works at any crafting table JEI can fill, such as Tinkers' Crafting Station and Sophisticated Storage's crafting
+  upgrade (not while the upgrade refills its own grid). Leftover ingredients go back into the table's own storage
+  (a crafting station's side chest, the Sophisticated storage) when they came from there, and so do the items made
+  on the way. The crafted items and your own tools end up in your inventory.
 - Recipes with a tool are filled up around the tool and crafted in one go; a broken tool is replaced from your inventory.
 - When it stops, or finishes without making something, chat says why.
 - Settings: Faster Autocrafting (crafts the exact amount from a full grid), Restore Inventory Layout (puts your items
@@ -229,14 +232,3 @@ JDK 25, then `./gradlew build`. The jars are `neoforge/build/libs/neiaddon-neofo
 LGPL-3.0-or-later, see [LICENSE.txt](LICENSE.txt). Large parts are ports of GTNH NotEnoughItems (LGPL-3.0-or-later) by
 Chicken-Bones, GTNewHorizons and the NotEnoughItems contributors, and keep that license and credit. The crafting tree
 textures (`craftingtree.png`, `nei_sprites.png`) are from NotEnoughItems too.
-
-## Versions
-
-| Branch | Minecraft | Loader | JEI | Status |
-| --- | --- | --- | --- | --- |
-| `26.2` | 26.2 | NeoForge, Fabric | 30.x | runs in game on both |
-| `26.1.x` | 26.1, 26.1.1, 26.1.2 | NeoForge, Fabric | 29.x | runs in game on both |
-| `1.21.1` | 1.21.1 | NeoForge, Fabric | 19.x | runs in game on both |
-| `1.20.1` | 1.20.1 | Forge, Fabric | 15.20+ | runs in game on both |
-
-Each branch builds with its own `gradle.properties`; see BUILDING.md. Releases are tagged by Minecraft version, for example `v0.1.0+mc1.21.1`.

@@ -5,7 +5,6 @@ import java.lang.reflect.Method;
 import java.util.Optional;
 import mezz.jei.api.ingredients.ITypedIngredient;
 import mezz.jei.api.recipe.RecipeIngredientRole;
-import mezz.jei.api.runtime.IRecipesGui;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
@@ -145,7 +144,7 @@ public final class JeiGive {
         int button = event.getButton();
         if (button != 0 && button != 1 || Calculator.runtime == null || QuantityField.focused()) return;
         // NEI: the recipe screen never gives, a click there shows recipes as usual
-        if (event.getScreen() instanceof IRecipesGui || !cheating()) return;
+        if (RecipeHearts.isRecipesScreen(event.getScreen()) || !cheating()) return;
         Minecraft mc = Minecraft.getInstance();
         // an item on the mouse: JEI's cheat mode deletes it on a click over its list
         if (mc.player == null || !mc.player.containerMenu.getCarried()

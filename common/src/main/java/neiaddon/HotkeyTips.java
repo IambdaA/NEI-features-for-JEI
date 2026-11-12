@@ -121,7 +121,7 @@ public final class HotkeyTips {
      * list still shows recipes / uses.
      */
     private static void cheatClicks(Map<String, String> k) {
-        if (!JeiGive.cheating() || McCompat.screen() instanceof mezz.jei.api.runtime.IRecipesGui) return;
+        if (!JeiGive.cheating() || RecipeHearts.isRecipesScreen(McCompat.screen())) return;
         k.put("LMB", "Give Items");
         k.put("RMB", "Give One Item");
     }
@@ -146,8 +146,10 @@ public final class HotkeyTips {
 
     /** The keys every item has: recipes (JEI does these) and the copy keys. */
     public static void recipeAndCopyKeys(Map<String, String> k) {
-        k.put("R", "Recipe to make this item");
-        k.put("U", "Recipes that use this item");
+        String recipe = CalcKeys.showRecipeName();
+        String uses = CalcKeys.showUsesName();
+        if (recipe != null) k.put(recipe, "Recipe to make this item");
+        if (uses != null) k.put(uses, "Recipes that use this item");
         k.put("LMB", "Recipe to make this item");
         k.put("RMB", "Recipes that use this item");
         k.put(keys("CTRL", "C"), "Copy Item Name");
@@ -180,8 +182,9 @@ public final class HotkeyTips {
         if (entry.type == ChainItem.Type.RESULT) k.put(keys("CTRL", "SHIFT", chatKey()), "Send Recipe to Chat");
         recipeAndCopyKeys(k);
         if (bookmarkedRecipe) {
-            // the bookmark's own recipe opens first (left click and R)
-            k.put("R", "Show the Bookmarked Recipe");
+            // the bookmark's own recipe opens first (left click and JEI's show-recipes key)
+            String recipe = CalcKeys.showRecipeName();
+            if (recipe != null) k.put(recipe, "Show the Bookmarked Recipe");
             k.put("LMB", "Show the Bookmarked Recipe");
         }
         k.remove("SHIFT + LMB");

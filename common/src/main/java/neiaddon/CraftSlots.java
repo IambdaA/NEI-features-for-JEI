@@ -15,6 +15,7 @@ import net.minecraft.world.inventory.CraftingContainer;
 import net.minecraft.world.inventory.ResultContainer;
 import net.minecraft.world.inventory.ResultSlot;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.crafting.RecipeType;
 
 /**
  * Finds the crafting grid and the result slot of a screen, also at other mods' crafting tables (Tinkers' Crafting Station,
@@ -26,6 +27,27 @@ import net.minecraft.world.inventory.Slot;
 final class CraftSlots {
 
     private static final Map<Class<?>, Boolean> jeiCrafting = new WeakHashMap<>();
+    /** Per class, the public no-argument methods looked up by name (NONE when it has none): looked up once, not every tick. */
+    private static final ClassValue<Map<String, Method>> methods = new ClassValue<>() {
+
+        @Override
+        protected Map<String, Method> computeValue(Class<?> type) {
+            return new java.util.HashMap<>();
+        }
+    };
+    private static final Method NONE;
+    /** Methods whose call failed, warned about once each. */
+    private static final java.util.Set<String> warned = new java.util.HashSet<>();
+
+    static {
+        Method none = null;
+        try {
+            none = Object.class.getMethod("hashCode");
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            // never happens: Object has hashCode
+        }
+        NONE = none;
+    }
     private static Object cacheOwner;
 
     private CraftSlots() {}
@@ -48,7 +70,44 @@ final class CraftSlots {
         for (Slot slot : menu.slots) {
             if (isResult(slot)) return slot;
         }
+        for (Slot slot : upgradeSlots(menu)) {
+            if (isResult(slot)) return slot;
+        }
         return null;
+    }
+
+    /**
+     * The crafting slots a menu keeps outside its slot list: Sophisticated Storage's and Backpacks' crafting upgrade has
+     * its grid and result slot in a list of its own (the open crafting tab, else the first one, as its JEI recipe
+     * transfer picks). Clicks reach them by their slot index like any other slot. Empty for other menus.
+     */
+    static List<Slot> upgradeSlots(AbstractContainerMenu menu) {
+        Object part = craftingPart(menu);
+        if (part == null || !(call(part, "getSlots") instanceof List<?> list)) return List.of();
+        List<Slot> slots = new ArrayList<>();
+        for (Object o : list) {
+            if (o instanceof Slot slot && !menu.slots.contains(slot) && !(slot.container instanceof Inventory)) slots.add(slot);
+        }
+        return slots;
+    }
+
+    /** Whether the menu's crafting upgrade refills its grid from the storage after each craft (Sophisticated's option). */
+    static boolean refillsGrid(AbstractContainerMenu menu) {
+        return Boolean.TRUE.equals(call(craftingPart(menu), "shouldRefillCraftingGrid"));
+    }
+
+    /** The open crafting upgrade of a Sophisticated menu, else its first one; null for other menus. */
+    private static Object craftingPart(AbstractContainerMenu menu) {
+        if (!(call(menu, "getUpgradeContainers") instanceof Map<?, ?> map)) return null;
+        Object first = null;
+        for (Object part : map.values()) {
+            if (!(call(part, "getRecipeSlots") instanceof List<?> recipe) || recipe.isEmpty()) continue;
+            Object type = call(part, "getRecipeType");
+            if (type != null && type != RecipeType.CRAFTING) continue;
+            if (Boolean.TRUE.equals(call(part, "isOpen"))) return part;
+            if (first == null) first = part;
+        }
+        return first;
     }
 
     /** Can JEI move crafting recipes into this menu (a transfer handler for crafting is registered for it)? */
@@ -80,28 +139,42 @@ final class CraftSlots {
             if (slot.container instanceof CraftingContainer) grid.add(slot);
         }
         if (!grid.isEmpty()) return grid;
-        // the menu itself, or one of its parts (Sophisticated Storage's upgrade containers), may name its recipe slots
+        // the menu itself, or its crafting upgrade (Sophisticated Storage), may name its recipe slots
         List<Slot> named = recipeSlots(menu, menu);
         if (named != null) return named;
-        Object parts = call(menu, "getUpgradeContainers");
-        if (parts instanceof Map<?, ?> map) {
-            for (Object part : map.values()) {
-                named = recipeSlots(menu, part);
-                if (named != null) return named;
-            }
-        }
+        Object part = craftingPart(menu);
+        named = part != null ? recipeSlots(menu, part) : null;
+        if (named != null) return named;
         named = jeiRecipeSlots(menu);
         return named != null ? named : List.of();
     }
 
+    /** Do the two slots sit on the same item handler ({@code getItemHandler()}), or do both have none? */
+    static boolean sameHandler(Slot a, Slot b) {
+        return call(a, "getItemHandler") == call(b, "getItemHandler");
+    }
+
     private static Object call(Object o, String name) {
         if (o == null) return null;
+        // a class without the method is the usual case (most menus are not Sophisticated's): no warning for that
+        Method m = methods.get(o.getClass())
+            .computeIfAbsent(name, k -> {
+                try {
+                    Method found = o.getClass()
+                        .getMethod(k);
+                    found.setAccessible(true);
+                    return found;
+                } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+                    return NONE;
+                }
+            });
+        if (m == null || m == NONE) return null;
         try {
-            Method m = o.getClass()
-                .getMethod(name);
-            m.setAccessible(true);
             return m.invoke(o);
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            if (warned.add(m.getDeclaringClass().getName() + "." + name)) {
+                NeiAddon.LOGGER.warn("Could not call {}.{}; that mod's crafting slots may not be found", m.getDeclaringClass().getName(), name, e);
+            }
             return null;
         }
     }
@@ -114,8 +187,13 @@ final class CraftSlots {
     private static List<Slot> checked(AbstractContainerMenu menu, Object value) {
         if (!(value instanceof List<?> list) || list.isEmpty()) return null;
         List<Slot> slots = new ArrayList<>();
+        List<Slot> upgrade = null;
         for (Object o : list) {
-            if (!(o instanceof Slot slot) || !menu.slots.contains(slot) || slot.container instanceof Inventory) return null;
+            if (!(o instanceof Slot slot) || slot.container instanceof Inventory) return null;
+            if (!menu.slots.contains(slot)) {
+                if (upgrade == null) upgrade = upgradeSlots(menu);
+                if (!upgrade.contains(slot)) return null;
+            }
             slots.add(slot);
         }
         return slots;

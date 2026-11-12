@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_25",
   "client": [
     "AbstractContainerScreenMixin",
+    "GuiGraphicsExtractorMixin",
     "KeyboardHandlerMixin",
     "MinecraftMixin",
     "ScreenMixin"

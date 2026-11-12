@@ -10,6 +10,7 @@ import neiaddon.event.ClientTickEvent;
 import neiaddon.event.EventPriority;
 import neiaddon.event.ItemTooltipEvent;
 import neiaddon.event.RenderFrameEvent;
+import neiaddon.event.RenderTooltipEvent;
 import neiaddon.event.ScreenEvent;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
@@ -99,6 +100,11 @@ final class FabricEvents {
     /** After the whole screen was drawn (NeoForge's Render.Post). */
     static void post(Screen screen, GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         Bus.post(new ScreenEvent.Render.Post(screen, graphics, mouseX, mouseY, partialTick));
+    }
+
+    /** A tooltip is about to be drawn (NeoForge's RenderTooltipEvent.Pre). */
+    static void tooltip(GuiGraphicsExtractor graphics) {
+        Bus.post(new RenderTooltipEvent(graphics));
     }
 
     /** After the frame was drawn. */

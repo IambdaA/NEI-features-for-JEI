@@ -1242,8 +1242,8 @@ public final class CraftingTreeScreen extends Screen {
 
     private void lookup(ItemStack stack, boolean usages) {
         if (stack.isEmpty()) return;
-        TreeRecipes.waitFor(this);
-        BookmarkPanel.showRecipes(stack, usages ? RecipeIngredientRole.INPUT : RecipeIngredientRole.OUTPUT);
+        TreeRecipes.lookup(this,
+            () -> BookmarkPanel.showRecipes(stack, usages ? RecipeIngredientRole.INPUT : RecipeIngredientRole.OUTPUT));
     }
 
     private void deleteRecipe(TreeSlot target) {
@@ -1457,16 +1457,16 @@ public final class CraftingTreeScreen extends Screen {
             return true;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (!mc.hasControlDown() && (code == GLFW.GLFW_KEY_R || code == GLFW.GLFW_KEY_U)) {
-            // NEI recipe.recipe / recipe.usage over an item of the tree or the stats panel; over a crafting slot of the
-            // stats panel R opens the recipe's result
+        if (!mc.hasControlDown() && (CalcKeys.isShowRecipe(key) || CalcKeys.isShowUses(key))) {
+            // NEI recipe.recipe / recipe.usage over an item of the tree or the stats panel (JEI's show-recipes / show-uses
+            // keys); over a crafting slot of the stats panel the show-recipes key opens the recipe's result
             ItemStack stack = hoveredStack();
             if (stack.isEmpty() && hoveredStat != null) {
                 TreeStats.Row row = rowOf(hoveredStat);
                 if (row.recipeId != null) stack = stackOf(row.item, row.payload);
             }
             if (!stack.isEmpty()) {
-                lookup(stack, code == GLFW.GLFW_KEY_U);
+                lookup(stack, !CalcKeys.isShowRecipe(key));
                 return true;
             }
         }

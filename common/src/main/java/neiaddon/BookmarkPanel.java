@@ -12,7 +12,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import mezz.jei.api.runtime.IRecipesGui;
 import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import neiaddon.chain.ChainDetails;
@@ -37,7 +36,6 @@ import neiaddon.event.EventPriority;
 import neiaddon.event.SubscribeEvent;
 import neiaddon.event.ScreenEvent;
 import org.joml.Matrix3x2fStack;
-import org.lwjgl.glfw.GLFW;
 
 /**
  * The bookmark panel, laid out like NEI's: a grid of item slots on the left of the screen with a 7px group strip
@@ -114,11 +112,9 @@ public final class BookmarkPanel {
 
     private BookmarkPanel() {}
 
-    private static final String JEI_RECIPES_GUI = "mezz.jei.gui.recipes.RecipesGui";
-
     /** Container screens and the JEI recipe screen. */
     public static boolean supports(Screen s) {
-        return s != null && (s instanceof AbstractContainerScreen<?> || s.getClass().getName().equals(JEI_RECIPES_GUI));
+        return s != null && (s instanceof AbstractContainerScreen<?> || RecipeHearts.isRecipesScreen(s));
     }
 
     private static boolean applies(Screen s) {
@@ -127,6 +123,11 @@ public final class BookmarkPanel {
 
     public static boolean isHidden() {
         return !AddonConfig.BM_VISIBLE.get();
+    }
+
+    /** Whether the last {@link #layout} found room for the panel (shown and at least one row and column). */
+    static boolean isActive() {
+        return active;
     }
 
     public static void toggleHidden() {
@@ -424,6 +425,16 @@ public final class BookmarkPanel {
 
     public static List<GroupArea> groupAreas() {
         return List.copyOf(groupAreas);
+    }
+
+    /**
+     * The top of the controls at the bottom of the left column, for the item zoom to keep above: this panel's page bar
+     * while it is shown, else JEI's buttons and lookup history.
+     */
+    static int controlsTop(Screen s) {
+        if (!applies(s)) return s.height;
+        layout(s);
+        return active ? footY : s.height - band;
     }
 
     public static Rect2i panelRect() {
@@ -1539,10 +1550,10 @@ public final class BookmarkPanel {
                 reorder = e;
                 reorderRecipe = c.recipe();
             }
-        } else if ((button == 0 || button == 1) && !(screen instanceof IRecipesGui) && JeiGive.cheating()
+        } else if ((button == 0 || button == 1) && !RecipeHearts.isRecipesScreen(screen) && JeiGive.cheating()
             && JeiGive.give(e.key.sample, button == 0 ? cheatAmount(c) : 1)) {
             // NEI Cheat Mode (not in the recipe screen): a click gives the item (left: see cheatAmount, right: one);
-            // R / U over the bookmark still show its recipes
+            // JEI's show-recipes / show-uses keys over the bookmark still show its recipes
         } else if (button == 0 && showBookmarkedRecipe(c)) {
             // the recipe the bookmark was made from (a recipe's result, or an item from JEI's recipe bookmark button)
         } else if (button == 0) {
@@ -1567,15 +1578,6 @@ public final class BookmarkPanel {
         if (pullShown(page) && in(mx, my, pullX(), footY, BTN, BTN)) return true;
         if (in(mx, my, px, hdrY(), pw, BTN)) return true;
         return stripRowAt(mx, my) >= 0 || cellAt(mx, my) != null;
-    }
-
-    /** Is the key one of JEI's "show recipes" keys (R)? */
-    private static boolean jeiShowRecipeKey(InputConstants.Key key) {
-        for (net.minecraft.client.KeyMapping k : Minecraft.getInstance().options.keyMappings) {
-            if (k.getName()
-                .startsWith("key.jei.showRecipe") && McCompat.matches(k, key)) return true;
-        }
-        return false;
     }
 
     /** A click on a bookmarked recipe's result opens JEI on that recipe; false when the bookmark has no recipe. */
@@ -1816,8 +1818,8 @@ public final class BookmarkPanel {
         buildCells(page);
         Cell c = cellAt(lastMx, lastMy);
         final int gid = hoveredGroup(page, lastMx, lastMy);
-        if (c != null && jeiShowRecipeKey(key) && showBookmarkedRecipe(c)) {
-            // JEI's show-recipes key (R) over a bookmarked recipe opens it, like a left click
+        if (c != null && CalcKeys.isShowRecipe(key) && showBookmarkedRecipe(c)) {
+            // JEI's show-recipes key (R by default) over a bookmarked recipe opens it, like a left click
             event.setCanceled(true);
             return;
         }
@@ -1867,9 +1869,9 @@ public final class BookmarkPanel {
                 Bookmarks.removeSlot(page, c.entry(), c.recipe(), shift());
                 event.setCanceled(true);
             }
-        } else if (c != null && !ctrl() && (code == GLFW.GLFW_KEY_R || code == GLFW.GLFW_KEY_U)) {
-            // NEI recipe.recipe / recipe.usage over a bookmarked item (JEI's own keys only know its own lists)
-            showRecipes(c.entry().key.sample, code == GLFW.GLFW_KEY_R ? RecipeIngredientRole.OUTPUT : RecipeIngredientRole.INPUT);
+        } else if (c != null && !ctrl() && (CalcKeys.isShowRecipe(key) || CalcKeys.isShowUses(key))) {
+            // NEI recipe.recipe / recipe.usage over a bookmarked item: JEI's show-recipes / show-uses keys (R / U by default; JEI's own handling only knows its own lists)
+            showRecipes(c.entry().key.sample, CalcKeys.isShowRecipe(key) ? RecipeIngredientRole.OUTPUT : RecipeIngredientRole.INPUT);
             event.setCanceled(true);
         } else if (McCompat.matches(CalcKeys.TREE, key) && gid >= 0 && isChain(page, gid) && Calculator.available()) {
             // NEI bookmark.open_crafting_tree: only for groups in crafting-chain mode

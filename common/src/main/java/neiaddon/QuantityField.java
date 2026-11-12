@@ -71,12 +71,27 @@ public final class QuantityField {
     }
 
     static int y(Screen s) {
-        // JEI's history band (when shown) fills the space above the search row; the bar goes above it so JEI never has to
-        // push the history around our areas
+        // JEI's history band is moved above the bar (keepHistory); until that has worked, or when it cannot be done, the bar
+        // goes above the band instead
         int history = JeiAreas.historyHeight();
-        if (history > 0) return s.height - (JeiButtons.searchCentered() ? 0 : MARGIN + H) - history - 4 - H;
-        // NEI: the bottom row of the item list; with JEI's search box there (the default) it goes just above it
+        if (history > 0 && !JeiAreas.historyAboveBar()) return s.height - (JeiButtons.searchCentered() ? 0 : MARGIN + H) - history - 4 - H;
+        return bottomY(s);
+    }
+
+    /** NEI: the bottom row of the item list; with JEI's search box there (the default) the bar goes just above it. */
+    private static int bottomY(Screen s) {
         return s.height - MARGIN - H - (JeiButtons.searchCentered() ? 0 : 2 + H);
+    }
+
+    /** Keeps JEI's history band (when on) above the bar, which then sits just above JEI's search box. */
+    private static void keepHistory(Screen s) {
+        if (JeiAreas.list() != null) JeiAreas.keepHistoryAbove(s, bottomY(s) - GAP);
+    }
+
+    // after JEI's own handler for this frame (it flushes JEI's pending layout first) and before JEI draws
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    static void onRenderStart(ScreenEvent.Render.Pre event) {
+        if (visible(event.getScreen())) keepHistory(event.getScreen());
     }
 
     /** The area JEI should keep its item grid out of, or none. */
@@ -125,6 +140,8 @@ public final class QuantityField {
             return;
         }
         if (AddonConfig.HISTORY_MATCH_LIST.get()) JeiAreas.matchHistoryWidth();
+        // again, in case JEI laid out once more since the start of the frame
+        keepHistory(s);
         GuiGraphicsExtractor g = event.getGuiGraphics();
         g.nextStratum();
         Matrix3x2fStack pose = g.pose();
