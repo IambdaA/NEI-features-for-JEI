@@ -7,6 +7,7 @@ import neiaddon.event.ClientChatReceivedEvent;
 import neiaddon.event.ClientTickEvent;
 import neiaddon.event.ItemTooltipEvent;
 import neiaddon.event.RenderFrameEvent;
+import neiaddon.event.RenderTooltipEvent;
 import neiaddon.event.ScreenEvent;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.neoforge.common.NeoForge;
@@ -57,6 +58,11 @@ final class NeoEvents {
             net.neoforged.neoforge.client.event.ScreenEvent.Render.Post.class,
             ScreenEvent.Render.Post.class,
             e -> new ScreenEvent.Render.Post(e.getScreen(), e.getGuiGraphics(), e.getMouseX(), e.getMouseY(), e.getPartialTick()),
+            (n, m) -> {});
+        bridge(
+            net.neoforged.neoforge.client.event.RenderTooltipEvent.Pre.class,
+            RenderTooltipEvent.class,
+            e -> new RenderTooltipEvent(e.getGraphics()),
             (n, m) -> {});
         bridge(
             net.neoforged.neoforge.client.event.ScreenEvent.MouseButtonPressed.Pre.class,

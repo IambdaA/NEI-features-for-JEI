@@ -12,6 +12,7 @@ import net.minecraft.world.item.ItemStack;
 import neiaddon.event.EventPriority;
 import neiaddon.event.SubscribeEvent;
 import neiaddon.event.ClientTickEvent;
+import neiaddon.event.RenderTooltipEvent;
 import neiaddon.event.ScreenEvent;
 import neiaddon.platform.ClientPlatform;
 import org.joml.Matrix3x2fStack;
@@ -131,31 +132,63 @@ public final class ItemZoom {
 
     // ---------------------------------------------------------------- drawing
 
+    /** The screen and mouse of the frame being drawn, from the screen's foreground; null outside a frame. */
+    private static Screen frameScreen;
+    private static int frameMouseX;
+    /** The zoom was drawn (or found nothing to draw) in this frame. */
+    private static boolean drawnThisFrame;
+
     /**
-     * JEI draws its item list after the screen's foreground, so the zoom draws on the event that comes after it
-     * (ScreenEvent.Render.Post), last of all.
+     * The screen's foreground is drawn (JEI's item list, the bookmark panel): from here on the zoom may draw. The game
+     * draws in strata, each over the ones before it, and the screen's tooltip is drawn before ScreenEvent.Render.Post,
+     * so the zoom draws just before that tooltip (onTooltip) and only falls back to Render.Post when none comes.
      */
     @SubscribeEvent(priority = EventPriority.LOWEST)
-    static void onRender(ScreenEvent.Render.Post event) {
-        draw(event);
+    static void onForeground(ScreenEvent.Render.Foreground event) {
+        frameScreen = event.getScreen();
+        frameMouseX = event.getMouseX();
+        drawnThisFrame = false;
     }
 
-    private static void draw(ScreenEvent.Render event) {
-        Screen s = event.getScreen();
-        if (!active(s) || !(AddonConfig.ZOOM_ENABLED.get() || holdDown)) return;
+    /** A tooltip comes after the foreground: the zoom first, then a new stratum so the tooltip draws over it. */
+    @SubscribeEvent
+    static void onTooltip(RenderTooltipEvent event) {
+        if (frameScreen == null || drawnThisFrame) return;
+        drawnThisFrame = true;
+        GuiGraphicsExtractor g = event.getGuiGraphics();
+        if (draw(frameScreen, g, frameMouseX)) g.nextStratum();
+    }
+
+    /** No tooltip in this frame: the zoom draws last of all, as before. */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    static void onRender(ScreenEvent.Render.Post event) {
+        boolean drawn = drawnThisFrame && frameScreen == event.getScreen();
+        frameScreen = null;
+        drawnThisFrame = false;
+        if (!drawn) draw(event.getScreen(), event.getGuiGraphics(), event.getMouseX());
+    }
+
+    /** The height of the text under the item: a gap, its name, then the two hint lines after another gap. */
+    private static int textHeight(Font font, boolean name, boolean help) {
+        if (!name && !help) return 0;
+        return 10 + (name ? font.lineHeight : 0) + (help ? 10 + 2 * font.lineHeight : 0);
+    }
+
+    /** Draws the zoom if there is one; true only when it drew it. */
+    private static boolean draw(Screen s, GuiGraphicsExtractor g, int mouseX) {
+        if (!active(s) || !(AddonConfig.ZOOM_ENABLED.get() || holdDown)) return false;
         ItemStack stack = CalcKeys.hoveredStack(s, AddonConfig.ZOOM_OVERLAYS_ONLY.get());
-        if (stack.isEmpty() || AddonConfig.ZOOM_ONLY_SOLID.get() && !solid(stack)) return;
+        if (stack.isEmpty() || AddonConfig.ZOOM_ONLY_SOLID.get() && !solid(stack)) return false;
         int[] b = bounds(s);
-        if (b == null) return;
+        if (b == null) return false;
         int avail = (s.width - b[1]) / 2;
-        if (avail < SLOT * 2) return;
+        if (avail < SLOT * 2) return false;
 
         float point = pointSize(s, b);
         int scale = Math.round(zoomAmount(point) * point / SLOT);
         float size = SLOT * scale;
         float y = (s.height - size) / 2f;
         float x = (avail - size) / 2f;
-        int mouseX = event.getMouseX();
         boolean leftFree = avail < mouseX;
         boolean rightFree = mouseX < s.width - avail;
         // Left and Right are fixed; Auto keeps to the side the mouse is not on
@@ -164,7 +197,14 @@ public final class ItemZoom {
         if (right) x += s.width - avail;
 
         Font font = Minecraft.getInstance().font;
-        GuiGraphicsExtractor g = event.getGuiGraphics();
+        boolean showName = AddonConfig.ZOOM_NAME.get();
+        boolean showHelp = AddonConfig.ZOOM_ENABLED.get() && AddonConfig.ZOOM_HELP.get();
+        // the zoom keeps 6 above the controls at the bottom of its side (the bookmark panel's page bar, the quantity
+        // field): moved up when its text would reach them, and without the hint when even that leaves no room
+        int limit = (right ? (QuantityField.visible(s) ? QuantityField.y(s) : s.height) : BookmarkPanel.controlsTop(s)) - 6;
+        if (showHelp && size + textHeight(font, showName, true) > limit) showHelp = false;
+        float height = size + textHeight(font, showName, showHelp);
+        if (y + height > limit) y = Math.max(0, limit - height);
         g.nextStratum();
         Matrix3x2fStack pose = g.pose();
         pose.pushMatrix();
@@ -176,13 +216,13 @@ public final class ItemZoom {
             pose.identity();
             float centerX = x + size / 2;
             int textY = (int) (y + size) + 10;
-            if (AddonConfig.ZOOM_NAME.get()) {
+            if (showName) {
                 String name = font.plainSubstrByWidth(stack.getHoverName()
                     .getString(), avail);
                 g.text(font, name, (int) (centerX - font.width(name) / 2f), textY, 0xFF000000 | AddonConfig.ZOOM_NAME_COLOR.get(), true);
                 textY += font.lineHeight;
             }
-            if (AddonConfig.ZOOM_ENABLED.get() && AddonConfig.ZOOM_HELP.get()) {
+            if (showHelp) {
                 String[] lines = { "Item Zoom", "Shift + " + TOGGLE.getTranslatedKeyMessage()
                     .getString() + " toggles" };
                 textY += 10;
@@ -195,5 +235,6 @@ public final class ItemZoom {
         } finally {
             pose.popMatrix();
         }
+        return true;
     }
 }

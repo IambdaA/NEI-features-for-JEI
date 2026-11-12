@@ -16,6 +16,7 @@ import mezz.jei.api.recipe.types.IRecipeType;
 import mezz.jei.api.runtime.IJeiRuntime;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import neiaddon.event.SubscribeEvent;
@@ -27,8 +28,6 @@ import neiaddon.event.ScreenEvent;
  * tree's group, replacing the recipe of the node that was clicked.
  */
 public final class TreeRecipes {
-
-    private static final String JEI_RECIPES_GUI = "mezz.jei.gui.recipes.RecipesGui";
 
     private TreeRecipes() {}
 
@@ -76,29 +75,48 @@ public final class TreeRecipes {
     /** The tree that is waiting for a recipe from JEI's recipe screen, or null. */
     private static CraftingTreeScreen waiting;
 
-    static void waitFor(CraftingTreeScreen tree) {
+    /** True while the tree asks the recipe viewer for recipes (see {@link #lookup}). */
+    private static boolean lookingUp;
+
+    /**
+     * The tree asks for the recipes or usages of one of its items ({@code show} opens the recipe screen) and waits for
+     * the player to pick one with "+". EMI opens the player's inventory first when the open screen isn't a container
+     * screen, then its recipe screen over it, both within {@code show}: that inventory doesn't end the wait.
+     */
+    static void lookup(CraftingTreeScreen tree, Runnable show) {
         waiting = tree;
+        lookingUp = true;
+        boolean shown = false;
+        try {
+            show.run();
+            shown = true;
+        } finally {
+            lookingUp = false;
+            if (!shown) waiting = null;
+        }
+        // the viewer stopped on another screen (the inventory, with no recipe screen over it): no "+" there
+        Screen now = McCompat.screen();
+        if (waiting != null && !(now instanceof CraftingTreeScreen) && !RecipeHearts.isRecipesScreen(now)) waiting = null;
     }
 
     static void stopWaiting() {
         waiting = null;
     }
 
-    /** Anything but JEI's recipe screen (or the tree itself) opening ends the wait, so "+" never shows up elsewhere. */
+    /** Anything but a recipe screen (or the tree itself) opening ends the wait, so "+" never shows up elsewhere. */
     @SubscribeEvent
     static void onOpening(ScreenEvent.Opening event) {
         Screen next = event.getNewScreen();
         if (waiting == null) return;
         if (next instanceof CraftingTreeScreen) return;
-        if (next != null && next.getClass()
-            .getName()
-            .equals(JEI_RECIPES_GUI)) return;
+        if (RecipeHearts.isRecipesScreen(next)) return;
+        if (lookingUp && next instanceof AbstractContainerScreen<?>) return;
         waiting = null;
     }
 
     private static final String[] PLUS = { "..X..", "..X..", "XXXXX", "..X..", "..X.." };
 
-    private static final IDrawable PLUS_ICON = new IDrawable() {
+    public static final IDrawable PLUS_ICON = new IDrawable() {
 
         @Override
         public int getWidth() {
@@ -126,10 +144,7 @@ public final class TreeRecipes {
         public <T> IIconButtonController createButtonController(IRecipeLayoutDrawable<T> layout) {
             if (waiting == null) return null;
             try {
-                RecipeShape shape = RecipeShape.read(layout);
-                RecipeData data = shape.toData(null);
-                if (data.isEmpty()) return null;
-                return new Controller(data);
+                return create(RecipeShape.read(layout));
             } catch (RuntimeException e) {
                 NeiAddon.LOGGER.warn("Could not create the tree button for a recipe", e);
                 return null;
@@ -137,7 +152,21 @@ public final class TreeRecipes {
         }
     }
 
-    private static final class Controller implements IIconButtonController {
+    /** The "+" of a recipe shape while a tree waits, else null. For a recipe viewer other than JEI's. */
+    public static Controller create(RecipeShape shape) {
+        if (waiting == null) return null;
+        try {
+            RecipeData data = shape.toData(null);
+            if (data.isEmpty()) return null;
+            return new Controller(data);
+        } catch (RuntimeException e) {
+            NeiAddon.LOGGER.warn("Could not create the tree button for a recipe", e);
+            return null;
+        }
+    }
+
+    /** The "+" of one recipe, the button JEI's recipe screen shows while a tree waits. */
+    public static final class Controller implements IIconButtonController {
 
         private final RecipeData data;
 

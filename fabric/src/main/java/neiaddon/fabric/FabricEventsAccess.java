@@ -24,6 +24,10 @@ public final class FabricEventsAccess {
         FabricEvents.post(screen, graphics, mouseX, mouseY, partialTick);
     }
 
+    public static void tooltip(GuiGraphicsExtractor graphics) {
+        FabricEvents.tooltip(graphics);
+    }
+
     public static void frameDone() {
         FabricEvents.frameDone();
     }

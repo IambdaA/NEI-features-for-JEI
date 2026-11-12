@@ -1,11 +1,11 @@
 package neiaddon;
 
 import java.util.List;
-import mezz.jei.api.runtime.IRecipesGui;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
+import net.minecraft.client.gui.screens.inventory.tooltip.DefaultTooltipPositioner;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
@@ -33,7 +33,7 @@ final class HeldItemDelete {
 
     /** Is a click at the point a delete? */
     static boolean active(Screen s, double mx, double my) {
-        if (s == null || s instanceof IRecipesGui || Calculator.runtime == null) return false;
+        if (s == null || RecipeHearts.isRecipesScreen(s) || Calculator.runtime == null) return false;
         AbstractContainerMenu menu = menuOf(s);
         if (menu == null || menu.getCarried()
             .isEmpty() || !BookmarkPanel.canGive()) return false;
@@ -77,8 +77,8 @@ final class HeldItemDelete {
     }
 
     /**
-     * JEI draws the tooltip of the list item under the mouse before the prompt below does. Empty its lines (the prompt
-     * is drawn over what JEI still adds, the mod name) so only the prompt shows.
+     * JEI sets the tooltip of the list item under the mouse before the prompt below does. Empty its lines so nothing
+     * of it shows even where the prompt does not replace it (the prompt replaces the whole tooltip, see onRender).
      */
     @SubscribeEvent(priority = EventPriority.LOWEST)
     static void onTooltip(ItemTooltipEvent event) {
@@ -92,8 +92,12 @@ final class HeldItemDelete {
         }
     }
 
+    /**
+     * The prompt is set in Render.Foreground: the screen draws the tooltip set for the frame right after it, and before
+     * Render.Post (a tooltip set there would be too late).
+     */
     @SubscribeEvent(priority = EventPriority.LOWEST)
-    static void onRender(ScreenEvent.Render.Post event) {
+    static void onRender(ScreenEvent.Render.Foreground event) {
         Screen s = event.getScreen();
         int mx = event.getMouseX();
         int my = event.getMouseY();
@@ -103,6 +107,7 @@ final class HeldItemDelete {
             .getVisualOrderText(),
             Component.literal("§7Right click: remove one")
                 .getVisualOrderText());
-        event.getGuiGraphics().setTooltipForNextFrame(mc.font, lines, mx, my);
+        // true: replaces the tooltip JEI already set for the entry under the mouse (a frame draws only the first one set)
+        event.getGuiGraphics().setTooltipForNextFrame(mc.font, lines, DefaultTooltipPositioner.INSTANCE, mx, my, true);
     }
 }
