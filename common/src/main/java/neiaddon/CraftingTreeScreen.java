@@ -42,6 +42,7 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import org.joml.Matrix3x2fStack;
 import org.lwjgl.glfw.GLFW;
@@ -65,6 +66,7 @@ public final class CraftingTreeScreen extends Screen {
     private static final int PADDING_TOP = 22;
     private static final int SLOT = TreeLayout.SLOT_SIZE;
     private static final int BUTTON = 16;
+    private static final int TOOL_ICON = 16;
     private static final int BUTTON_SPACING = 20;
     private static final int LINE_COLOR = 0xFF888888;
     private static final int HOVER_COLOR = 0x66888888;
@@ -73,12 +75,15 @@ public final class CraftingTreeScreen extends Screen {
     private static final float FIT_MARGIN = 8f;
     private static final int MENU_ROW = 16;
     private static final int MENU_TOP = 4;
+    /** Crafting mode re-reads the inventory this often, in client ticks (a second). */
+    private static final int LIVE_TICKS = 20;
 
     private static final TreeDraw.Sprite BACKGROUND = new TreeDraw.Sprite(0, 0, 64, 64);
     private static final TreeDraw.Sprite STATS_BACKGROUND = new TreeDraw.Sprite(26, 84, 46, 16);
 
     private enum Tool {
         INVENTORY,
+        CRAFTING,
         FIT,
         COLLAPSE,
         STATS,
@@ -95,6 +100,8 @@ public final class CraftingTreeScreen extends Screen {
     private TreeMath math = new TreeMath(List.of(), Set.of());
     private final TreeLayout canvas = new TreeLayout();
     private Map<String, Long> inventory = Map.of();
+    /** Client ticks since the inventory was last read for crafting mode. */
+    private int liveTicks;
     private EditBox search;
 
     // stats panel
@@ -229,10 +236,36 @@ public final class CraftingTreeScreen extends Screen {
         return meta != null ? meta.collapsedRecipes : Set.of();
     }
 
+    /** Crafting mode of this tree's group (the toolbar button): the tree counts the player's inventory live. */
+    private boolean craftingOn() {
+        Bookmarks.GroupMeta meta = page.metas.get(gid);
+        return meta != null && meta.crafting;
+    }
+
+    /** The tree counts the inventory: an inventory snapshot (the INVENTORY button), or crafting mode, which reads it live. */
+    private boolean inventoryLive() {
+        return TreeState.useInventorySnapshot() || craftingOn();
+    }
+
+    /** The inventory changed under the tree: the nodes are new, so the search's matches are found again (camera kept). */
+    private void inventoryChanged() {
+        rebuildTree(null);
+        updateSearchItemMatches();
+        updateSearchStatsMatches();
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (!craftingOn() || TreeShot.running(this) || ++liveTicks < LIVE_TICKS) return;
+        liveTicks = 0;
+        if (!readInventory().equals(inventory)) inventoryChanged();
+    }
+
     private void rebuildTree(TreeSlot anchor) {
         math = new TreeMath(Bookmarks.chainItems(page, gid), collapsedRecipes());
         math.initialItems.clear();
-        inventory = TreeState.useInventorySnapshot() ? readInventory() : Map.of();
+        inventory = inventoryLive() ? readInventory() : Map.of();
         for (Map.Entry<String, Long> e : inventory.entrySet()) {
             math.initialItems.add(new ChainItem(e.getKey(), null, ChainItem.Type.ITEM, 1, e.getValue(), null, null, -1));
         }
@@ -572,7 +605,7 @@ public final class CraftingTreeScreen extends Screen {
         int cropXMax = (int) ((zScrollX + 32) / cam.zoomLevel) + (int) (cam.widgetW / cam.zoomLevel);
         TreeSlot collapseHover = cam.isDragging() ? null : arrowAt(mx, my);
         SearchResult search = ui.activeSearchResult();
-        boolean snapshot = TreeState.useInventorySnapshot();
+        boolean snapshot = inventoryLive();
         boolean ctrl = Minecraft.getInstance().hasControlDown();
 
         g.enableScissor(cam.widgetX, cam.widgetY, cam.widgetX + cam.widgetW, cam.widgetY + cam.widgetH);
@@ -733,7 +766,7 @@ public final class CraftingTreeScreen extends Screen {
 
     private TreeDraw.Sprite statSlot(TreeStats.Row row) {
         TreeDraw.Sprite tree = switch (row.kind) {
-            case INGREDIENT_NEEDED -> TreeState.useInventorySnapshot() ? TreeDraw.SLOT_MISSING : TreeDraw.SLOT_DEFAULT;
+            case INGREDIENT_NEEDED -> inventoryLive() ? TreeDraw.SLOT_MISSING : TreeDraw.SLOT_DEFAULT;
             case CRAFT_AVAILABLE -> TreeDraw.SLOT_CRAFTING;
             case REMAINDER -> TreeDraw.SLOT_DISABLED;
             default -> TreeDraw.SLOT_DEFAULT;
@@ -793,9 +826,11 @@ public final class CraftingTreeScreen extends Screen {
 
     // ---- toolbar and menu
 
+    /** The toolbar's 16 by 16 icon, or null for the item drawn in its place (no sprite of the texture fits crafting mode). */
     private TreeDraw.Sprite toolIcon(Tool tool) {
         return switch (tool) {
             case INVENTORY -> new TreeDraw.Sprite(56, 66, 16, 16);
+            case CRAFTING -> null;
             case FIT -> new TreeDraw.Sprite(38, 66, 16, 16);
             case COLLAPSE -> switch (TreeState.collapseMode()) {
                 case EXPANDED -> new TreeDraw.Sprite(128, 66, 16, 16);
@@ -813,6 +848,7 @@ public final class CraftingTreeScreen extends Screen {
     private boolean toolOn(Tool tool) {
         return switch (tool) {
             case INVENTORY -> TreeState.useInventorySnapshot();
+            case CRAFTING -> craftingOn();
             case COLLAPSE -> TreeState.collapseMode() != CollapseMode.EXPANDED;
             case STATS -> TreeState.statsPanelVisible();
             default -> false;
@@ -821,7 +857,9 @@ public final class CraftingTreeScreen extends Screen {
 
     private String toolTip(Tool tool) {
         return switch (tool) {
-            case INVENTORY -> tr(TreeState.useInventorySnapshot() ? "toolbar.inventory_on" : "toolbar.inventory_off");
+            case INVENTORY -> tr(craftingOn() ? "toolbar.inventory_live"
+                : TreeState.useInventorySnapshot() ? "toolbar.inventory_on" : "toolbar.inventory_off");
+            case CRAFTING -> tr(craftingOn() ? "toolbar.crafting_on" : "toolbar.crafting_off");
             case FIT -> tr("toolbar.fit_to_view");
             case COLLAPSE -> tr(switch (TreeState.collapseMode()) {
                 case EXPANDED -> "toolbar.collapse_resolved";
@@ -853,9 +891,10 @@ public final class CraftingTreeScreen extends Screen {
             TreeDraw.Sprite icon = toolIcon(tool);
             Matrix3x2fStack pose = g.pose();
             pose.pushMatrix();
-            pose.translate(x + (BUTTON - icon.w() / 2) / 2f, y + (BUTTON - icon.h() / 2) / 2f);
+            pose.translate(x + (BUTTON - TOOL_ICON / 2) / 2f, y + (BUTTON - TOOL_ICON / 2) / 2f);
             pose.scale(0.5f, 0.5f);
-            TreeDraw.draw(g, icon, 0, 0);
+            if (icon != null) TreeDraw.draw(g, icon, 0, 0);
+            else FluidStacks.item(g, new ItemStack(Items.CRAFTING_TABLE), 0, 0);
             pose.popMatrix();
         }
     }
@@ -960,7 +999,7 @@ public final class CraftingTreeScreen extends Screen {
         List<Component> lines = itemLines(stack, node.requestedAmount > 0 ? node.requestedAmount : 1000);
 
         // NEI adds each of these at index 1, so the one added last ends up right under the name
-        if (TreeState.useInventorySnapshot() && node.requestedAmount > 0) {
+        if (inventoryLive() && node.requestedAmount > 0) {
             if (node.leftAmount == 0) {
                 lines.add(1, gray(tr("item.state.resolved", FluidStacks.name(stack).getString())));
             } else if (node.leftAmount != node.requestedAmount) {
@@ -1192,6 +1231,12 @@ public final class CraftingTreeScreen extends Screen {
                 TreeState.toggleUseInventorySnapshot();
                 rebuildTree(null);
             }
+            case CRAFTING -> {
+                Bookmarks.GroupMeta meta = page.meta(gid);
+                meta.crafting = !meta.crafting;
+                Bookmarks.save();
+                inventoryChanged();
+            }
             case FIT -> fitToView();
             case STATS -> {
                 TreeState.toggleStatsPanelVisible();
@@ -1216,7 +1261,13 @@ public final class CraftingTreeScreen extends Screen {
         }
     }
 
-    /** The "+" button of JEI's recipe screen: NEI's GuiCraftingTree.addRecipe. */
+    /** The item of the node whose recipe the next picked recipe replaces (see {@link TreeRecipes#waitingItemId}), or null. */
+    String replacedItemId() {
+        TreeSlot node = ui.replaceRecipeNode;
+        return node == null ? null : node.shown().item;
+    }
+
+    /** A recipe picked in JEI's recipe screen for this tree: NEI's GuiCraftingTree.addRecipe. */
     void addRecipe(RecipeData recipe) {
         TreeSlot replace = ui.replaceRecipeNode;
         ui.replaceRecipeNode = null;
@@ -1242,7 +1293,7 @@ public final class CraftingTreeScreen extends Screen {
 
     private void lookup(ItemStack stack, boolean usages) {
         if (stack.isEmpty()) return;
-        TreeRecipes.lookup(this,
+        TreeRecipes.lookup(this, usages ? null : RecipeData.idOf(stack),
             () -> BookmarkPanel.showRecipes(stack, usages ? RecipeIngredientRole.INPUT : RecipeIngredientRole.OUTPUT));
     }
 

@@ -108,6 +108,10 @@ public final class AddonConfig {
         .comment("Tint the ingredients of a recipe in JEI's recipe screen that are in your inventory (NEI slotHighlightPresent).")
         .define("highlightPresentItems", false);
 
+    public static final ConfigSpec.BooleanValue HIGHLIGHT_CHAIN = B
+        .comment("Tint the items the crafting trees still need in any storage you open, for groups with the crafting chain and crafting mode on (the crafting tree's toolbar button; the maths of Shift + V, without V's limits; not on the creative inventory). Needs the bookmark panel shown.")
+        .define("highlightChainItems", true);
+
     public static final ConfigSpec.IntValue BM_TIP_ROWS = B
         .comment("Most rows of icons in a bookmark group's crafting chain tooltip, 0 for no limit (NEI maxVerticalTooltipRows).")
         .defineInRange("bookmarkTooltipRows", 5, 0, 50);

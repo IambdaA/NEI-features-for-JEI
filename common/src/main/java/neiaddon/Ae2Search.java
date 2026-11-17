@@ -110,8 +110,8 @@ public final class Ae2Search {
                 .hasAltDown()) return;
         InputConstants.Key key = InputConstants.Type.KEYSYM.getOrCreate(event.getKeyCode());
         if (!McCompat.matches(CalcKeys.SEARCH_NAME, key)) return;
-        if (QuantityField.focused() || Calculator.runtime != null && Calculator.runtime.getIngredientListOverlay()
-            .hasKeyboardFocus()) return;
+        // typing in a text box (the terminal's own search too): T types
+        if (CalcKeys.typing()) return;
         EditBox box = searchBox(screen);
         if (box == null) return;
         String name = hoveredName(screen);

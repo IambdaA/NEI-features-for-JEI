@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MinecraftMixin {
 
     @Inject(
-        method = "runTick(Z)V",
+        method = "renderFrame(Z)V", // 26.x: runTick calls renderFrame, which calls GameRenderer.render
         at = @At(
             value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/GameRenderer;render(Lnet/minecraft/client/DeltaTracker;Z)V",

@@ -46,6 +46,24 @@ public final class Favorites {
         }
     }
 
+    /**
+     * Whether two recipe ids name the same recipe: equal, or both identifier ids ({@code type|id}) with the same id part
+     * (a recipe saved under another recipe type id is still found).
+     */
+    public static boolean sameRecipe(String a, String b) {
+        if (a == null || b == null) return false;
+        if (a.equals(b)) return true;
+        String ra = identifierPart(a);
+        return ra != null && ra.equals(identifierPart(b));
+    }
+
+    /** The part after the bar of an identifier id ({@code type|id}), or null for any other id. */
+    private static String identifierPart(String id) {
+        int bar = id.indexOf('|');
+        int hash = id.indexOf('#');
+        return bar >= 0 && (hash < 0 || bar < hash) ? id.substring(bar + 1) : null;
+    }
+
     /** The favorite recipe id of an item (registry id), or null. */
     public static String recipeFor(String itemId) {
         ensureLoaded();
@@ -66,8 +84,7 @@ public final class Favorites {
     public static String itemFor(String recipeId) {
         ensureLoaded();
         for (Map.Entry<String, String> e : byItem.entrySet()) {
-            if (e.getValue()
-                .equals(recipeId)) return e.getKey();
+            if (sameRecipe(e.getValue(), recipeId) && sameRecipe(recipeFor(e.getKey()), recipeId)) return e.getKey();
         }
         return null;
     }
@@ -85,7 +102,7 @@ public final class Favorites {
         byItem.remove(itemId);
         if (recipeId != null) {
             byItem.values()
-                .removeIf(recipeId::equals);
+                .removeIf(value -> sameRecipe(value, recipeId));
             byItem.put(itemId, recipeId);
         }
         save();
