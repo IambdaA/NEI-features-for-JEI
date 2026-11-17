@@ -23,10 +23,10 @@ import neiaddon.event.SubscribeEvent;
 import org.joml.Matrix4f;
 
 /**
- * The favorite heart and the crafting tree's "+" on JEI versions without the recipe button API (JEI 15.20 in ATM9 and
- * Monifactory, 19.25 in ATM10). A recipe category decorator, which every JEI version here has, draws them to the right of
- * each recipe, where JEI puts its own recipe buttons; clicks and tooltips are handled here, and the hover tracking the
- * keys over recipes need is fed the same way JEI's buttons feed it.
+ * The favorite heart on JEI versions without the recipe button API (JEI 15.20 in ATM9 and Monifactory, 19.25 in ATM10). A
+ * recipe category decorator, which every JEI version here has, draws it to the right of each recipe, where JEI puts its
+ * own recipe buttons; clicks and tooltips are handled here, and the hover tracking the keys over recipes need is fed the
+ * same way JEI's buttons feed it.
  *
  * <p>
  * The decorator only gets the recipe, so a recipe layout of our own is made for each recipe (once) and moved to where JEI
@@ -46,8 +46,7 @@ public final class RecipeButtonsFallback {
 
         final IRecipeLayoutDrawable<?> layout;
         final RecipeHearts.Controller heart;
-        TreeRecipes.Controller plus;
-        Rect2i heartArea, plusArea;
+        Rect2i heartArea;
         long seen;
 
         Entry(IRecipeLayoutDrawable<?> layout, RecipeHearts.Controller heart) {
@@ -83,7 +82,7 @@ public final class RecipeButtonsFallback {
                 types[0]++;
             });
         active = true;
-        NeiAddon.LOGGER.info("This JEI has no recipe button API; the addon draws the favorite heart and the tree's + itself ({} recipe types)", types[0]);
+        NeiAddon.LOGGER.info("This JEI has no recipe button API; the addon draws the favorite heart itself ({} recipe types)", types[0]);
     }
 
     private static <T> void add(IAdvancedRegistration registration, RecipeType<T> type) {
@@ -128,18 +127,6 @@ public final class RecipeButtonsFallback {
         } else {
             e.heartArea = null;
         }
-        if (!TreeRecipes.waiting()) {
-            e.plus = null;
-        } else if (e.plus == null) {
-            e.plus = TreeRecipes.create(e.layout);
-        }
-        if (e.plus != null) {
-            e.plusArea = new Rect2i(ox + w + 2, oy + SIZE + 1, SIZE, SIZE);
-            IDrawable icon = TreeRecipes.PLUS_ICON;
-            icon.draw(g, w + 2 + (SIZE - icon.getWidth()) / 2, SIZE + 1 + (SIZE - icon.getHeight()) / 2);
-        } else {
-            e.plusArea = null;
-        }
     }
 
     private static <T> Entry make(T recipe, IRecipeCategory<T> category) {
@@ -163,13 +150,12 @@ public final class RecipeButtonsFallback {
         }
     }
 
-    /** The button of a recipe drawn a moment ago that holds the point, as [entry, 0 = heart / 1 = "+"], or null. */
-    private static Object[] at(double x, double y) {
+    /** The heart of a recipe drawn a moment ago that holds the point, or null. */
+    private static Entry at(double x, double y) {
         long now = System.nanoTime();
         live.removeIf(e -> now - e.seen > FRESH_NANOS);
         for (Entry e : live) {
-            if (in(e.heartArea, x, y)) return new Object[] { e, 0 };
-            if (in(e.plusArea, x, y)) return new Object[] { e, 1 };
+            if (in(e.heartArea, x, y)) return e;
         }
         return null;
     }
@@ -181,20 +167,17 @@ public final class RecipeButtonsFallback {
     @SubscribeEvent(priority = EventPriority.HIGH)
     static void onMousePressed(ScreenEvent.MouseButtonPressed.Pre event) {
         if (!active || event.getButton() != 0 || !(event.getScreen() instanceof IRecipesGui)) return;
-        Object[] hit = at(event.getMouseX(), event.getMouseY());
-        if (hit == null) return;
-        Entry e = (Entry) hit[0];
-        boolean used = (Integer) hit[1] == 0 ? e.heart.press(false) : e.plus != null && e.plus.press(false);
-        if (used) event.setCanceled(true);
+        Entry e = at(event.getMouseX(), event.getMouseY());
+        if (e == null) return;
+        if (e.heart.press(false)) event.setCanceled(true);
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
     static void onRender(ScreenEvent.Render.Post event) {
         if (!active || !(event.getScreen() instanceof IRecipesGui)) return;
-        Object[] hit = at(event.getMouseX(), event.getMouseY());
-        if (hit == null) return;
-        Entry e = (Entry) hit[0];
-        List<Component> lines = (Integer) hit[1] == 0 ? e.heart.tooltipLines() : List.of(e.plus.tooltip());
+        Entry e = at(event.getMouseX(), event.getMouseY());
+        if (e == null) return;
+        List<Component> lines = e.heart.tooltipLines();
         event.getGuiGraphics()
             .renderComponentTooltip(Minecraft.getInstance().font, lines, event.getMouseX(), event.getMouseY());
     }

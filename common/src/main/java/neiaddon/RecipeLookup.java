@@ -175,10 +175,51 @@ public final class RecipeLookup {
                 .orElse(null);
         }
 
+        /** {@link #jeiUnderEmi}'s answer when JEI can't be used for the recipe: EMI fills it. */
+        private static final Object NO_JEI = new Object();
+        /** JEI's transfer failed once for a recipe found in EMI: EMI fills them all from then on. */
+        private static boolean jeiUnderEmiBroken;
+        /** The slots of JEI's own layout of a recipe found in EMI, made on the first transfer (EMI targets have none). */
+        private IRecipeSlotsView emiJeiSlots;
+
+        /**
+         * For a recipe found in EMI that maps to a JEI recipe: JEI's own transfer when JEI has a handler for the open
+         * container (JEI's error, null when it can), else {@link #NO_JEI}. EMI wraps that same handler for its fill, but
+         * EMI 1.1.24's wrapper breaks on JEI 15.59 (its slot class lacks {@code getAllIngredientsList}), so JEI is asked
+         * directly. Any failure logs one warning and leaves the fill to EMI.
+         */
+        @SuppressWarnings("removal")
+        private Object jeiUnderEmi(AbstractContainerMenu menu, Player player, boolean max, boolean doTransfer) {
+            IJeiRuntime rt = Calculator.runtime;
+            // with an item on the cursor EMI decides, as it did before (it fills nothing then)
+            if (jeiUnderEmiBroken || rt == null || category == null || recipe == null || !menu.getCarried()
+                .isEmpty()) return NO_JEI;
+            boolean transferring = false;
+            try {
+                IRecipeTransferHandler<AbstractContainerMenu, T> handler = handler(rt, menu);
+                if (handler == null) return NO_JEI;
+                if (emiJeiSlots == null) {
+                    IRecipeLayoutDrawable<T> drawable = layout();
+                    if (drawable == null) return NO_JEI;
+                    emiJeiSlots = drawable.getRecipeSlotsView();
+                }
+                transferring = doTransfer;
+                return handler.transferRecipe(menu, recipe, emiJeiSlots, player, max, doTransfer);
+            } catch (RuntimeException | LinkageError e) {
+                jeiUnderEmiBroken = true;
+                NeiAddon.LOGGER.warn("Could not move an EMI recipe into the grid through JEI; EMI fills them from now on", e);
+                // a real transfer may have moved items before it threw: report a failure rather than fill a second time
+                return transferring ? e : NO_JEI;
+            }
+        }
+
         @SuppressWarnings("removal")
         /** Can the open container take this recipe right now (a handler exists and every ingredient is in the inventory)? */
         public boolean canTransfer(AbstractContainerMenu menu, Player player) {
-            if (emi != null) return emi.canFill(menu);
+            if (emi != null) {
+                Object error = jeiUnderEmi(menu, player, false, false);
+                return error == NO_JEI ? emi.canFill(menu) : error == null;
+            }
             IJeiRuntime rt = Calculator.runtime;
             if (rt == null) return false;
             IRecipeTransferHandler<AbstractContainerMenu, T> handler = handler(rt, menu);
@@ -196,13 +237,18 @@ public final class RecipeLookup {
          */
         @SuppressWarnings("removal")
         public String whyNot(AbstractContainerMenu menu, Player player) {
-            if (emi != null) return emi.whyNot(menu);
             IJeiRuntime rt = Calculator.runtime;
-            if (rt == null) return null;
-            IRecipeTransferHandler<AbstractContainerMenu, T> handler = handler(rt, menu);
-            if (handler == null) return "it is not made in this crafting grid";
-            Object error = handler.transferRecipe(menu, recipe, slots, player, false, false);
-            if (error == null) return null;
+            Object error;
+            if (emi != null) {
+                error = jeiUnderEmi(menu, player, false, false);
+                if (error == NO_JEI) return emi.whyNot(menu);
+            } else {
+                if (rt == null) return null;
+                IRecipeTransferHandler<AbstractContainerMenu, T> handler = handler(rt, menu);
+                if (handler == null) return "it is not made in this crafting grid";
+                error = handler.transferRecipe(menu, recipe, slots, player, false, false);
+            }
+            if (error == null || rt == null) return null;
             Map<String, Integer> missing = new java.util.LinkedHashMap<>();
             try {
                 for (Class<?> c = error.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
@@ -249,7 +295,10 @@ public final class RecipeLookup {
         /** The same, and with {@code max} as many crafts as the grid takes (what Shift does on JEI's "+" button). */
         @SuppressWarnings("removal")
         public boolean transfer(AbstractContainerMenu menu, Player player, boolean max) {
-            if (emi != null) return emi.fill(menu, max);
+            if (emi != null) {
+                Object error = jeiUnderEmi(menu, player, max, true);
+                return error == NO_JEI ? emi.fill(menu, max) : error == null;
+            }
             IJeiRuntime rt = Calculator.runtime;
             if (rt == null) return false;
             IRecipeTransferHandler<AbstractContainerMenu, T> handler = handler(rt, menu);
@@ -260,7 +309,7 @@ public final class RecipeLookup {
          * The transfer target of a recipe found in EMI: the JEI category and recipe it maps to when there are both (so the
          * JEI picture and icon work), else a target with only EMI's side.
          */
-        static Target<?> ofEmi(EmiCompat.RecipeHandle handle) {
+        public static Target<?> ofEmi(EmiCompat.RecipeHandle handle) {
             IRecipeCategory<?> category = handle.jeiCategory();
             Object recipe = handle.jeiRecipe();
             if (category != null && recipe != null && category.getRecipeType()

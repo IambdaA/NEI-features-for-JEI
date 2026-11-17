@@ -5,7 +5,7 @@ import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 
-/** One recipe as a recipe screen shows it, for the heart, the tree's "+" and the keys over recipes (screen coordinates). */
+/** One recipe as a recipe screen shows it, for the heart, the tree's pick and the keys over recipes (screen coordinates). */
 public interface RecipeView {
 
     /** An input slot: its area on the screen and everything it accepts. */

@@ -2,6 +2,7 @@ package neiaddon.emi;
 
 import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.stack.EmiIngredient;
+import dev.emi.emi.api.stack.EmiStack;
 import dev.emi.emi.api.widget.Bounds;
 import dev.emi.emi.api.widget.SlotWidget;
 import dev.emi.emi.api.widget.WidgetHolder;
@@ -12,6 +13,7 @@ import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import neiaddon.NeiAddon;
+import neiaddon.RecipeLookup;
 import neiaddon.RecipeShape;
 import neiaddon.RecipeView;
 
@@ -97,10 +99,18 @@ final class EmiRecipeView implements RecipeView {
         return out;
     }
 
-    /** Moves the recipe into the open grid through EMI's own handler for it (see {@link EmiTarget#fill}). */
+    /** Moves the recipe into the open grid as any EMI recipe's transfer target does (see {@code RecipeLookup.Target}). */
     @Override
     public boolean transfer(AbstractContainerMenu menu, Player player, boolean max) {
-        return new EmiTarget(recipe, null, null).fill(menu, max);
+        try {
+            // only into the screen EMI's recipe screen was opened from, as EMI's own fill
+            var behind = dev.emi.emi.api.EmiApi.getHandledScreen();
+            if (behind == null || behind.getMenu() != menu) return false;
+        } catch (RuntimeException | LinkageError e) {
+            return false;
+        }
+        return RecipeLookup.Target.ofEmi(EmiBridge.targetOf(recipe))
+            .transfer(menu, player, max);
     }
 
     /** The slot whose bounds (relative to the recipe) hold the point, or null. */
@@ -133,11 +143,14 @@ final class EmiRecipeView implements RecipeView {
                 boolean output;
                 boolean catalyst;
                 if (outputField == null || catalystField == null) {
-                    output = slot.getRecipe() != null;
+                    output = slot.getRecipe() != null && isOutput(slot.getStack());
                     catalyst = false;
                 } else {
-                    output = outputField.getBoolean(slot);
+                    // EMI's output flag only means a large slot; mods that draw normal-size result slots (GregTech through
+                    // LDLib) mark them with a recipe context instead. Some inputs carry one too (EMI's fuel recipes), so the
+                    // stack must also be one of the recipe's outputs
                     catalyst = catalystField.getBoolean(slot);
+                    output = outputField.getBoolean(slot) || !catalyst && slot.getRecipe() != null && isOutput(slot.getStack());
                 }
                 EmiIngredient stack = slot.getStack();
                 out.add(new Slot(slot.getBounds(), stack, output, catalyst, stack.isEmpty()));
@@ -150,6 +163,16 @@ final class EmiRecipeView implements RecipeView {
             }
         }
         return out;
+    }
+
+    /** Whether a stack of the slot is one of the recipe's outputs (amounts aside). */
+    private boolean isOutput(EmiIngredient ingredient) {
+        for (EmiStack out : recipe.getOutputs()) {
+            for (EmiStack s : ingredient.getEmiStacks()) {
+                if (!s.isEmpty() && s.isEqual(out)) return true;
+            }
+        }
+        return false;
     }
 
     /** Finds EMI's protected {@code output} and {@code catalyst} flags of a slot, once; if they are missing, null fields. */

@@ -93,9 +93,11 @@ public final class HotkeyTips {
     public static Map<String, String> ingredientListKeys(ItemStack stack) {
         Map<String, String> k = new HashMap<>();
         // EMI: clicks on its stacks are EMI's (recipes, or EMI's own cheat mode), and on container screens EMI reads A
-        // (its favorite key) before the addon does; on EMI's recipe screen the addon's keys come first
+        // (its favorite key) before the addon does; on EMI's recipe screen the addon's keys come first, and with the
+        // bookmark panel shown A over EMI's lists is turned into a bookmark (see EmiCompat.favoritesTick)
         boolean emi = EmiCompat.installed();
-        boolean addKeyOurs = !emi || EmiCompat.isRecipeScreen(McCompat.screen());
+        boolean addKeyOurs = !emi || EmiCompat.isRecipeScreen(McCompat.screen())
+            || BookmarkPanel.supports(McCompat.screen()) && !BookmarkPanel.isHidden();
         if (addKeyOurs) k.put(addKey(), "Add Bookmark");
         k.put(keys("CTRL", addKey()), "Add Bookmark with Count");
         if (RecipeHearts.hasFavorite(stack)) {

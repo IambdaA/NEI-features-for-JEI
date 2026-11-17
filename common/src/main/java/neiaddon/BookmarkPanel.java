@@ -108,6 +108,14 @@ public final class BookmarkPanel {
     private static String reorderRecipe;
     // whole-group move (Shift + left drag on the strip)
     private static int moveGroup = -1;
+    // a press on a bookmark waits for its release: a click then opens recipes (or gives, in Cheat Mode), and a drag
+    // leaves the panel (see BookmarkDrag)
+    private static Cell pressed;
+    private static int pressedButton;
+    private static double pressX, pressY;
+    private static boolean draggingOut;
+    /** How far (in GUI pixels) the mouse moves with the button down before a press on a bookmark is a drag. */
+    private static final int DRAG_START = 4;
 
     private BookmarkPanel() {}
 
@@ -528,6 +536,7 @@ public final class BookmarkPanel {
                 Bookmarks.GroupMeta m = page.meta(splitId);
                 m.chain = src.chain;
                 m.collapsed = src.collapsed;
+                m.crafting = src.crafting;
             }
         }
         page.normalize();
@@ -550,6 +559,8 @@ public final class BookmarkPanel {
         pose.translateZ(PANEL_Z);
         try {
             draw(g, event.getMouseX(), event.getMouseY());
+            // the item being dragged out of the panel, and the slots it can be dropped on
+            BookmarkDrag.render(g, event.getMouseX(), event.getMouseY());
         } finally {
             pose.popMatrix();
         }
@@ -847,6 +858,8 @@ public final class BookmarkPanel {
     private static final Map<String, Optional<IDrawable>> icons = new HashMap<>();
     private static final Map<String, IRecipeLayoutDrawable<?>> pictures = new HashMap<>();
     private static final java.util.Set<String> noPicture = new java.util.HashSet<>();
+    private static final Map<String, EmiCompat.Picture> emiPictures = new HashMap<>();
+    private static final java.util.Set<String> noEmiPicture = new java.util.HashSet<>();
 
     private static void checkCaches() {
         // the recipe lookup's generation also moves when EMI (re)loads its recipes
@@ -856,6 +869,8 @@ public final class BookmarkPanel {
             icons.clear();
             pictures.clear();
             noPicture.clear();
+            emiPictures.clear();
+            noEmiPicture.clear();
         }
     }
 
@@ -930,6 +945,24 @@ public final class BookmarkPanel {
             NeiAddon.LOGGER.warn("Could not draw recipe {} in the bookmark tooltip", recipeId, e);
         }
         noPicture.add(recipeId);
+        return null;
+    }
+
+    /** EMI's picture of a recipe JEI has no layout of (under EMI, e.g. GregTech's); null without EMI or when EMI has none. */
+    static EmiCompat.Picture emiPicture(String recipeId, ItemStack hint) {
+        checkCaches();
+        if (recipeId == null || EmiCompat.picturesFailed()) return null;
+        if (emiPictures.containsKey(recipeId)) {
+            EmiCompat.Picture cached = emiPictures.get(recipeId);
+            return cached.broken() ? null : cached;
+        }
+        if (noEmiPicture.contains(recipeId)) return null;
+        EmiCompat.Picture picture = EmiCompat.picture(recipeId, hint);
+        if (picture != null) {
+            emiPictures.put(recipeId, picture);
+            return picture;
+        }
+        noEmiPicture.add(recipeId);
         return null;
     }
 
@@ -1422,7 +1455,10 @@ public final class BookmarkPanel {
         List<FormattedCharSequence> lines = new ArrayList<>();
         for (Component line : tip) lines.addAll(font.split(line, 260));
         if (shiftPicture || modePicture) {
-            IRecipeLayoutDrawable<?> picture = picture(tipRecipe(cell), stack);
+            String recipe = tipRecipe(cell);
+            IRecipeLayoutDrawable<?> picture = picture(recipe, stack);
+            // a recipe JEI has no layout of (under EMI, a mod's own EMI plugin) is drawn by EMI
+            EmiCompat.Picture emi = picture == null ? emiPicture(recipe, stack) : null;
             Screen screen = McCompat.screen();
             if (picture != null && screen != null) {
                 Rect2i r = picture.getRect();
@@ -1430,6 +1466,11 @@ public final class BookmarkPanel {
                     picture.setPosition(px2, py2);
                     Pose.isolated(g2, () -> picture.drawRecipe(g2, -1000, -1000));
                 });
+                return;
+            }
+            if (emi != null && screen != null) {
+                TreeDraw.tooltip(g, font, mx, my, screen.width, screen.height, lines, List.of(), emi.width(), emi.height(), (g2, px2, py2) ->
+                    Pose.isolated(g2, () -> emi.draw(g2, px2, py2)));
                 return;
             }
         }
@@ -1483,6 +1524,12 @@ public final class BookmarkPanel {
     static void onMousePressed(ScreenEvent.MouseButtonPressed.Pre event) {
         Screen screen = event.getScreen();
         if (!applies(screen)) return;
+        // a new press starts over (the release of an earlier one may have gone elsewhere)
+        pressed = null;
+        if (draggingOut) {
+            draggingOut = false;
+            BookmarkDrag.cancel();
+        }
         Bookmarks.ensureLoaded();
         layout(screen);
         double mx = event.getMouseX();
@@ -1576,15 +1623,28 @@ public final class BookmarkPanel {
                 reorder = e;
                 reorderRecipe = c.recipe();
             }
-        } else if ((button == 0 || button == 1) && !RecipeHearts.isRecipesScreen(screen) && JeiGive.cheating()
+        } else if (button == 0 || button == 1) {
+            // acted on at the release (see clickCell), so that the press can become a drag out of the panel instead
+            pressed = c;
+            pressedButton = button;
+            pressX = mx;
+            pressY = my;
+        }
+    }
+
+    /** A click on a bookmark (its press and release both on it, the mouse not dragged away): gives it or shows its recipes. */
+    private static void clickCell(Screen screen, Cell c, int button) {
+        Bookmarks.Entry e = c.entry();
+        // NEI Cheat Mode (not in the recipe screen): a click gives the item (left: see cheatAmount, right: one);
+        // JEI's show-recipes / show-uses keys over the bookmark still show its recipes
+        if (!RecipeHearts.isRecipesScreen(screen) && JeiGive.cheating()
             && JeiGive.give(e.key.sample, button == 0 ? cheatAmount(c) : 1)) {
-            // NEI Cheat Mode (not in the recipe screen): a click gives the item (left: see cheatAmount, right: one);
-            // JEI's show-recipes / show-uses keys over the bookmark still show its recipes
-        } else if (button == 0 && showBookmarkedRecipe(c)) {
-            // the recipe the bookmark was made from (a recipe's result, or an item from JEI's recipe bookmark button)
-        } else if (button == 0) {
-            showRecipes(e.key.sample, RecipeIngredientRole.OUTPUT);
-        } else if (button == 1) {
+            return;
+        }
+        if (button == 0) {
+            // the recipe the bookmark was made from (a recipe's result, or an item from JEI's recipe bookmark button), else its recipes
+            if (!showBookmarkedRecipe(c)) showRecipes(e.key.sample, RecipeIngredientRole.OUTPUT);
+        } else {
             showRecipes(e.key.sample, RecipeIngredientRole.INPUT);
         }
     }
@@ -1640,6 +1700,17 @@ public final class BookmarkPanel {
             event.setCanceled(true);
         } else if (reorder != null || moveGroup >= 0) {
             event.setCanceled(true);
+        } else if (pressed != null && pressedButton == 0) {
+            // a left press on a bookmark that moves on is a drag out of the panel (onto another mod's ghost slot)
+            if (!draggingOut && event.getScreen() instanceof AbstractContainerScreen<?>) {
+                double dx = event.getMouseX() - pressX;
+                double dy = event.getMouseY() - pressY;
+                if (dx * dx + dy * dy > DRAG_START * DRAG_START) {
+                    draggingOut = true;
+                    BookmarkDrag.start(event.getScreen(), pressed.entry().key.sample);
+                }
+            }
+            if (draggingOut) event.setCanceled(true);
         }
     }
 
@@ -1688,6 +1759,18 @@ public final class BookmarkPanel {
             }
             reorder = null;
             reorderRecipe = null;
+            event.setCanceled(true);
+        } else if (pressed != null && event.getButton() == pressedButton) {
+            Cell cell = pressed;
+            pressed = null;
+            if (draggingOut) {
+                draggingOut = false;
+                // let go over the panel itself: nothing is dropped
+                if (inPanel(event.getMouseX(), event.getMouseY())) BookmarkDrag.cancel();
+                else BookmarkDrag.drop(event.getScreen(), event.getMouseX(), event.getMouseY());
+            } else {
+                clickCell(event.getScreen(), cell, event.getButton());
+            }
             event.setCanceled(true);
         }
     }
@@ -1834,8 +1917,8 @@ public final class BookmarkPanel {
     static void onKeyPressed(ScreenEvent.KeyPressed.Pre event) {
         Screen screen = event.getScreen();
         if (!applies(screen)) return;
-        if (QuantityField.focused() || Calculator.runtime != null && Calculator.runtime.getIngredientListOverlay()
-            .hasKeyboardFocus()) return;
+        // typing in a text box (JEI's, the quantity field, AE2's or the creative search): the keys type
+        if (CalcKeys.typing()) return;
         layout(screen);
         if (!active || !inPanel(lastMx, lastMy)) return;
         int code = event.getKeyCode();

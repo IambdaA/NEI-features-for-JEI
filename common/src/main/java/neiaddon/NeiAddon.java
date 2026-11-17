@@ -29,7 +29,7 @@ public final class NeiAddon {
     /** Registers the client event handlers; the loader then hooks its own events to the bus (see {@link Bus}). */
     public static void initClient(ClientPlatform platform) {
         ClientPlatform.HOLDER.set(platform);
-        for (Class<?> handlers : new Class<?>[] { Ae2Search.class, AutoCraft.class, BookmarkPanel.class, CalcKeys.class, ColorPickerScreen.class,
+        for (Class<?> handlers : new Class<?>[] { Ae2Search.class, AutoCraft.class, BookmarkPanel.class, CalcKeys.class, ChainHighlight.class, ColorPickerScreen.class,
             ConfigButton.class, CraftablesPanel.class, HotkeyTips.class, ItemZoom.class, JeiBookmarks.class, JeiGive.class, IngredientDirectory.class, Subsets.class, StorageCounts.class, CollapsibleItems.class, NtmFluids.class, ReleaseGuard.class, HeldItemDelete.class, RecipeButtonsFallback.class, JeiPlusPlusNote.class, ReleaseNote.class, EmiNote.class, KeyDefaults.class, NeiSettings.class,
             QuantityField.class, RecipeFilter.class, RecipeHearts.class, RecipePreview.class, ShareClient.class, TreeRecipes.class, TreeShot.class, UtilityBar.class, EmiCompat.class }) {
             Bus.register(handlers);

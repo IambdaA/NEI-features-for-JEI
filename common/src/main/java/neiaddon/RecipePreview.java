@@ -11,7 +11,6 @@ import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.gui.IRecipeLayoutDrawable;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.item.ItemStack;
@@ -124,7 +123,9 @@ public final class RecipePreview {
         String recipeId = hover.recipeId() != null ? hover.recipeId() : Favorites.recipeFor(RecipeData.idOf(stack), stack);
         if (recipeId == null) return;
         IRecipeLayoutDrawable<?> picture = picture(recipeId, stack);
-        if (picture == null) return;
+        // a recipe JEI has no layout of (under EMI, a mod's own EMI plugin) is drawn by EMI
+        EmiCompat.Picture emi = picture == null ? BookmarkPanel.emiPicture(recipeId, stack) : null;
+        if (picture == null && emi == null) return;
 
         Font font = Minecraft.getInstance().font;
         int tipW = 0;
@@ -164,9 +165,10 @@ public final class RecipePreview {
         int top = tipY - 4;
         int bottom = tipY + tipH + 4;
 
-        Rect2i r = picture.getRect();
-        int bw = r.getWidth();
-        int bh = r.getHeight() + 2;
+        int pw = picture != null ? picture.getRect().getWidth() : emi.width();
+        int ph = picture != null ? picture.getRect().getHeight() : emi.height();
+        int bw = pw;
+        int bh = ph + 2;
         int gap = 6;
         int bx = Integer.MIN_VALUE;
         int by = Math.max(4, Math.min(tipY, screenH - bh - 4));
@@ -184,9 +186,14 @@ public final class RecipePreview {
             else return;
         }
         List<FormattedCharSequence> none = List.of();
-        TreeDraw.boxAt(event.getGuiGraphics(), font, bx, by, none, bw, r.getHeight(), (g2, px, py) -> {
-            picture.setPosition(px, py);
-            Pose.isolated(g2, () -> picture.drawRecipe(g2, -1000, -1000));
-        });
+        if (picture != null) {
+            TreeDraw.boxAt(event.getGuiGraphics(), font, bx, by, none, bw, ph, (g2, px, py) -> {
+                picture.setPosition(px, py);
+                Pose.isolated(g2, () -> picture.drawRecipe(g2, -1000, -1000));
+            });
+        } else {
+            TreeDraw.boxAt(event.getGuiGraphics(), font, bx, by, none, bw, ph, (g2, px, py) ->
+                Pose.isolated(g2, () -> emi.draw(g2, px, py)));
+        }
     }
 }

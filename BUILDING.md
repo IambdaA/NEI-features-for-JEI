@@ -1,6 +1,6 @@
 # NEI Features for JEI (1.20.1, Forge and Fabric) - build notes
 
-Status: the first 1.20.1 build launched in game. Everything added since (recipe search in JEI's recipe screen, item zoom, the tree screenshot button, the chain tooltip with your inventory, craftables panel, settings screens, the NEI search language, more NEI options) has NOT been compiled against the real game: the authoring environment cannot download Minecraft/Forge/Gradle, so only syntax and this addon's own logic were checked (see `tools/`). Expect a few compile errors on the first build and send back any lines starting with `error:`.
+Status: builds and runs in game on Forge and Fabric. Not every feature has been tried on every loader; bug reports are welcome.
 
 ## Build
 1. Gradle itself runs on JDK 25 (Loom 1.18 needs it; `gradle/gradle-daemon-jvm.properties` makes Gradle find or download one, and the mod is still compiled for Java 17). If that download fails, point `JAVA_HOME` at a JDK 25. 2. `./gradlew clean build` (Windows: `gradlew.bat clean build`), or `./gradlew :forge:build` / `./gradlew :fabric:build` for one loader. 3. `./gradlew :forge:runClient` or `./gradlew :fabric:runClient` starts a dev client with JEI included.
@@ -19,22 +19,23 @@ Converted from the 1.21.1 copy: Forge's events (now run through the addon's own 
 `IGuiOverlay` instead of GUI layers (highlight tips), `TickEvent.ClientTickEvent` (and `TickEvent.RenderTickEvent` for the tree picture), NBT tags instead of data components, and `mods.toml`.
 JEI's API is the same as on 1.21.1. Item tag filters in the info pages default to the `forge:` namespace instead of `c:`.
 The Mods list "Config" button opens the addon's own settings screen (Forge 1.20.1 has no automatic config screen).
-Newer features since the first 1.20.1 build (recipe search, item zoom, tree picture, chain tooltip with your inventory, craftables panel, settings screens, NEI search language, more NEI options) were merged in from the 1.21.1 copy and are not tried in game.
-Not tried in game yet: expect a few compile errors on the first build.
 
 ## Features
 - **Highlight tips** (as NEI's HUDRenderer): a tooltip-style box with the item and name of the BLOCK under the crosshair (not entities). Off by default; Numpad 0 toggles it, the player-list key (Tab) hides it. Position `hudX`/`hudY` (0..10000, NEI defaults 5000/100) in `neiaddon-client.toml`; bind "Move Highlight Tooltips" in Controls to open NEI's drag-to-position screen. Extras not in NEI (off by default): `hudShowMod`, `hudShowId`.
 - **Item info pages**: `config/neiaddon/informationpages.cfg` (created on first start), NEI's `filter = text` format. Filters: `namespace:path` (with `*`), `$namespace:tag` (NEI's `$oredict`; `$name` means `forge:name` here (`c:name` on newer versions)), `@modid`. Lines starting with `#` are comments, as in NEI. Shown in JEI on the item's recipe page.
 - **Bookmarks (modelled on GTNH NotEnoughItems' BookmarkPanel)**: a grid of item slots on the left of container screens and JEI's recipe screen. Drag items in from JEI's list.
   - Group strip (7px, left of the slots): drag with the left button to create a group or extend the one you start in, right button to exclude rows. A plain click on a group: LMB = toggle group mode (todo list: one item per row), RMB = toggle crafting chain (green bracket), Alt+LMB = collapse. Shift+LMB drag = move the group. Ctrl+scroll = change the quantity of the whole group (Ctrl+Alt = multiplier 64).
-  - Slot: LMB = recipes, RMB = uses, Shift+LMB drag = move (a recipe item moves its whole recipe), Ctrl+scroll = amount (Ctrl+Alt = stack size; on a recipe item it changes how often the whole recipe runs), Alt+LMB re-expands a collapsed group; in a crafting chain it collapses/expands the slot's recipe into one merged block (the recipe's results, then what it and the recipes it feeds on need; boxed in purple). Shift+scroll on an ingredient that accepts several items (tag) switches the item. Alt+LMB on the page label collapses the ungrouped items. Amounts are drawn at half size bottom right (only when above 0).
+  - Slot: LMB = recipes, RMB = uses (both on release: a left press that moves on is a drag out of the panel instead, which drops the item on the ghost slot under the mouse, see `BookmarkDrag`), Shift+LMB drag = move (a recipe item moves its whole recipe), Ctrl+scroll = amount (Ctrl+Alt = stack size; on a recipe item it changes how often the whole recipe runs), Alt+LMB re-expands a collapsed group; in a crafting chain it collapses/expands the slot's recipe into one merged block (the recipe's results, then what it and the recipes it feeds on need; boxed in purple). Shift+scroll on an ingredient that accepts several items (tag) switches the item. Alt+LMB on the page label collapses the ungrouped items. Amounts are drawn at half size bottom right (only when above 0).
   - Top `< 1/2 >`: grid pages (scroll too). The label is the handle of the ungrouped items: LMB = todo mode, RMB = crafting chain, Ctrl+scroll = quantity. The brackets turn green when the chain is on.
   - Bottom `< 1/3 >`: bookmark pages ("namespaces"). Like NEI there is no add button: an empty page always follows the last used one, and empty pages vanish when you leave them. Scroll over the buttons to switch. Saved in `config/neiaddon/bookmarks.txt`.
 - **Recipe tree (favorites + recipe bookmarks, as NEI)**: every recipe in JEI's recipe screen has a heart button next to JEI's own buttons (added through JEI's `addRecipeButtonFactory`, so no mixin).
   - Click the heart: this recipe becomes the favorite recipe of its result item (one favorite per item, red heart = favorite; the wheel over the heart picks the result of a multi-result recipe). Saved in `config/neiaddon/favorites.txt` (`itemId <tab> recipeId`).
-  - `Shift+A` while the mouse is over a heart: saves the recipe tree (the recipe, the favorite recipe of each ingredient, and so on, depth 9, nothing is searched automatically) as ONE new bookmark group in todo-list view with the crafting chain on. `Shift+T` over a heart saves it and opens the calculator for that group. `Shift+A` over a recipe: bookmarks / un-bookmarks just that recipe (only the hovered result) in the ungrouped items.
+  - While a crafting tree waits for a recipe (`TreeRecipes.waiting()`: set by `TreeRecipes.lookup` around the tree's item lookup, cleared by `stopWaiting`, `onOpening` on any other screen, or `addToTree`), the heart's `press` calls `RecipeHearts.Controller.pickForTree` instead of toggling. The favorite is `TreeRecipes.waitingItemId()` (the item the lookup was for, `waitingItem`, set by `TreeRecipes.lookup` from `CraftingTreeScreen.lookup` for recipes lookups; else the node's `shown().item` from `ui.replaceRecipeNode` through `CraftingTreeScreen.replacedItemId`; else null) when the recipe's results contain it, else the heart's selected result. `Favorites.set(item, shape.id)` replaces that item's favorite (the click never turns one off; EMI's default follows for EMI recipes); then `TreeRecipes.addToTree` runs `CraftingTreeScreen.addRecipe`, which replaces the node's recipe and returns to the tree. While EMI loads (`EmiCompat.present() && EmiCompat.loading()`) nothing is picked and the wait goes on. A failure in the pick logs one warning and the click is still used. `endWait` clears the wait and its item; a tree opening outside a lookup, `stopWaiting` (from `addRecipe`) and `onOpening` end the wait. The heart's first tooltip line becomes `neiaddon.recipe.tree_pick` while a tree waits. On EMI's screen the same click works on EMI's default button: `EmiRecipeButtons.frameDefault` adds a `Hit` for that rectangle only while `waiting()`, and `click` cancels EMI's event through `EmiCompat`.
+  - `Shift+A` while the mouse is over a heart: saves the recipe tree (the recipe, the favorite recipe of each ingredient, and so on, depth 9, nothing is searched automatically) as ONE new bookmark group in todo-list view with the crafting chain on. `T` (or `Shift+T`) over a heart builds the same tree from the current favorites (`RecipeTree.saveOrReplace`) and opens the calculator for that group: a crafting-chain group of the active page whose top recipe (its first recipe row, `Bookmarks.treeGroupOf`) is this recipe is refreshed in place (`Bookmarks.replaceGroup`: same id and index, todo/chain flags kept, the top recipe keeps its run count, the other recipes run once, collapsed recipes of the group are normalized away), otherwise a new group is added. `Shift+A` over a recipe: bookmarks / un-bookmarks just that recipe (only the hovered result) in the ungrouped items.
+  - EMI's player-set default recipe is the favorite too (`Favorites`; `EmiCompat.Hooks.defaultRecipe / defaultItemOf / setDefault / clearDefault / clearOtherDefaults`, implemented in `EmiBridge` on `dev.emi.emi.bom.BoM`, internal, called by reflection and looked up once: the public map `addedRecipes` (the player-set defaults only; EMI's built-in defaults from `assets/emi/recipe/defaults` are NOT favorites), `addRecipe(ingredient, recipe)`, `removeRecipe(ingredient, recipe)`). One store per favorite: `set(item, recipe)` with EMI ready and an EMI recipe (`EmiBridge.find`) puts it in EMI only (`BoM.addRecipe`) and drops the item's `favorites.txt` entry; otherwise it writes `favorites.txt` and, with EMI ready, removes the item's player-set EMI default (it would hide the file entry). `set(item, null)` removes both. The other items with that recipe lose it: their file entries, and their player-set EMI defaults for it (`clearOtherDefaults`). Reading (`recipeFor`) asks EMI's player-set default first (EMI ready only), else the file, and never writes; per client tick each item is looked up once (`Favorites.clearEmiLookups`, from `EmiCompat.onTick`). `Favorites.sameRecipe` compares recipe ids: equal, or identifier ids (`type|id`) with the same id part. `itemFor` returns an item only when `recipeFor` of it is that recipe. A recipe with a hash id (`uid#hash`) cannot be located without an item, so it is not found by `itemFor` and does not clear the others' EMI defaults (`// shortcut:` comments). EMI is never touched while it loads. Known side effect of EMI's own `removeRecipe`: removing a player-set default of a recipe that EMI still has built in disables that recipe in EMI; that is EMI's own behaviour for its button too.
   - Todo-list view: one recipe per row (result first, then its ingredients; ingredients that do not fit continue from the second column of the next row). In a crafting-chain group the amounts are calculated by the ported NEI chain maths (how often every sub-recipe has to run so the top recipe gets everything it needs; your own plain items are spent first); the first result of an output recipe has a small `xN` marker (N = its multiplier). Normal view of a chain group shows only results and plain items. `Ctrl+wheel` on a recipe item changes how often the whole recipe runs (`Ctrl+Alt` = stack size steps), `Ctrl+wheel` on the group strip scales the whole group, `A` over a recipe item removes it (a recipe's only result removes the whole recipe), `Shift+A` removes the whole recipe, RMB on the strip toggles the crafting chain. Hovering the strip of a chain group lists the raw materials it still needs.
   - Recipe ids: JEI's recipe identifier (`recipeTypeUid|registry id`), or for recipes without one a hash of the category and slots (`recipeTypeUid#hash`). Bookmark file lines: `item <id> <amount> <group> <type 0/1/2> <recipeId|-> <factor> <option ids> [j]` (`j`: a plain item from JEI's recipe bookmark button, since 1.3.0; older versions ignore the column), group flags in `meta` lines. Lines of uninstalled items are kept untouched and shown as nothing.
+  - Storage you open (any `AbstractContainerScreen` while the bookmark panel is shown, `highlightChainItems` on by default, Settings > Bookmarks Panel > Highlight Chain Items) tints, in translucent orange, the slots of its non-player containers holding an item the page's crafting trees still need: only groups with `chain` and `crafting` both on (crafting mode, `GroupMeta.crafting`) count. `ChainHighlight` runs `ChainPull.plan` per such group with the player's inventory counted (the maths of Shift + V, without V's limits: it also tints on screens V does not pull from and with a full inventory), so carried items are not tinted and a fresh `Bookmarks.pullMath` is used each time. Result slots and crafting grids (`CraftingContainer`) are skipped, and the creative inventory is left out (its grid holds the open tab's items). It recomputes at most every 10 client ticks or 500 ms, and at once when the screen or the page changes; the tinted slots are found then, so a frame only fills them. Not checked: AE2 / RS terminals (their item lists are not menu slots, so probably nothing is tinted there). The tint is drawn in `Render.Post` at `Pose.OVER` (above the slot items, below the tooltips at `Pose.TOOLTIP`, which are drawn before it; the depth test keeps the nearer one). Whether the carried item stays on top is not checked yet. A failure logs one warning and tints nothing. Not verified in game.
   - The chain maths is plain Java (`neiaddon.chain`, no Minecraft classes) and is checked by `tools/ChainMathCheck.java`; the model and the layout by `tools/ModelCheck.java` / `tools/LayoutCheck.java` against stand-in classes (`tools/make_stubs.py`, see the headers of those files). These checks never touch the real game: they only catch mistakes in this addon's own code.
 - **Crafting calculator** (per group): steps and raw materials; click a step = other recipe, right click = treat as raw, +/- adjust amounts. Works with any recipe type JEI knows.
 - **Keys (Controls, NEI defaults)**: `A` toggles a bookmark for the hovered item or fluid (JEI list, recipe screen or inventory slot; a fluid is bookmarked as one bucket, Ctrl keeps the slot's amount; over a bookmark it removes it; Ctrl+A keeps the stack size), `Shift+A` over a group strip or the page label removes the group, `T` over a group strip or the label opens the crafting tree window when that group is in crafting-chain mode, `B` hides/shows the panel. `R`/`U` are JEI's own keys and already match NEI. Ignored while the JEI search box has focus.
@@ -81,7 +82,7 @@ Not tried in game yet: expect a few compile errors on the first build.
   show how many of the item the network holds (top left, cyan) and item tooltips get an "In storage: N" line. Read from the
   terminal's own client-side list by reflection; without such a mod, or if its internals changed, nothing is shown.
 - **Older JEI** (1.20.1: 15.20 and newer, as in ATM9 and Monifactory; 1.21.1: 19.x, as in ATM10): where JEI has no recipe
-  button API (`addRecipeButtonFactory`), the heart and tree "+" buttons are drawn to the right of each recipe instead
+  button API (`addRecipeButtonFactory`), the heart is drawn to the right of each recipe instead
   (through a recipe category decorator), with the same clicks and tooltips. JEI features that need newer internals (moving
   JEI's bookmarks, item aliases, JEI's button row) log one warning and stay off.
 - **Tools in crafting chains** (1.3.1): in a chain's tooltip a tool is listed by the durability its crafts take (GregTech
@@ -147,7 +148,7 @@ Not tried in game yet: expect a few compile errors on the first build.
 - **Apothic Attributes**: the bookmark panel keeps clear of its attributes panel on the inventory screen while it is open.
 
 ## Known limits
-Only the item id is saved for bookmarks (enchantments/potion types are lost on restart). The panel needs room for at least one 18px column left of the GUI; on narrow windows it hides. The creative inventory is no longer excluded. Collapsed groups show the non-ingredient items that fit on one row (as NEI). Not implemented from NEI: the crafting tree's screenshot button, drop chances / fluids in the chain maths (container items are in), the Shift/Ctrl amount display modes of bookmark slots, auto-generated favorites. Dragging only works on container screens, not JEI's recipe screen. The text calculator has no leftover sharing between crafts and uses each ingredient slot's first alternative; the recipe tree uses the item that has a favorite recipe, else the first. Bookmarks are read from JEI internals by reflection (no public API exists); if a JEI update changes them the import returns nothing and the C key still works.
+Only the item id is saved for bookmarks (enchantments/potion types are lost on restart). The panel needs room for at least one 18px column left of the GUI; on narrow windows it hides. The creative inventory is no longer excluded. Collapsed groups show the non-ingredient items that fit on one row (as NEI). Not implemented from NEI: drop chances / fluids in the chain maths (container items are in), the Shift/Ctrl amount display modes of bookmark slots. Dragging only works on container screens, not JEI's recipe screen. The text calculator has no leftover sharing between crafts and uses each ingredient slot's first alternative; the recipe tree uses the item that has a favorite recipe, else the first. Bookmarks are read from JEI internals by reflection (no public API exists); if a JEI update changes them the import returns nothing and the C key still works.
 
 ## License
 Author: Iambda. Source: https://github.com/IambdaA/NEI-features-for-JEI
@@ -226,6 +227,48 @@ Sophisticated storage takes from the grid's shift-click), into the slot each cam
 whenever the table has storage slots, also when they were empty at the start. Verified in game on 1.20.1 (ATM9 Expert, Forge: Tinkers with
 and without Faster Autocrafting, Sophisticated, the refill refusal, the vanilla table; 1.20.1 Fabric: the vanilla
 table) and 1.21.1 (ATM10, NeoForge: Sophisticated, the vanilla table); not on 1.21.1 Fabric, 26.1.2 and 26.2.
+AE2 crafting terminals (1.3.3, `Ae2Crafting`, by reflection on AE2 15 names; a reflection failure logs one warning, lets a
+run in progress clean up, and keeps new runs in terminals from starting):
+the menu is one whose class extends `appeng.menu.me.items.CraftingTermMenu` (wireless terminals too, by class; not
+tested), its grid the `CraftingMatrixSlot`s and its result exactly a `CraftingTermSlot` (the pattern terminal's output
+extends it and is not a crafting result). The network's items (read from the screen's `repo` entries) count as
+inventory; when the grid or the items cannot be read, autocrafting refuses to start with a chat line. The grid is filled one set at a time by the recipe's transfer (AE2's own, through JEI or EMI), and
+each wanted craft is one `InventoryActionPacket(CRAFT_ITEM)` onto the cursor (a click through the screen would read
+Shift and craft a stack); AE2 refills the grid from the network after each craft, so a craft is counted when the cursor
+grew by one result. An empty result slot means the network ran out; the rest of the recipe is left to the chain. The
+cursor is put away when the next result would not fit. What the chain makes on the way (`ae2ToNetwork`: not one of the
+items asked for, by item without the subtype) goes into the network first, because AE2 refills the grid from the network
+only (left in the inventory, a recipe's next ingredients never reached the grid and the inventory filled up). The put is
+the terminal's own, as when the player clicks the empty space of its item grid with a stack held (`MEStorageScreen`
+calls `MEStorageMenu.handleInteraction(-1, PICKUP_OR_SET_DOWN)`, which the client sends as
+`MEInteractionPacket(containerId, -1, PICKUP_OR_SET_DOWN)`; `Ae2Crafting.putCarriedIntoNetwork`); the cursor is then
+waited on to change. When the network refuses a stack three times in a row it goes into the inventory (`ae2Landed`: that
+item then skips the network for the rest of the run; the count starts again for the next stack). The items asked for go
+into the inventory (a stack of the same item with room first, then an empty slot, as everywhere in `inventorySlotFor`),
+and into the network when there is no room. An item that is asked for and also an ingredient of another recipe of the
+chain stays in the inventory (not refilled from there). The run stops with the stack on the cursor only when neither the
+network nor the inventory takes it. Before a recipe's transfer, one
+craft's ingredients (`ChainItem.factor` per run, the options of each slot plus the item; slots with the fewest options
+take theirs first) must be in the inventory, the network and the grid together, else the recipe is skipped with a log
+line (once per run). Fluids (also NTM's millibucket items) are not checked there (they are not in the grid). Tools are
+checked apart, by item in any wear (`ae2MissingTool`; a worn tool's id differs from the recipe's): a recipe whose tool
+is nowhere in the inventory, the network or the grid waits, so a tool the chain makes later is made first (tried without
+it, the grid made something else, e.g. Steel Nugget for Steel Rod without the file, and the recipe was skipped for the
+run). A transfer AE2 refuses (its handler refuses only when it finds every slot missing; seen right after a put into the
+network) is asked once more after `AE2_RETRY_TICKS` (10) before the recipe is given up for this pass; the log line says
+why (`whyNot`). The end-of-run line names a tool that is nowhere in the inventory, the network or the grid. When the
+grid makes another item (`wrongResult`), AE2 does not stop: nothing is crafted, the grid is cleared into the network
+(`clearCraftingGrid()`, then waited on to go empty), the recipe is skipped for the rest of the run, and chat names the
+ingredients the grid lacks (compared with one craft's ingredients; a tool by item, any wear), also when the run stops
+early. Putting the cursor away while clearing gives up after three tries without a change and stops with a chat line
+(the grid is left as it is, and the inventory layout is not restored). The end-of-run tool line also counts the cursor,
+and is left out when the network's items can't be read. The ingredient check, the skip and the put into the network are
+not verified in game. The cleanup calls the menu's `clearCraftingGrid()` (the grid goes back into the network) and waits
+for an empty grid (if it stays filled, chat says items were left in the grid); there is no give-back.
+`CraftSlots.isResult` now knows the terminal's output, so it is no longer counted as inventory by the panel, hearts,
+tree and tool lookups (as a vanilla result slot isn't). After a failure Shift+C is still offered in a terminal and
+refused with the chat line. Verified in game on 1.20.1 (ATM9
+Expert, AE2 15.4.12 with EMI: logs to pickaxe from the network and the inventory); not without EMI.
 Recipes JEI cannot transfer (furnaces,
 machines) are skipped. With Restore Inventory Layout (`autocraftingRestoreLayout`, Settings > Inventory, off by
 default) the items that were in the inventory when autocrafting started are then moved back to their old slots, one checked
@@ -269,16 +312,21 @@ per item). Items are matched by registry id. Not verified in game.
 - Not checked in game: all of this was only compiled against stand-in classes and run through the layout/maths checks (tools/LayoutCheck, CollapseCheck).
 
 
-## Crafting tree (T over a crafting-chain group, or Shift+T over a recipe heart)
+## Crafting tree (T over a crafting-chain group, or T over a recipe heart)
 
 Port of NEI's `GuiCraftingTree`. The pure parts are in `chain/` (`TreeMath`, `TreeGraph`, `TreeLayout`, `TreeCamera`,
 `TreeStats`, `TreeStatsLayout`, `ReadableNumber`, tested by `tools/TreeCheck.java`); the window is `CraftingTreeScreen`
 (with `TreeDraw` for the texture pieces, `TreeState` for the settings and the per-group view, `TreeRecipes` for the
-"+" button in JEI's recipe screen).
+picking a recipe in JEI's recipe screen).
 
 - Drag pans, wheel scrolls (Shift sideways), Ctrl+wheel zooms (config `treeZoomWithoutCtrl` = zoom without Ctrl).
-- Click an item: recipes (LMB) / usages (RMB), R and U too. A click on a node with children remembers it; the "+" of the
-  next recipe you pick in JEI replaces that node's recipes with it.
+- Click an item: recipes (LMB) / usages (RMB), R and U too. A click on a node with children remembers it (`ui.replaceRecipeNode`); the
+  next recipe you pick in JEI (its heart, see Recipe tree above) replaces that node's recipes with it. A usages lookup
+  picks for the same node, but the recipe rarely makes that node's item, so the heart's selected result is favored instead.
+  A lookup from the stats panel (no node) replaces nothing, unless a node was clicked before and not yet replaced.
+  Leaf nodes (no children, so no `replaceRecipeNode`) and stats-panel recipe lookups: the pick is for the item looked up
+  (`CraftingTreeScreen.lookup` passes `RecipeData.idOf(stack)` to `TreeRecipes.lookup` for a recipes lookup, null for usages,
+  and `TreeRecipes.waitingItemId()` returns it, then the replaced node's item, then null).
 - Alt+click collapses/expands the recipe, click on the little arrow folds the branch, the badge shows the recipe type
   and turns into a delete button (removes the recipe and the recipes only it needed).
 - Ctrl+wheel over a top item changes its amount (Ctrl+Alt+wheel by the quantity field's step), Shift+wheel over a tag
@@ -286,12 +334,18 @@ Port of NEI's `GuiCraftingTree`. The pure parts are in `chain/` (`TreeMath`, `Tr
 - Toolbar: inventory snapshot, fit to view, collapse mode (expanded / collapse resolved / collapse all), stats panel,
   stats sections, send group to chat. Settings are saved in `config/neiaddon/crafting_tree.properties`
   (NEI keeps them in the world data).
+- Crafting mode (toolbar button after the inventory snapshot, crafting table item; no sprite of the texture fits): `GroupMeta.crafting`
+  is the last field of the bookmark file's `meta` line (after the collapsed recipes; `split("\t", -1)` keeps an empty
+  collapsed-recipes field, and a line without the field reads as off; older versions ignore it). Not in `sharePayload`. While on,
+  `inventoryLive()` counts the inventory as the snapshot does (`slotSprite`'s snapshot flag, the stats icons, the node tooltip),
+  and `tick()` (Screen's tick, every client tick) re-reads it every `LIVE_TICKS` (20) ticks and calls `inventoryChanged()` only
+  when the counts differ: a rebuild that keeps the camera, then the search matches are found again. Not verified in game.
 - Stats panel: ingredients, crafting, results, handlers; click a slot to highlight it in the tree (Shift = previous,
   RMB clears).
 - Search box: words must be in the item's name or id, `@mod`, `$tag`. NEI's search language is NOT ported.
 - Not ported: the screenshot button, drop chances, fluids. Container items (a bucket left behind, a tool that comes back worn) are in the chain maths and tree: a tool node shows its amount as `~n` in orange, and what is left behind is listed under Remainders in the stats panel. GregTech tool stats are not read.
 - Not checked in game: only compiled against stand-in classes and run through the maths checks. Risks: item and texture
-  drawing under the pose scale, the second JEI button factory, the inventory snapshot read from the open menu, the
+  drawing under the pose scale, the heart's JEI button factory, the inventory snapshot read from the open menu, the
   recipe picture in the badge tooltip.
 
 
@@ -306,12 +360,37 @@ Port of NEI's `GuiCraftingTree`. The pure parts are in `chain/` (`TreeMath`, `Tr
 - Exclusion area: the left column while the bookmark panel is shown (`BookmarkPanel.emiArea`: x 0 to the column's right edge, the full screen height), the quantity field and the craftables panel (`EmiCompat.areas`, each source guarded on its own), so EMI's sidebars are placed around them. EMI's left sidebar (favorites, by default) gets no room at all while the panel is shown, not even a strip above or beside it when another mod's buttons push the panel down; it comes back with B. EMI's own bottom-left buttons are fixed widgets, not moved by exclusion areas. `BookmarkPanel.extraAreas()` stays empty: JEI must not get the panel's area.
 - EMI's layout (`emi.EmiLayout`, reads the internal `dev.emi.emi.screen.EmiScreenManager` by reflection through `EmiCompat.layout`): the item list grid (`getSearchPanel().space`: `tx`, `ty` in pixels, `tw`, `th` in 18 px slots; none while the panel's `isVisible()` is false), the search box (`search`) and the bottom-left buttons (`emi`, `tree`, read as vanilla `AbstractWidget`s). Used only when JEI's own list area is missing (`JeiAreas.list()` null, which is the case under EMI): the quantity field takes the item list's x and width and sits on the bottom row, or just above EMI's search box when that box is under the list; the N and S buttons follow EMI's last shown button at its y. A failure, at setup or later, clears the hook with one warning and both go back to their places without EMI.
 - EMI note (`EmiNote`, like `ReleaseNote`): with EMI installed, a chat message a few seconds after joining (after the release note) says the addon works with EMI and links the issues page; its "turn off" link runs `/neiaddon_hide_emi_note`, caught in `ShareClient`, and clears `emiNote`.
+- EMI favorites into bookmarks (issue 25): EMI reads A in a `KeyboardHandler` mixin before any screen key event, so over EMI's lists A makes an EMI favorite before the addon sees the key. While the bookmark panel is shown (`BookmarkPanel.supports`, not `isHidden`, and `isActive`, the panel's state at its last drawn frame, so not when the window has no room for it), `EmiCompat.onTick` (END) calls `EmiCompat.favoritesTick`, which `EmiBridge.favoritesTick` answers: each favorite of `dev.emi.emi.runtime.EmiFavorites.favorites` that was not there on the last tick and has no recipe context (`EmiFavorite.getRecipe() == null`) becomes a bookmark: its first stack (a fluid as its carrier, 1000 mB), added with `Bookmarks.add` only when `Bookmarks.isBookmarked` is false (no toggle), then removed with `EmiFavorites.removeFavorite` and saved with `EmiPersistentData.save()` as EMI does after its own changes. The first tick after EMI (re)loads its favorites (EMI's reload generation changes) only records them. With the panel hidden the favorites stay EMI's. All of it is reflection, looked up once. A failure turns the conversion off for good with one warning ("Could not turn EMI favorites into bookmarks"); A then makes EMI favorites again.
 - Cheat mode: `BookmarkPanel.canGive` also accepts `EmiApi.isCheatMode`, read once per call through `EmiCompat.cheatMode` (a failure logs one warning and counts as off).
 - Only EMI API members that exist in EMI 1.1.22 are used (`addGenericExclusionArea`, `EmiExclusionArea`, `Bounds`, `EmiApi.isCheatMode`, `addAlias`, `EmiStack.of`). Must keep working on EMI 1.1.22.
-- EMI's recipes (`EmiBridge`, `EmiTarget`): favorites, trees and transfer look recipes up in EMI too.
-- EMI's recipe screen (`dev.emi.emi.screen.RecipeScreen`, internal): the hearts and the tree's "+" (`EmiRecipeButtons`,
-  reads `currentPage`) and the recipe search (`EmiRecipeSearch`, swaps the private `recipes` map and re-initialises the
-  screen) are drawn from the addon's own screen events through `EmiCompat`, by reflection. A failure turns that part off
+- EMI's recipes (`EmiBridge`, `EmiTarget`): favorites, trees and transfer look recipes up in EMI too. An EMI recipe that
+  maps to a JEI recipe is moved into the grid by JEI's own transfer handler when JEI has one for the open screen
+  (`RecipeLookup.Target.jeiUnderEmi`, with the slots of JEI's layout of the recipe), else by EMI's filler: EMI wraps the
+  same handler, but EMI 1.1.24's wrapper throws AbstractMethodError on JEI 15.59 (`JemiRecipeSlot` lacks
+  `getAllIngredientsList`). S over a recipe on EMI's recipe screen goes the same way (`EmiRecipeView.transfer` ->
+  `EmiBridge.targetOf` -> `Target.ofEmi`). A JEI failure there logs one warning and leaves every later fill to EMI; a
+  failure during the transfer itself counts as a failed fill (no second fill by EMI). EMI's player-set default
+  recipes count as favorites (see Recipe tree above): `EmiBridge.locate` is the lookup `find` and the default hooks share.
+- EMI recipe slots (`EmiRecipeView.readSlots`): the slots are the `SlotWidget`s in the recipe group's `widgets`. A slot is
+  a result when EMI's protected `output` flag is set (that flag only means a large slot) or, when it is no catalyst, it
+  has a recipe context and its stack is one of the recipe's `getOutputs()`: GregTech's recipes (LDLib's
+  `ModularEmiRecipe`) draw normal-size result slots marked only with `recipeContext`, while EMI's fuel recipes and
+  NuclearCraft's placement pages put a recipe context on inputs (NuclearCraft's particle and kugelblitz info pages list
+  their one stack as input and output, so it counts as a result there, as the recipe declares). Without that, A over a GregTech result made a plain item bookmark (GitHub issue 27).
+- EMI's recipe buttons: `EmiRecipeButtons.wrapButtons` replaces EMI's `RecipeDefaultButtonWidget` and
+  `RecipeTreeButtonWidget` in the recipe group's public `widgets` list with delegating widgets (`FavoriteButton`: EMI's
+  drawing and click, the heart's `tooltipLines` as the tooltip, so EMI draws one tooltip; `TreeButton`: a left click runs
+  `RecipeHearts.openTree`, the addon's tree; while a tree waits it picks the recipe as the heart does; else EMI's click).
+  In EMI 1.1.24 only `ResolutionButtonWidget`'s drawing checks `instanceof RecipeDefaultButtonWidget` (a texture offset),
+  so a wrapped button can look slightly different there. A failure keeps EMI's buttons (and the old tooltip below EMI's).
+- Heart tooltips list their keys through `HotkeyTips.hotkeyLines` ("Hold ALT for hotkeys", the list under Alt; T, Shift+A,
+  the result keys).
+- Keys and text boxes: `CalcKeys.typing()` also counts any focused `EditBox` of the open screen (its widgets, and its
+  `EditBox` fields found once per class: AE2's search, the creative search). `CalcKeys.onKey`, `BookmarkPanel.onKeyPressed`,
+  `Ae2Search.onKey` and `ItemZoom` then do nothing, so the key types. EMI's own search box takes every key itself first.
+- EMI's recipe screen (`dev.emi.emi.screen.RecipeScreen`, internal): the hearts (`EmiRecipeButtons`,
+  reads `currentPage`; where a recipe has EMI's `dev.emi.emi.widget.RecipeDefaultButtonWidget`, matched by class name, no heart is drawn and `frameDefault` only passes that button's rectangle to `RecipeHearts.Controller.frame`, so the keys over it work and EMI keeps its click and tooltip, except while a tree waits: then a click on it picks the recipe for the tree) and the recipe search (`EmiRecipeSearch`, swaps the private `recipes` map and
+  re-initialises the screen) are drawn from the addon's own screen events through `EmiCompat`, by reflection. A failure turns that part off
   with one warning. Details and test results: `docs/emi-compat.md` in the project folder.
 - EMI's item list: EMI shows its own list and takes clicks on its stacks (and, on container screens, its keys) before
   the addon. `EmiCompat.installed()` (EMI's mod is loaded, from the loader's mod list, so known before EMI loads the
@@ -320,5 +399,17 @@ Port of NEI's `GuiCraftingTree`. The pure parts are in `chain/` (`TreeMath`, `Tr
   leaves alone, is listed when the item has no favorite recipe), Subsets lists mods only (EMI's
   search has no creative tab filter; JEI's `setFilterText` sets EMI's search), collapsible groups are off. The
   Item Untranslator's English names (`Untranslator.englishNames()`) are added as EMI aliases too.
+- Recipe pictures of bookmarks (GitHub issue 27): a bookmark's tooltip draws the recipe next to it (Shift over a recipe
+  bookmark, or the recipe picture mode). Without a JEI layout (a mod with its own EMI plugin, e.g. GregTech, which EMI
+  draws without JEI's plugin), `BookmarkPanel.emiPicture` asks `EmiCompat.picture` -> `EmiBridge.picture`, which finds the
+  EMI recipe like `find` and draws it with EMI's own `EmiRenderHelper.renderRecipe` on `EmiDrawContext.wrap(g)` (both by
+  reflection, looked up once; `showMissing` false, overlay colour -1). Its size is the display plus 4 on each side, the box
+  EMI's `renderRecipeBackground` draws. A failure to find EMI's drawing turns EMI pictures off for good through
+  `EmiCompat.picture` (one warning, "Could not draw an EMI recipe in the bookmark tooltip"); a failure while drawing does
+  the same inside `EmiBridge` (one warning); cached pictures are no longer shown then either, and colour writes are unmasked
+  afterwards (`renderRecipe` masks them between its passes). Results are cached per recipe id, cleared with the other
+  picture caches. Known limit: `renderRecipe` catches a failing EMI widget itself and logs it through `EmiLog` on every
+  frame it is drawn, so the addon never sees that failure; EMI's own recipe tooltips do the same. The crafting tree's recipe
+  tooltip and the recipe preview beside item tooltips use the same fallback.
 - Checked in game with EMI 1.1.24 on both loaders (see `docs/emi-compat.md`). Not checked: giving items through the
   panel in EMI cheat mode (only `canGive` was probed).

@@ -17,8 +17,8 @@ import neiaddon.Untranslator;
  * The addon's EMI plugin. Only EMI loads it: on Forge through the {@link EmiEntrypoint} annotation, on Fabric through
  * the "emi" entrypoint in fabric.mod.json. It registers the addon's panels (the bookmark panel, the quantity field and
  * the craftables) as EMI exclusion areas, so EMI's sidebars are placed around them, and it hands EMI's cheat mode to
- * the addon. It also hands EMI's recipes to the addon (see {@link EmiBridge}). The favorite heart and the tree's "+" next
- * to each recipe on EMI's recipe screen are drawn by the addon's own screen events, not by an EMI recipe decorator (EMI
+ * the addon. It also hands EMI's recipes to the addon (see {@link EmiBridge}). The favorite heart next to each recipe on
+ * EMI's recipe screen is drawn by the addon's own screen events, not by an EMI recipe decorator (EMI
  * draws decorators only in its developer mode): the plugin only sets the hooks (see {@link EmiRecipeButtons}). The recipe
  * search field on EMI's recipe screen is set the same way (see {@link EmiRecipeSearch}). It also adds the Item
  * Untranslator's English names to EMI's search (see {@link Untranslator}). Only the EMI API members that exist in EMI
