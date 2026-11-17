@@ -27,8 +27,7 @@ public class NeiAddonJeiPlugin implements IModPlugin {
 
     @Override
     public Identifier getPluginUid() {
-        // not the mod id on purpose: EMI skips the JEI plugin of every mod that also has an EMI plugin (matched by this
-        // namespace), and the addon needs its JEI plugin next to its EMI one
+        // not the mod id on purpose: the same uid in every version of the addon (the reason is in the 1.20.1 tree)
         return Identifier.fromNamespaceAndPath(NeiAddon.MODID + "_jei", "main");
     }
 
@@ -55,7 +54,6 @@ public class NeiAddonJeiPlugin implements IModPlugin {
     @Override
     public void registerAdvanced(IAdvancedRegistration registration) {
         registration.addRecipeButtonFactory(new RecipeHearts.Factory());
-        registration.addRecipeButtonFactory(new TreeRecipes.Factory());
     }
 
     /** NEI's item untranslator: find items by their English name too. */

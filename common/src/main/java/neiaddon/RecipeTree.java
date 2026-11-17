@@ -97,11 +97,31 @@ public final class RecipeTree {
      * @return the new group id, or 0 if nothing was saved
      */
     public static int save(RecipeShape main) {
+        return Bookmarks.addGroup(rows(main), true, true);
+    }
+
+    /**
+     * The tree key over a heart (T, or Shift+T): builds the tree from the current favorites, as {@link #save}, except that
+     * a crafting-chain group of the active page whose top recipe is this one is refreshed in place
+     * ({@link Bookmarks#replaceGroup}: same group, same place, its top recipe keeps its run count).
+     *
+     * @return the group id, or 0 if nothing was saved
+     */
+    public static int saveOrReplace(RecipeShape main) {
+        List<RecipeData> data = rows(main);
+        Bookmarks.Page page = Bookmarks.page();
+        int gid = Bookmarks.treeGroupOf(page, main.id);
+        if (gid == Bookmarks.NO_GROUP) return Bookmarks.addGroup(data, true, true);
+        return Bookmarks.replaceGroup(page, gid, data);
+    }
+
+    /** The rows of the recipe tree, top recipe first. */
+    private static List<RecipeData> rows(RecipeShape main) {
         List<RecipeData> data = new ArrayList<>();
         for (RecipeShape shape : build(main.copy(), AddonConfig.FAVORITES_DEPTH.get())) {
             // a recipe the tree pulls in for one of its fluids or items shows only that result, not its byproducts
             data.add(shape.toData(shape.leadResult));
         }
-        return Bookmarks.addGroup(data, true, true);
+        return data;
     }
 }

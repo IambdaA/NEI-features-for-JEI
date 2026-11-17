@@ -33,7 +33,8 @@ import neiaddon.event.ScreenEvent;
  * <li>Click the heart: this recipe becomes the favorite recipe for its result item (one favorite per item). Red heart =
  * favorite. The mouse wheel over the heart picks which result of a multi-result recipe the favorite is for.</li>
  * <li>Shift + bookmark key over the heart: saves the recipe tree as one new bookmark group (todo-list view, crafting
- * chain on). Shift + the tree key also opens the calculator for it.</li>
+ * chain on). The tree key (T, or Shift + T) over the heart builds the tree from the favorites and opens it in the crafting
+ * tree window, refreshing the group of this recipe when the page has one ({@link #onTreeKey}).</li>
  * <li>Shift + bookmark key over a recipe: bookmarks / un-bookmarks just that recipe in the default group.</li>
  * </ul>
  *
@@ -57,6 +58,8 @@ public final class RecipeHearts {
     private static long heartStamp;
     private static long viewStamp;
     private static int hoverX, hoverY;
+    /** One warning for a failed pick for the crafting tree (see {@link Controller#pickForTree}). */
+    private static boolean warnedPick;
 
     private RecipeHearts() {}
 
@@ -150,9 +153,14 @@ public final class RecipeHearts {
             this.shape = view.shape();
             RecipeLookup.register(shape);
             for (RecipeData.Part part : shape.toData(null).results) resultIds.add(part.itemId());
-            String favorite = Favorites.itemFor(shape.id);
-            int at = favorite == null ? -1 : resultIds.indexOf(favorite);
-            selected = Math.max(0, at);
+            // the result this recipe is the favorite of, else the first
+            selected = 0;
+            for (int i = 0; i < resultIds.size(); i++) {
+                if (Favorites.sameRecipe(shape.id, Favorites.recipeFor(resultIds.get(i)))) {
+                    selected = i;
+                    break;
+                }
+            }
             hintsInjected = view instanceof JeiRecipeView jei && injectHints(jei.layout());
         }
 
@@ -199,9 +207,9 @@ public final class RecipeHearts {
             return AddonConfig.HEART_SCROLL_RESULT.get();
         }
 
+        /** Whether this recipe is the favorite of the selected result. */
         private boolean isOn() {
-            String favorite = Favorites.itemFor(shape.id);
-            return favorite != null && !resultIds.isEmpty() && favorite.equals(resultIds.get(selected));
+            return !resultIds.isEmpty() && Favorites.sameRecipe(shape.id, Favorites.recipeFor(resultIds.get(selected)));
         }
 
         void cycle(int dir) {
@@ -232,26 +240,80 @@ public final class RecipeHearts {
 
         @Override
         public boolean onPress(IJeiUserInput input) {
+            return press(input.isSimulate());
+        }
+
+        /**
+         * A click on the heart; {@code simulate}: only say whether it would be used. While a crafting tree waits for a recipe
+         * the click picks this recipe for the tree instead ({@link #pickForTree}); the click is always used then, and never
+         * turns a favorite off.
+         */
+        public boolean press(boolean simulate) {
             if (!usable()) return false;
-            if (!input.isSimulate()) toggle();
+            if (TreeRecipes.waiting()) {
+                if (!simulate) pickForTree();
+                return true;
+            }
+            if (!simulate) toggle();
             return true;
+        }
+
+        /**
+         * The favorite button while a tree waits: this recipe becomes the favorite of the item the tree looked up (or of the
+         * replaced node's item, see {@link TreeRecipes#waitingItemId}) when it makes that item, else of the selected result,
+         * and goes into the tree in place of the node's recipe.
+         */
+        private void pickForTree() {
+            try {
+                RecipeData data = shape.toData(null);
+                if (data.isEmpty()) {
+                    NeiAddon.LOGGER.info("Recipe {} not picked for the tree: it has no ingredients or results", shape.id);
+                    return;
+                }
+                String node = TreeRecipes.waitingItemId();
+                String result = node != null && resultIds.contains(node) ? node : resultIds.get(selected);
+                NeiAddon.LOGGER.info("Favorite {} -> {} (picked for the recipe tree; results {}, selected {})", result, shape.id, resultIds, selected);
+                Favorites.set(result, shape.id);
+                TreeRecipes.addToTree(data);
+            } catch (RuntimeException | LinkageError e) {
+                // the click is still used (press returns true)
+                if (!warnedPick) {
+                    warnedPick = true;
+                    NeiAddon.LOGGER.warn("Could not pick a recipe for the crafting tree", e);
+                } else {
+                    NeiAddon.LOGGER.debug("Could not pick a recipe for the crafting tree", e);
+                }
+            }
         }
 
         @Override
         public void getTooltips(ITooltipBuilder tooltip) {
-            tooltip.add(Component.translatable(isOn() ? "neiaddon.recipe.unfavorite" : "neiaddon.recipe.favorite"));
-            if (resultIds.size() > 1) {
-                tooltip.add(Component.literal("§7" + nameOf(resultIds.get(selected))));
-                if (!scrolls()) {
-                    tooltip.add(Component.literal("§7Shift+" + CalcKeys.FAVORITE.getTranslatedKeyMessage()
-                        .getString() + " over a result: favorite that one"));
-                } else {
-                    tooltip.add(Component.literal("§7Mouse wheel: Change result"));
-                }
+            for (Component line : tooltipLines()) tooltip.add(line);
+        }
+
+        /**
+         * The heart's tooltip lines: favorite state (or, while a tree waits, what the click does), the selected result, then
+         * the keys that work over it, as the item tooltips show them ("Hold ALT for hotkeys", the list while Alt is held).
+         */
+        public List<Component> tooltipLines() {
+            List<Component> tooltip = new ArrayList<>();
+            if (TreeRecipes.waiting()) {
+                tooltip.add(Component.translatable("neiaddon.recipe.tree_pick"));
+            } else {
+                tooltip.add(Component.translatable(isOn() ? "neiaddon.recipe.unfavorite" : "neiaddon.recipe.favorite"));
             }
-            String key = CalcKeys.ADD.getTranslatedKeyMessage()
-                .getString();
-            tooltip.add(Component.literal("§7Shift+" + key + ": Bookmark Recipe Tree"));
+            if (resultIds.size() > 1) tooltip.add(Component.literal("§7" + nameOf(resultIds.get(selected))));
+            Map<String, String> keys = new HashMap<>();
+            keys.put(CalcKeys.TREE.getTranslatedKeyMessage()
+                .getString(), "Open Recipe Tree");
+            keys.put(HotkeyTips.keys("SHIFT", HotkeyTips.addKey()), "Bookmark Recipe Tree");
+            if (resultIds.size() > 1) {
+                if (scrolls()) keys.put("Mouse wheel", "Change result");
+                else keys.put(HotkeyTips.keys("SHIFT", CalcKeys.FAVORITE.getTranslatedKeyMessage()
+                    .getString()), "Over a result: Favorite it");
+            }
+            for (String line : HotkeyTips.hotkeyLines(keys)) tooltip.add(Component.literal(line));
+            return tooltip;
         }
 
         @Override
@@ -450,7 +512,7 @@ public final class RecipeHearts {
         if (recipe == null || !recipe.usable()) return false;
         String result = recipe.hoveredResultId();
         if (result == null || !recipe.resultIds.contains(result)) return false;
-        boolean on = recipe.shape.id.equals(Favorites.recipeFor(result));
+        boolean on = Favorites.sameRecipe(recipe.shape.id, Favorites.recipeFor(result));
         NeiAddon.LOGGER.info("Favorite {} -> {} (hovered result)", result, on ? "removed" : recipe.shape.id);
         Favorites.set(result, on ? null : recipe.shape.id);
         recipe.selected = recipe.resultIds.indexOf(result);
@@ -533,12 +595,18 @@ public final class RecipeHearts {
     }
 
     /**
-     * Shift + tree key over a heart: saves the recipe tree and opens the calculator for the new group.
+     * The tree key (T, or Shift + T) over a heart: builds the recipe tree from the current
+     * favorites and opens it in the crafting tree window. A group of the active page whose top recipe is this one is
+     * refreshed in place; otherwise the tree is saved as a new group.
      */
-    public static boolean onShiftTreeKey() {
-        Controller heart = fresh(hoverHeart, heartStamp);
+    public static boolean onTreeKey() {
+        return openTree(fresh(hoverHeart, heartStamp));
+    }
+
+    /** The same for one recipe's heart; false when it has no usable recipe. */
+    public static boolean openTree(Controller heart) {
         if (heart == null || !heart.usable()) return false;
-        int gid = RecipeTree.save(heart.shape);
+        int gid = RecipeTree.saveOrReplace(heart.shape);
         if (gid != Bookmarks.NO_GROUP && Calculator.available()) {
             CraftingTreeScreen.open(Bookmarks.page(), gid);
         }
@@ -557,7 +625,7 @@ public final class RecipeHearts {
 
     /** The hotkey lines for a result slot: the favorite key, as the hint or (with Alt held) the list. */
     private static List<String> resultHint(Controller recipe, String result) {
-        boolean on = recipe.shape.id.equals(Favorites.recipeFor(result));
+        boolean on = Favorites.sameRecipe(recipe.shape.id, Favorites.recipeFor(result));
         java.util.Map<String, String> keys = new java.util.HashMap<>();
         keys.put(HotkeyTips.keys("SHIFT", CalcKeys.FAVORITE.getTranslatedKeyMessage()
             .getString()), on ? "Remove Favorite Recipe" : "Favorite Recipe for this Result");

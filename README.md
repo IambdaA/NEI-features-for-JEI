@@ -4,22 +4,47 @@ An unofficial port of features from [GTNH NotEnoughItems](https://github.com/GTN
 [Just Enough Items](https://github.com/mezz/JustEnoughItems), for **Minecraft 26.1.2 on NeoForge and on Fabric** (one project, two jars). Not affiliated with the
 NotEnoughItems authors.
 
+**Download:** [CurseForge](https://www.curseforge.com/minecraft/mc-mods/nei-features-for-jei)
+
 ## Features
 
+### From NEI
+
+Ported from [GTNH NotEnoughItems](https://github.com/GTNewHorizons/NotEnoughItems):
+
 - Bookmark panel with groups, todo-list and crafting-chain views, collapsed recipes, tag slots and multiple pages
-- Favorite recipes and recipe trees (heart button in JEI's recipe screen)
-- Crafting tree window with a stats panel (zoom, pan, collapse, inventory snapshot, search)
-- Autocrafting (Shift+C), pulling items from chests (V), chat links (Ctrl+L)
-- Crafting tree toolbar button "Save tree as image": the whole tree as one PNG in the screenshots folder
-- Crafting-chain group tooltip: hold Shift to count your inventory (missing items in red, required crafts), Ctrl to keep the amounts as they are
-- Item zoom: the hovered item drawn large beside the inventory (Shift+Z toggles, NEI options)
-- NEI recipe search: a field under JEI's recipe screen that filters the recipes shown (query like `<iron >rail`), and the same search syntax in the crafting tree search
-- Craftables panel (off by default, `craftablesEnabled` in the config): what the open container can craft from your inventory, above the quantity field
-- Recipe screen extras: fill the crafting grid with a recipe (S), highlight of the ingredients you already have, the favorite recipe as a picture beside item tooltips, favorites generated for items with a single recipe
-- Utility buttons above the bookmark panel (time of day, rain, heal, game mode; NEI's Cheat Mode setting) and the same as keys, data dumps, English-name search, many NEI settings (a few defaults differ from NEI's, see BUILDING.md)
+- Crafting chains: how often every recipe has to run, crafting tools counted by the durability they need
 - Fluid slots of JEI recipes (in millibuckets) in bookmarks, the chain maths and the crafting tree (first version)
-- Highlight tips HUD and item info pages
-- Crafting calculator
+- Favorite recipes and recipe trees (heart button in JEI's recipe screen)
+- Crafting tree window with a stats panel (zoom, pan, collapse, pick another recipe for an item, inventory snapshot,
+  search, save the whole tree as one PNG)
+- Autocrafting (Shift+C), pulling items from chests (V), chat links for items, recipes and groups (Ctrl+L)
+- Cheat mode, utility buttons (time of day, rain, heal, game mode) and the quantity field
+- NEI recipe search: a field under JEI's recipe screen that filters the recipes shown (query like `<iron >rail`), and
+  the same search syntax in the crafting tree search
+- Recipe screen extras: all items of a cycling slot in one grid (middle click), fill the crafting grid with a recipe
+  (S), highlight of the ingredients you already have, the favorite recipe as a picture beside item tooltips, favorites
+  generated for items with a single recipe
+- JEI's item list: subsets (S button), collapsible item groups, English-name search (Item Untranslator), copy an
+  item's name, tags or id
+- Item zoom (Shift+Z), craftables panel (off by default), highlight tips HUD, item info pages, data dumps
+- NEI's options screen and many of its settings (a few defaults differ from NEI's, see BUILDING.md)
+
+### Added by this mod
+
+Not in NEI:
+
+- Crafting-chain tooltip that counts your inventory: hold Shift for the missing items in red and the crafts still
+  needed, Shift+Ctrl to plan only what is missing
+- Crafting mode in the crafting tree: it counts your inventory live, and storage you open tints the items the tree
+  still needs (orange; Highlight Chain Items in the settings)
+- G in cheat mode gives everything a crafting chain is missing, tools included
+- Autocrafting in AE2 crafting terminals (from the network), Tinkers' Crafting Station and Sophisticated Storage's
+  crafting upgrade
+- AE2 and Refined Storage: bookmarks and tooltips show how many the network holds; T types an item into the AE2
+  terminal's search
+- JEI's own bookmark button and key fill the bookmark panel; JEI's settings on one page in the addon's settings
+- The bookmark panel moves out of the way of other mods' buttons (FTB mods, Curios and more)
 
 <details>
 <summary><b>Full feature guide</b> (click to expand)</summary>
@@ -48,9 +73,11 @@ A grid of bookmarked items on the left of inventory screens and JEI's recipe scr
 - **A** over a recipe's *output* bookmarks the recipe instead, when JEI's own "Bookmark Output as Recipe" option is on:
   the output item with the recipe type's icon in its corner, the recipe shown while Shift is held.
 - Drag items from JEI's list onto the panel.
+- Drag a bookmark onto another mod's filter or ghost slot to set that slot to it.
 - JEI's own bookmark button and key fill this panel too (setting: JEI's Bookmark Button Fills This Panel).
 - Fluids can be bookmarked (one bucket; Ctrl keeps the slot's amount).
-- **B** shows or hides the panel; so does JEI's bookmark button.
+- **B** shows or hides the panel; so does JEI's bookmark button. While you type in a search field (JEI's, AE2's, the
+  creative inventory's...), the addon's keys do nothing, so B and the other letters just type.
 
 **Using bookmarks**
 - **Left click / R**: recipes for the item. On a bookmarked recipe, JEI opens on that recipe first.
@@ -82,10 +109,13 @@ A grid of bookmarked items on the left of inventory screens and JEI's recipe scr
 ### Favorite recipes and recipe trees
 
 - Every recipe in JEI's recipe screen gets a **heart** button. Click it to make that recipe the item's favorite (red
-  heart). Scroll over the heart to pick which result it is for, or press **Shift + F** over a result.
+  heart). Hold **Alt** over it to see its keys. Scroll over the heart to pick which result it is for, or press **Shift + F** over a result.
 - **Shift + A** over a heart saves the whole recipe tree (the recipe, the favorite recipe of each ingredient, and so on,
-  up to the Depth setting) as a new bookmark group with the crafting chain on. **Shift + T** does the same and opens the
-  crafting tree. **Shift + A** over a recipe saves just that recipe.
+  up to the Depth setting) as a new bookmark group with the crafting chain on. **Shift + A** over a recipe saves just
+  that recipe.
+- **T** (or **Shift + T**) over a heart builds the tree from the current favorites and opens it in the crafting tree.
+  If the page already has a tree group whose top recipe is this recipe, that group is refreshed in place (same place,
+  its top recipe keeps its run count); otherwise the tree is saved as a new group.
 - Over an item in JEI's list: **Shift + A** bookmarks its favorite recipe, **Shift + F** saves its favorite recipe tree.
 - Generate Single-Recipe Favorites makes an item with only one recipe use it as its favorite.
 - Show Recipe Tooltips in Right Panel / Recipe Gui: an item's favorite recipe as a picture beside its tooltip.
@@ -101,12 +131,21 @@ group has to run so the end result gets everything it needs, using what you alre
 - Crafting tools (GregTech hammers, files...) are listed by the **durability** the chain needs, in blue, and turn red
   when all the tools of that kind in your inventory together don't have enough. A worn tool counts as the same tool.
 - **Alt + click** a recipe in a chain to collapse it into one block.
+- Storage you open tints the items the crafting trees in crafting mode on this page still need (orange); setting **Highlight Chain Items**.
 
 ### Crafting tree
 
-**T** over a crafting chain's strip opens it as a tree (or **Shift + T** over a heart).
+**T** over a crafting chain's strip opens it as a tree (or **T** over a recipe's heart, see Favorite recipes).
 - Scroll to zoom (setting: Tree Zoom without Ctrl), drag to pan, **Alt + click** an item to collapse or expand its
   recipe. Ctrl + scroll changes amounts, as in the panel. Hold Alt for the keys.
+- **Pick a recipe for an item**: click the item (left click for recipes, right click for usages). JEI's recipe screen
+  opens; click the **heart** of the recipe you want. That recipe replaces the clicked item's recipe in the tree, and the
+  tree opens again. The recipe becomes the favorite of the item you looked up for recipes (for a usages lookup, the item
+  of the replaced node, if any; else the heart's selected result when the recipe does not make that item). The click
+  never turns a favorite off: it replaces that item's earlier favorite, and other items lose this recipe as their
+  favorite, as with any favorite.
+- The crafting table button turns on **crafting mode**: the tree counts your inventory live (about once a second), so the
+  have and still-needed numbers and the greyed items follow what you carry, and storage you open is tinted for what the tree still needs.
 - The toolbar can use an inventory snapshot, fit the tree to the view, collapse finished items, collapse or expand all,
   send the group to chat, and **save the whole tree as an image** in the screenshots folder.
 - The stats panel lists handlers, ingredients and results; click a handler to highlight its recipes.
@@ -127,6 +166,14 @@ Open a crafting table (or your inventory for 2x2 recipes) and press **Shift + C*
   upgrade (not while the upgrade refills its own grid). Leftover ingredients go back into the table's own storage
   (a crafting station's side chest, the Sophisticated storage) when they came from there, and so do the items made
   on the way. The crafted items and your own tools end up in your inventory.
+- It works in an AE2 crafting terminal too (not tested on 26.1 yet): the network's items count as yours, the grid is filled
+  from the network, and what is left in the grid goes back into the network at the end (chat says so when it couldn't). A recipe whose
+  ingredients are not all in your inventory, the network or the grid is skipped before anything is moved; a recipe
+  whose result comes out as another item is skipped too, its ingredients go back into the network, and the end of the
+  run says what did not reach the grid. What the chain makes on the way goes into the network (AE2 refills the
+  grid from there; if the network refuses it, it comes to your inventory), and the items you asked for come to your
+  inventory; anything that doesn't fit there goes into the network too. A recipe whose tool isn't made yet waits for
+  it.
 - Recipes with a tool are filled up around the tool and crafted in one go; a broken tool is replaced from your inventory.
 - When it stops, or finishes without making something, chat says why.
 - Settings: Faster Autocrafting (crafts the exact amount from a full grid), Restore Inventory Layout (puts your items
@@ -191,7 +238,7 @@ Ctrl + Alt + scroll step. Type a number, click + / -, or scroll over it (Shift: 
   hold-to-show keys can be bound. Options in Settings > Item Zoom Panel.
 - **Craftables panel** (off by default): what the open container can craft from your inventory, above the Stack
   Controls. Shift + C over an entry crafts it.
-- **Highlight tips**: the block under your crosshair, shown NEI style. **Numpad 0** toggles it; bind "Move Highlight
+- **Highlight tips**: the block under your crosshair in a tooltip-style box. **Numpad 0** toggles it; bind "Move Highlight
   Tooltips" to drag it into place.
 - **Item info pages**: write extra info pages for items in `config/neiaddon/informationpages.cfg` (`filter = text`;
   filters are item ids with `*`, `$tag` or `@mod`). They show up in JEI on the item's recipe page.

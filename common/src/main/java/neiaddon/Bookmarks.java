@@ -117,6 +117,11 @@ public final class Bookmarks {
         public boolean todo;
         /** Recipes shown as one merged block in a crafting chain (NEI's collapsedRecipes). */
         public final Set<String> collapsedRecipes = new LinkedHashSet<>();
+        /**
+         * Crafting mode of the group's crafting tree: its tree counts the player's inventory live, and (with {@link #chain})
+         * the storage tint counts its items. Only in the bookmark file, not in a shared group.
+         */
+        public boolean crafting;
     }
 
     /** Separates recipe ids in a file line (they can hold any printable character). */
@@ -352,6 +357,7 @@ public final class Bookmarks {
                         m.chain = Boolean.parseBoolean(p[3]);
                         if (p.length >= 5) m.todo = Boolean.parseBoolean(p[4]);
                         if (p.length >= 6) readRecipes(m, p[5]);
+                        if (p.length >= 7) m.crafting = Boolean.parseBoolean(p[6]);
                     } else if (p.length >= 4 && p[0].equals("item") && current != null) {
                         readItem(current, p, Integer.parseInt(p[3]));
                     } else if (p.length >= 3 && p[0].equals("group")) {
@@ -430,7 +436,7 @@ public final class Bookmarks {
         for (Page page : pages) {
             if (page.isEmpty()) continue;
             lines.add("page");
-            page.metas.forEach((id, m) -> lines.add("meta\t" + id + "\t" + m.collapsed + "\t" + m.chain + "\t" + m.todo + "\t" + joinRecipes(m.collapsedRecipes)));
+            page.metas.forEach((id, m) -> lines.add("meta\t" + id + "\t" + m.collapsed + "\t" + m.chain + "\t" + m.todo + "\t" + joinRecipes(m.collapsedRecipes) + "\t" + m.crafting));
             for (Entry e : page.entries) lines.add(line(e));
             for (Entry e : page.ghosts) lines.add(line(e));
         }
@@ -675,6 +681,67 @@ public final class Bookmarks {
         page.normalize();
         save();
         return gid;
+    }
+
+    /**
+     * The crafting-chain group of the page whose top recipe (its first recipe row) is {@code recipeId}: the first such group
+     * in page order, or NO_GROUP when there is none.
+     */
+    public static int treeGroupOf(Page page, String recipeId) {
+        Set<Integer> looked = new HashSet<>();
+        for (Entry e : page.entries) {
+            // only the first recipe row of each group counts, so the first entry of the group that is a recipe
+            if (!e.isRecipe() || e.groupId == NO_GROUP || !looked.add(e.groupId)) continue;
+            GroupMeta m = page.metas.get(e.groupId);
+            if (m != null && m.chain && Favorites.sameRecipe(recipeId, e.recipeId)) return e.groupId;
+        }
+        return NO_GROUP;
+    }
+
+    /**
+     * Replaces the recipes of a crafting-chain group with a new recipe tree (top recipe first), written as {@link #addGroup}
+     * writes them, but into the same group and place: the group keeps its view flags and its plain items, the top recipe
+     * keeps its run count (the other recipes run once), and collapsed recipes that are no longer in the group are dropped.
+     *
+     * @return the group id, or NO_GROUP (nothing changed) when the tree has no recipe
+     */
+    public static int replaceGroup(Page page, int groupId, List<RecipeData> recipes) {
+        String top = null;
+        for (Entry e : page.entries) {
+            if (e.groupId == groupId && e.isRecipe()) {
+                top = e.recipeId;
+                break;
+            }
+        }
+        long topRuns = top == null ? 1 : recipeMultiplier(page, top, groupId);
+        List<Entry> fresh = new ArrayList<>();
+        Set<String> unique = new HashSet<>();
+        for (RecipeData r : recipes) {
+            if (r.isEmpty() || !unique.add(r.recipeId)) continue;
+            long runs = Favorites.sameRecipe(r.recipeId, top) ? topRuns : 1;
+            for (RecipeData.Part part : r.results) {
+                fresh.add(recipeEntry(part, r.recipeId, ChainItem.Type.RESULT, runs, groupId));
+            }
+            for (RecipeData.Part part : r.ingredients) {
+                fresh.add(recipeEntry(part, r.recipeId, ChainItem.Type.INGREDIENT, runs, groupId));
+            }
+        }
+        if (fresh.isEmpty()) return NO_GROUP;
+        // the place of the group: where its first item is now (the recipes go back to that index)
+        int at = page.entries.size();
+        for (int i = 0; i < page.entries.size(); i++) {
+            if (page.entries.get(i).groupId == groupId) {
+                at = i;
+                break;
+            }
+        }
+        // only the installed recipe rows go; ghost lines (rows of uninstalled mods) stay as they are
+        page.entries.removeIf(e -> e.groupId == groupId && e.isRecipe());
+        page.entries.addAll(at, fresh);
+        // normalize() also drops the collapsed recipes that are no longer in the group
+        page.normalize();
+        save();
+        return groupId;
     }
 
     public static boolean removeRecipe(Page page, String recipeId, int groupId) {
