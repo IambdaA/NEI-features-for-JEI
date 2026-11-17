@@ -6,6 +6,7 @@ import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.ingredients.ITypedIngredient;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -176,7 +177,56 @@ public final class CalcKeys {
 
     static boolean typing() {
         return QuantityField.focused() || Calculator.runtime != null && Calculator.runtime.getIngredientListOverlay()
-            .hasKeyboardFocus();
+            .hasKeyboardFocus() || textFieldFocused(McCompat.screen());
+    }
+
+    private static boolean warnedTextFields;
+
+    /** Per screen class, its text box fields (AE2's search, the creative search): looked up once. */
+    private static final ClassValue<java.util.List<java.lang.reflect.Field>> TEXT_FIELDS = new ClassValue<>() {
+
+        @Override
+        protected java.util.List<java.lang.reflect.Field> computeValue(Class<?> type) {
+            java.util.List<java.lang.reflect.Field> out = new java.util.ArrayList<>();
+            for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+                try {
+                    for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                        if (java.lang.reflect.Modifier.isStatic(f.getModifiers()) || !EditBox.class.isAssignableFrom(f.getType())) continue;
+                        f.setAccessible(true);
+                        out.add(f);
+                    }
+                } catch (RuntimeException | LinkageError e) {
+                    // a class whose fields cannot be read: its text boxes are found among the screen's widgets only
+                    if (!warnedTextFields) {
+                        warnedTextFields = true;
+                        NeiAddon.LOGGER.warn("Could not read the text box fields of {}; only its widgets are checked for typing", c.getName(), e);
+                    }
+                }
+            }
+            return out;
+        }
+    };
+
+    /**
+     * Whether a text box of the open screen takes typing now (a search field of AE2, the creative inventory, another
+     * mod): then the addon's keys stay out of the way, as over JEI's search. Its widgets and its text box fields count.
+     */
+    private static boolean textFieldFocused(Screen screen) {
+        if (screen == null) return false;
+        try {
+            for (net.minecraft.client.gui.components.events.GuiEventListener child : screen.children()) {
+                if (child instanceof EditBox box && box.canConsumeInput()) return true;
+            }
+            for (java.lang.reflect.Field f : TEXT_FIELDS.get(screen.getClass())) {
+                if (f.get(screen) instanceof EditBox box && box.canConsumeInput()) return true;
+            }
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            if (!warnedTextFields) {
+                warnedTextFields = true;
+                NeiAddon.LOGGER.warn("Could not check the screen's text boxes; the addon's keys may act while typing there", e);
+            }
+        }
+        return false;
     }
 
     /** While a screen (inventory, JEI recipes...) is open. */
@@ -254,8 +304,9 @@ public final class CalcKeys {
                 return;
             }
         }
-        if (shift && McCompat.matches(TREE, key) && RecipeHearts.onShiftTreeKey()) {
-            // NEI: Shift + the tree key over a heart saves the recipe tree and opens it
+        if (McCompat.matches(TREE, key) && RecipeHearts.onTreeKey()) {
+            // the tree key over a heart (or EMI's default button) builds the recipe tree from the favorites and opens it.
+            // The AE2 search (also T, HIGH priority) still gets T first on AE2 screens; no heart is on those screens.
             event.setCanceled(true);
         } else if (McCompat.matches(ADD, key)) {
             if (shift && RecipeHearts.onShiftBookmarkKey()) {

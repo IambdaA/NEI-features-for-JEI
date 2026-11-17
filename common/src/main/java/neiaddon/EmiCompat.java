@@ -36,6 +36,9 @@ public final class EmiCompat {
         /** The EMI recipe with this addon recipe id, as a shape carrying recipeId and a handle, or null. hint = an item it makes. */
         Found find(String recipeId, ItemStack hint);
 
+        /** EMI's picture of the EMI recipe with this addon recipe id (for a recipe JEI has no layout of), or null. hint = an item it makes. */
+        Picture picture(String recipeId, ItemStack hint);
+
         /** Whether EMI has finished loading its recipes. */
         boolean loaded();
 
@@ -44,6 +47,30 @@ public final class EmiCompat {
 
         /** The icon of the EMI category with this id, or null when EMI has none. */
         IDrawable categoryIcon(String id);
+
+        /** Drops the stack (an item, or a fluid carrier) on a target of the open screen through EMI's drag-and-drop handlers; true when one took it. */
+        boolean dropStack(Screen screen, ItemStack stack, int x, int y);
+
+        /** EMI's player-set default recipe of the item (a stack; a fluid carrier for a fluid), as the addon's recipe id; null when there is none. EMI's built-in defaults do not count. */
+        String defaultRecipe(ItemStack item);
+
+        /** The item id (see {@link FluidStacks}) whose EMI default recipe is the one with this addon recipe id, or null. */
+        String defaultItemOf(String recipeId);
+
+        /** Makes the EMI recipe with this addon recipe id the default of the item; false when EMI has no such recipe. hint = an item it makes. */
+        boolean setDefault(ItemStack item, String recipeId, ItemStack hint);
+
+        /** Removes EMI's player-set default recipe of the item, when it has the addon recipe id onlyRecipeId (any when null). */
+        void clearDefault(ItemStack item, String onlyRecipeId);
+
+        /** Removes the player-set default of every other output of the recipe (not keepItemId) that has this recipe. */
+        void clearOtherDefaults(String recipeId, String keepItemId);
+
+        /**
+         * Once per client tick: the EMI favorites added since the last tick become bookmarks when panelShown (and are
+         * removed from EMI's favorites); otherwise they stay EMI's. Favorites with a recipe context are left alone.
+         */
+        void favoritesTick(boolean panelShown);
     }
 
     /** One EMI recipe as a transfer target. Implementations never throw. */
@@ -72,6 +99,20 @@ public final class EmiCompat {
 
     /** An EMI recipe found for an addon recipe id: its shape, and the handle that shows and fills it. */
     public record Found(RecipeShape shape, RecipeHandle handle) {}
+
+    /** EMI's drawing of one recipe (its box, border included), for a bookmark's tooltip. Implementations never throw. */
+    public interface Picture {
+
+        int width();
+
+        int height();
+
+        /** Draws the box with its top left corner at (x, y). */
+        void draw(GuiGraphics g, int x, int y);
+
+        /** True once drawing has failed; the picture then draws nothing and should not be shown. */
+        boolean broken();
+    }
 
     /**
      * The addon's buttons on EMI's recipe screen (see {@link #recipeScreen}). The screen is EMI's internal class, so the
@@ -235,6 +276,83 @@ public final class EmiCompat {
         }
     }
 
+    private static boolean defaultsFailed;
+
+    /**
+     * Whether EMI's default recipes can be read now: EMI is there, its recipes are loaded and the defaults have not failed.
+     * Without it, an item with no EMI default may still have one, so the favorites file must not be trusted to be
+     * out of date (see {@link Favorites}).
+     */
+    public static boolean defaultsReady() {
+        return hooks != null && !defaultsFailed && !loading();
+    }
+
+    /** EMI's default recipe of the item, as the addon's recipe id; null when EMI has none (or is not ready). */
+    public static String defaultRecipe(ItemStack item) {
+        Hooks h = hooks;
+        if (h == null || !defaultsReady()) return null;
+        try {
+            return h.defaultRecipe(item);
+        } catch (RuntimeException | LinkageError e) {
+            defaultsFailed(e);
+            return null;
+        }
+    }
+
+    /** The item id whose EMI default recipe is the one with this addon recipe id; null when there is none (or EMI is not ready). */
+    public static String defaultItemOf(String recipeId) {
+        Hooks h = hooks;
+        if (h == null || !defaultsReady()) return null;
+        try {
+            return h.defaultItemOf(recipeId);
+        } catch (RuntimeException | LinkageError e) {
+            defaultsFailed(e);
+            return null;
+        }
+    }
+
+    /** Makes the EMI recipe with this addon id the default of the item; false when EMI has no such recipe or cannot take it. */
+    public static boolean setDefault(ItemStack item, String recipeId, ItemStack hint) {
+        Hooks h = hooks;
+        if (h == null || defaultsFailed || loading()) return false;
+        try {
+            return h.setDefault(item, recipeId, hint);
+        } catch (RuntimeException | LinkageError e) {
+            defaultsFailed(e);
+            return false;
+        }
+    }
+
+    /** Removes EMI's player-set default of the item, when it is the one with this addon id (any when null). Not while EMI loads. */
+    public static void clearDefault(ItemStack item, String onlyRecipeId) {
+        Hooks h = hooks;
+        if (h == null || defaultsFailed || loading()) return;
+        try {
+            h.clearDefault(item, onlyRecipeId);
+        } catch (RuntimeException | LinkageError e) {
+            defaultsFailed(e);
+        }
+    }
+
+    /** Removes the player-set defaults of the recipe's other outputs (not keepItemId). Not while EMI loads. */
+    public static void clearOtherDefaults(String recipeId, String keepItemId) {
+        Hooks h = hooks;
+        if (h == null || defaultsFailed || loading()) return;
+        try {
+            h.clearOtherDefaults(recipeId, keepItemId);
+        } catch (RuntimeException | LinkageError e) {
+            defaultsFailed(e);
+        }
+    }
+
+    /** EMI's default recipes are not used from now on; one warning is logged. */
+    private static void defaultsFailed(Throwable e) {
+        if (!defaultsFailed) {
+            defaultsFailed = true;
+            NeiAddon.LOGGER.warn("Could not read or change EMI's default recipes; the favorites file is used alone", e);
+        }
+    }
+
     /** One warning, then the addon's widgets keep their own places next to EMI. */
     private static void layoutFailed(Throwable e) {
         layout = null;
@@ -251,6 +369,42 @@ public final class EmiCompat {
             failed = true;
             NeiAddon.LOGGER.warn("Could not read EMI's cheat mode; it counts as off", e);
             return false;
+        }
+    }
+
+    private static boolean dropFailed;
+
+    /**
+     * Drops a stack that was dragged out of the bookmark panel on a target of the open screen through EMI's own drag-and-drop
+     * handlers (the slots other mods let EMI's item list drop on). False without EMI, when no handler takes it, and for good
+     * after one failure (one warning is logged).
+     */
+    public static boolean dropStack(Screen screen, ItemStack stack, int x, int y) {
+        Hooks h = hooks;
+        if (h == null || dropFailed) return false;
+        try {
+            return h.dropStack(screen, stack, x, y);
+        } catch (RuntimeException | LinkageError e) {
+            dropFailed = true;
+            NeiAddon.LOGGER.warn("Could not drop a bookmark through EMI's drag and drop; only JEI's drop targets are used", e);
+            return false;
+        }
+    }
+
+    private static boolean favoritesFailed;
+
+    /**
+     * Turns the EMI favorites added since the last tick into bookmarks while the bookmark panel is shown (see
+     * {@link Hooks#favoritesTick}). Not while EMI loads. A failure turns it off for good (one warning is logged).
+     */
+    static void favoritesTick(boolean panelShown) {
+        Hooks h = hooks;
+        if (h == null || favoritesFailed || !recipesAvailable() || loading()) return;
+        try {
+            h.favoritesTick(panelShown);
+        } catch (RuntimeException | LinkageError e) {
+            favoritesFailed = true;
+            NeiAddon.LOGGER.warn("Could not turn EMI favorites into bookmarks; A over EMI's lists makes EMI favorites again", e);
         }
     }
 
@@ -294,6 +448,29 @@ public final class EmiCompat {
             return hooks.find(recipeId, hint);
         } catch (RuntimeException | LinkageError e) {
             recipesFailed(e);
+            return null;
+        }
+    }
+
+    private static boolean pictureFailed;
+
+    /** True once {@link #picture} has failed; pictures cached before that must not be shown any more. */
+    public static boolean picturesFailed() {
+        return pictureFailed;
+    }
+
+    /**
+     * EMI's picture of the EMI recipe with this addon recipe id, or null when EMI has none or its recipes cannot be used right
+     * now. A failure turns EMI's pictures off for good (one warning is logged).
+     */
+    public static Picture picture(String recipeId, ItemStack hint) {
+        Hooks h = hooks;
+        if (h == null || pictureFailed || !recipesAvailable() || loading()) return null;
+        try {
+            return h.picture(recipeId, hint);
+        } catch (RuntimeException | LinkageError e) {
+            pictureFailed = true;
+            NeiAddon.LOGGER.warn("Could not draw an EMI recipe in the bookmark tooltip; EMI pictures are off from now on", e);
             return null;
         }
     }
@@ -430,6 +607,14 @@ public final class EmiCompat {
     /** Once per client tick, on EMI's recipe screen: the recipe search applies its filter here (never while drawing). */
     @SubscribeEvent
     static void onTick(ClientTickEvent.Post event) {
+        // once per tick, so each item's EMI default is looked up at most once per frame (see Favorites.recipeFor)
+        Favorites.clearEmiLookups();
+        if (present()) {
+            // EMI reads A over its lists first and makes a favorite; while the bookmark panel is shown that favorite
+            // becomes a bookmark (isActive: drawn at its last frame, so not when the window has no room for it)
+            Screen shown = McCompat.screen();
+            favoritesTick(BookmarkPanel.supports(shown) && !BookmarkPanel.isHidden() && BookmarkPanel.isActive());
+        }
         RecipeSearchHooks search = recipeSearch;
         if (search == null) return;
         Screen screen = McCompat.screen();

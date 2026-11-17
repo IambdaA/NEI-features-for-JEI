@@ -1,5 +1,6 @@
 package neiaddon.emi;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import dev.emi.emi.api.EmiApi;
 import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.recipe.EmiRecipeCategory;
@@ -8,7 +9,10 @@ import dev.emi.emi.api.stack.EmiStack;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,12 +24,16 @@ import mezz.jei.api.recipe.IRecipeManager;
 import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import mezz.jei.api.runtime.IJeiRuntime;
+import neiaddon.Bookmarks;
 import neiaddon.Calculator;
 import neiaddon.EmiCompat;
+import neiaddon.Favorites;
 import neiaddon.FluidStacks;
 import neiaddon.NeiAddon;
+import neiaddon.RecipeData;
 import neiaddon.RecipeShape;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
@@ -102,6 +110,81 @@ public final class EmiBridge implements EmiCompat.Hooks {
 
     @Override
     public EmiCompat.Found find(String recipeId, ItemStack hint) {
+        Hit hit = locate(recipeId, hint);
+        return hit == null ? null : foundOf(hit.recipe(), hit.mapped(), recipeId);
+    }
+
+    /** EMI's recipe drawing, read by reflection (see {@link #picture}), looked up once. */
+    private static Method pictureWrap;
+    private static Method pictureRender;
+    /** Set when drawing a picture failed: EMI pictures are off for good (one warning is logged). */
+    private static boolean pictureBroken;
+
+    /**
+     * EMI's picture of the recipe, drawn by EMI's own recipe drawing ({@code EmiRenderHelper.renderRecipe} on
+     * {@code EmiDrawContext.wrap(g)}, the way EMI's recipe tooltip draws it, without missing-ingredient marks). Its box is the
+     * display plus a border of 4 on each side, as {@code renderRecipeBackground} draws it. Null when EMI has no such recipe.
+     * A failure to find EMI's drawing throws, so {@link EmiCompat} turns pictures off once.
+     */
+    @Override
+    public EmiCompat.Picture picture(String recipeId, ItemStack hint) {
+        if (pictureBroken || recipeId == null) return null;
+        Hit hit = locate(recipeId, hint);
+        if (hit == null) return null;
+        try {
+            pictureMethods();
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("EMI's recipe drawing could not be found", e);
+        }
+        try {
+            return new Picture(hit.recipe(), hit.recipe().getDisplayWidth() + 8, hit.recipe().getDisplayHeight() + 8);
+        } catch (RuntimeException | LinkageError e) {
+            recipeFailed(e);
+            return null;
+        }
+    }
+
+    private static void pictureMethods() throws ReflectiveOperationException {
+        if (pictureRender != null) return;
+        Class<?> context = Class.forName("dev.emi.emi.runtime.EmiDrawContext");
+        pictureWrap = context.getMethod("wrap", GuiGraphics.class);
+        pictureRender = Class.forName("dev.emi.emi.EmiRenderHelper")
+            .getMethod("renderRecipe", EmiRecipe.class, context, int.class, int.class, boolean.class, int.class);
+    }
+
+    /** One EMI recipe drawn by EMI's own drawing; the box is {@code width} by {@code height} (the border included). */
+    private record Picture(EmiRecipe recipe, int width, int height) implements EmiCompat.Picture {
+
+        @Override
+        public boolean broken() {
+            return pictureBroken;
+        }
+
+        @Override
+        public void draw(GuiGraphics g, int x, int y) {
+            if (pictureBroken) return;
+            try {
+                // showMissing false and no overlay colour (-1), as EMI's RecipeTooltipComponent draws it by default
+                Object context = pictureWrap.invoke(null, g);
+                pictureRender.invoke(null, recipe, context, x, y, false, -1);
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+                pictureBroken = true;
+                NeiAddon.LOGGER.warn("Could not draw an EMI recipe in the bookmark tooltip; EMI pictures are off from now on", e);
+            } finally {
+                // renderRecipe masks colour writes between its passes; a throw in between would leave them masked
+                RenderSystem.colorMask(true, true, true, true);
+            }
+        }
+    }
+
+    /** An EMI recipe and its mapping, as {@link #locate} finds them. */
+    private record Hit(EmiRecipe recipe, Mapped mapped) {}
+
+    /**
+     * The EMI recipe with this addon recipe id, or null when EMI has none. An identifier id is looked up by id; any other
+     * id is searched for among the recipes of the hint's item (so a null hint finds only identifier ids).
+     */
+    private static Hit locate(String recipeId, ItemStack hint) {
         int bar = recipeId.indexOf('|');
         int hash = recipeId.indexOf('#');
         boolean byIdentifier = bar >= 0 && (hash < 0 || bar < hash);
@@ -109,7 +192,7 @@ public final class EmiBridge implements EmiCompat.Hooks {
         if (sep <= 0) return null;
         String rest = recipeId.substring(sep + 1);
         if (byIdentifier) {
-            EmiCompat.Found found = byRecipeId(rest, recipeId);
+            Hit found = byRecipeId(rest);
             if (found != null) return found;
         }
         if (hint == null || hint.isEmpty()) return null;
@@ -120,7 +203,7 @@ public final class EmiBridge implements EmiCompat.Hooks {
                 Mapped m = map(r);
                 if (m == null) continue;
                 boolean accepted = byIdentifier ? rest.equals(restOf(m.shape().id)) : recipeId.equals(m.shape().id);
-                if (accepted) return foundOf(r, m, recipeId);
+                if (accepted) return new Hit(r, m);
             } catch (RuntimeException | LinkageError e) {
                 recipeFailed(e);
             }
@@ -129,7 +212,7 @@ public final class EmiBridge implements EmiCompat.Hooks {
     }
 
     /** The EMI recipe with this id (a JEI-era category may name it differently), or null when EMI has none. */
-    private static EmiCompat.Found byRecipeId(String identifier, String recipeId) {
+    private static Hit byRecipeId(String identifier) {
         ResourceLocation id = ResourceLocation.tryParse(identifier);
         if (id == null) return null;
         try {
@@ -138,11 +221,181 @@ public final class EmiBridge implements EmiCompat.Hooks {
             if (r == null || !usable(r)) return null;
             Mapped m = map(r);
             if (m == null || !identifier.equals(restOf(m.shape().id))) return null;
-            return foundOf(r, m, recipeId);
+            return new Hit(r, m);
         } catch (RuntimeException | LinkageError e) {
             recipeFailed(e);
             return null;
         }
+    }
+
+    // ---------------------------------------------------------------- EMI's player-set default recipes (BoM)
+
+    /**
+     * EMI's player-set default recipes are internal (dev.emi.emi.bom.BoM), so they are called by reflection, looked up
+     * once: the public static map addedRecipes (ingredient -> recipe; EMI's built-in defaults are not in it), and the
+     * static addRecipe and removeRecipe of an ingredient and a recipe. EMI saves its data itself on add and remove.
+     */
+    private static Method[] bom;
+    private static Field addedRecipes;
+
+    private static Method bomMethod(int which) throws ReflectiveOperationException {
+        if (bom == null) {
+            Class<?> c = Class.forName("dev.emi.emi.bom.BoM");
+            Method[] found = new Method[] {
+                c.getMethod("addRecipe", EmiIngredient.class, EmiRecipe.class),
+                c.getMethod("removeRecipe", EmiIngredient.class, EmiRecipe.class) };
+            addedRecipes = c.getField("addedRecipes");
+            bom = found;
+        }
+        return bom[which];
+    }
+
+    /** EMI's player-set default recipe of the stack (not a built-in default), or null. */
+    private static EmiRecipe playerDefaultOf(EmiStack stack) throws ReflectiveOperationException {
+        bomMethod(0);
+        Object map = addedRecipes.get(null);
+        return map instanceof Map<?, ?> m ? (EmiRecipe) m.get(stack) : null;
+    }
+
+    /** The addon's recipe id of an EMI recipe (its {@link #map} shape id), or null; cached per EMI recipe until EMI reloads. */
+    private static final Map<EmiRecipe, String> ids = new IdentityHashMap<>();
+    /** The EMI recipe and mapping for a recipe id with no item to search by (see {@link #locateCached}), until EMI reloads. */
+    private static final Map<String, Optional<Hit>> located = new HashMap<>();
+    private static int cacheGeneration = -1;
+
+    /** Drops the caches when EMI has reloaded since they were filled: its recipes are new objects then. */
+    private static void checkCache() {
+        int now = EmiCompat.generation();
+        if (now != cacheGeneration) {
+            cacheGeneration = now;
+            ids.clear();
+            located.clear();
+        }
+    }
+
+    private static String idOf(EmiRecipe r) {
+        checkCache();
+        String id = ids.get(r);
+        if (id == null) {
+            id = "";
+            try {
+                Mapped m = map(r);
+                if (m != null) id = m.shape().id;
+            } catch (RuntimeException | LinkageError e) {
+                recipeFailed(e);
+            }
+            ids.put(r, id);
+        }
+        return id.isEmpty() ? null : id;
+    }
+
+    /** {@link #locate} with no item to search by, remembered until EMI reloads. */
+    private static Hit locateCached(String recipeId) {
+        checkCache();
+        Optional<Hit> known = located.get(recipeId);
+        if (known == null) {
+            known = Optional.ofNullable(locate(recipeId, null));
+            located.put(recipeId, known);
+        }
+        return known.orElse(null);
+    }
+
+    /** The item id (see {@link FluidStacks}) of an EMI output: fluid:ns:path for a fluid, else the item's id. */
+    private static String itemIdOf(EmiStack s) {
+        if (s.getKey() instanceof Fluid f && f != Fluids.EMPTY) return FluidStacks.PREFIX + BuiltInRegistries.FLUID.getKey(f);
+        ItemStack is = s.getItemStack();
+        return is.isEmpty() ? null : RecipeData.idOf(is);
+    }
+
+    @Override
+    public String defaultRecipe(ItemStack item) {
+        EmiStack stack = emiStackOf(item);
+        if (stack.isEmpty()) return null;
+        try {
+            EmiRecipe r = playerDefaultOf(stack);
+            return r == null || !usable(r) ? null : idOf(r);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("EMI's default recipes could not be read", e);
+        }
+    }
+
+    @Override
+    public String defaultItemOf(String recipeId) {
+        Hit hit = locateCached(recipeId);
+        // shortcut: an EMI recipe with a hash id (uid#hash) cannot be located without an item, so it is not found here;
+        // the heart and the keys still find its item through the item's own favorite (Favorites.recipeFor)
+        if (hit == null) return null;
+        try {
+            for (EmiStack out : hit.recipe()
+                .getOutputs()) {
+                if (out.isEmpty()) continue;
+                if (hit.recipe()
+                    .equals(playerDefaultOf(out))) return itemIdOf(out);
+            }
+            return null;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("EMI's default recipes could not be read", e);
+        }
+    }
+
+    @Override
+    public boolean setDefault(ItemStack item, String recipeId, ItemStack hint) {
+        EmiStack stack = emiStackOf(item);
+        if (stack.isEmpty()) return false;
+        Hit hit = locate(recipeId, hint);
+        if (hit == null) return false;
+        try {
+            bomMethod(0).invoke(null, stack, hit.recipe());
+            return true;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("EMI's default recipes could not be changed", e);
+        }
+    }
+
+    /**
+     * The other items of a recipe lose their player-set default for it (the NEI rule for one favorite per recipe): every
+     * output of the recipe except keepItemId whose player-set default is this recipe.
+     */
+    @Override
+    public void clearOtherDefaults(String recipeId, String keepItemId) {
+        Hit hit = locateCached(recipeId);
+        // shortcut: a recipe with a hash id cannot be located without an item here, so its other items keep their defaults
+        if (hit == null) return;
+        try {
+            for (EmiStack out : hit.recipe()
+                .getOutputs()) {
+                if (out.isEmpty() || keepItemId.equals(itemIdOf(out))) continue;
+                if (hit.recipe()
+                    .equals(playerDefaultOf(out))) bomMethod(1).invoke(null, out, hit.recipe());
+            }
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("EMI's default recipes could not be changed", e);
+        }
+    }
+
+    @Override
+    public void clearDefault(ItemStack item, String onlyRecipeId) {
+        EmiStack stack = emiStackOf(item);
+        if (stack.isEmpty()) return;
+        try {
+            EmiRecipe current = playerDefaultOf(stack);
+            if (current == null) return;
+            if (onlyRecipeId != null && !Favorites.sameRecipe(onlyRecipeId, idOf(current))) return;
+            bomMethod(1).invoke(null, stack, current);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("EMI's default recipes could not be changed", e);
+        }
+    }
+
+    /** A target for a recipe on EMI's recipe screen, with the JEI recipe it maps to (if any), as {@link #foundOf} makes. */
+    static EmiTarget targetOf(EmiRecipe r) {
+        Mapped m = null;
+        try {
+            m = map(r);
+        } catch (RuntimeException | LinkageError e) {
+            recipeFailed(e);
+        }
+        return m == null ? new EmiTarget(r, null, null) : new EmiTarget(r, m.jeiCategory(), m.jeiRecipe());
     }
 
     /** The addon's view of an EMI recipe: its shape under the addon id, and a target that shows and fills it. */
@@ -160,6 +413,117 @@ public final class EmiBridge implements EmiCompat.Hooks {
     public IDrawable categoryIcon(String id) {
         EmiRecipeCategory category = categoryOf(id);
         return category == null ? null : icon(category);
+    }
+
+    private static Method dropMethod;
+
+    /**
+     * EMI's drag-and-drop handlers are not in its API as a call, only as the registry that EMI's own item list drops into
+     * ({@code EmiDragDropHandlers.dropStack(screen, stack, x, y)}), so it is found by name. A failure disables this for good
+     * ({@link EmiCompat#dropStack} logs it once).
+     */
+    @Override
+    public boolean dropStack(Screen screen, ItemStack stack, int x, int y) {
+        EmiStack emi = emiStackOf(stack);
+        if (emi.isEmpty()) return false;
+        try {
+            if (dropMethod == null) {
+                for (Method m : Class.forName("dev.emi.emi.registry.EmiDragDropHandlers")
+                    .getMethods()) {
+                    if (m.getName()
+                        .equals("dropStack") && m.getParameterCount() == 4 && java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
+                        dropMethod = m;
+                        break;
+                    }
+                }
+                if (dropMethod == null) throw new NoSuchMethodException("EmiDragDropHandlers.dropStack(screen, stack, x, y)");
+            }
+            return Boolean.TRUE.equals(dropMethod.invoke(null, screen, emi, x, y));
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("EMI's drag and drop could not be called", e);
+        }
+    }
+
+    // ---------------------------------------------------------------- EMI's favorites as bookmarks
+
+    /**
+     * EMI's favorites are internal (dev.emi.emi.runtime.EmiFavorites), so they are read and removed by reflection, looked up
+     * once: the public static list favorites, EmiFavorite.getRecipe and getStack, EmiFavorites.removeFavorite(ingredient),
+     * and EmiPersistentData.save() (EMI calls it after its own favorite changes; removeFavorite does not).
+     */
+    private static Field favoritesList;
+    private static Method favoriteRecipe;
+    private static Method favoriteStack;
+    private static Method removeFavorite;
+    private static Method saveFavorites;
+    /** The favorites seen on the last tick (by identity), and the EMI reload generation they were seen in. */
+    private static Set<Object> seenFavorites;
+    private static int seenGeneration = -1;
+
+    private static void favoriteMethods() throws ReflectiveOperationException {
+        if (favoritesList != null) return;
+        Class<?> favorite = Class.forName("dev.emi.emi.runtime.EmiFavorite");
+        Class<?> favorites = Class.forName("dev.emi.emi.runtime.EmiFavorites");
+        favoriteRecipe = favorite.getMethod("getRecipe");
+        favoriteStack = favorite.getMethod("getStack");
+        removeFavorite = favorites.getMethod("removeFavorite", EmiIngredient.class);
+        saveFavorites = Class.forName("dev.emi.emi.runtime.EmiPersistentData").getMethod("save");
+        favoritesList = favorites.getField("favorites");
+    }
+
+    /**
+     * Every tick: the favorites that are new since the last tick become bookmarks when the bookmark panel is shown
+     * (panelShown), and are removed from EMI's favorites; with the panel hidden they stay EMI's. The first tick after EMI
+     * (re)loaded its favorites only records them, so the loaded ones are never converted. Favorites with a recipe context
+     * (EMI's recipe screen) are left alone. Failures go to {@link EmiCompat}, which turns this off for good.
+     */
+    @Override
+    public void favoritesTick(boolean panelShown) {
+        try {
+            favoriteMethods();
+            List<?> now = (List<?>) favoritesList.get(null);
+            int generation = EmiCompat.generation();
+            boolean record = seenFavorites == null || generation != seenGeneration;
+            seenGeneration = generation;
+            if (!record && panelShown) {
+                for (Object favorite : new ArrayList<>(now)) {
+                    if (seenFavorites.contains(favorite) || favoriteRecipe.invoke(favorite) != null) continue;
+                    convertFavorite(favorite);
+                }
+            }
+            Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+            seen.addAll((List<?>) favoritesList.get(null));
+            seenFavorites = seen;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("EMI's favorites could not be read or changed", e);
+        }
+    }
+
+    /**
+     * One new EMI favorite as a bookmark, then removed from EMI's favorites and saved the way EMI saves. The item is the
+     * first stack of the favorite (a fluid as its carrier, one bucket, as the addon's own fluid bookmarks are); it is added
+     * only if it is not bookmarked yet, so the key never removes a bookmark.
+     */
+    private static void convertFavorite(Object favorite) throws ReflectiveOperationException {
+        EmiIngredient ingredient = (EmiIngredient) favoriteStack.invoke(favorite);
+        List<EmiStack> stacks = ingredient.getEmiStacks()
+            .stream()
+            .filter(s -> !s.isEmpty())
+            .toList();
+        if (stacks.isEmpty()) return;
+        EmiStack first = stacks.get(0);
+        ItemStack item;
+        long amount = 1;
+        if (first.getKey() instanceof Fluid f && f != Fluids.EMPTY) {
+            item = FluidStacks.carrier(BuiltInRegistries.FLUID.getKey(f));
+            amount = 1000;
+        } else {
+            item = first.getItemStack();
+        }
+        if (item.isEmpty()) return;
+        if (!Bookmarks.isBookmarked(item)) Bookmarks.add(item, amount);
+        removeFavorite.invoke(null, favorite);
+        saveFavorites.invoke(null);
     }
 
     /** The EMI category with this id, or null. */

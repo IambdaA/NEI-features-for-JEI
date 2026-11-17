@@ -72,7 +72,7 @@ public final class CraftablesPanel {
         }
 
         boolean favorite() {
-            return id.equals(Favorites.recipeFor(outId));
+            return Favorites.sameRecipe(id, Favorites.recipeFor(outId));
         }
     }
 

@@ -50,7 +50,8 @@ public final class AutoCraft {
         RESTORE,
         TOPUP,
         SYNC,
-        RECHECK
+        RECHECK,
+        AE2_CLEAR
     }
 
     private static ChainAutocraft walker;
@@ -70,8 +71,41 @@ public final class AutoCraft {
     /** Faster Autocrafting: crafts still to make by clicking the result, and whether a click waits for the server. */
     private static long clicksLeft;
     private static boolean awaiting, lastWasCraft;
+    /**
+     * An AE2 crafting terminal is open (see {@link Ae2Crafting}): the network counts as inventory, the grid fills from it
+     * one set at a time, each craft is one AE2 craft action onto the cursor (AE2 refills the grid from the network, so a
+     * craft is counted by the cursor, not by the grid), and the cleanup puts the grid back into the network.
+     */
+    private static boolean ae2;
+    /** AE2: the cursor before the last craft action, the result count it should add, and whether the grid was cleared. */
+    private static ItemStack ae2Carried = ItemStack.EMPTY;
+    private static int ae2Adds;
+    private static boolean ae2Cleared;
     /** Grid slots the cleanup already shift-clicked (a slot that does not empty is not tried again). */
     private static final java.util.Set<Slot> cleaned = new java.util.HashSet<>();
+    /**
+     * AE2: recipes skipped in this run because the grid made another item, mapped to what the end of the run says about
+     * them. A skipped recipe is not tried again in the run.
+     */
+    private static final Map<String, String> skipped = new java.util.LinkedHashMap<>();
+    /** AE2: recipes whose missing ingredient was already logged in this run. */
+    private static final java.util.Set<String> ae2Logged = new java.util.HashSet<>();
+    /** AE2: recipes whose last transfer was refused and is asked again after {@link #AE2_RETRY_TICKS}. */
+    private static final java.util.Set<String> ae2Retried = new java.util.HashSet<>();
+    private static final int AE2_RETRY_TICKS = 10;
+    private static int ae2RetryWait;
+    /** AE2: the cursor's stack is going into the network (see {@link #ae2PutWait}), and how often in a row it was tried. */
+    private static boolean ae2Putting;
+    private static int ae2PutTries;
+    /** How many times in a row the network is asked to take the cursor's stack before the run stops with it on the cursor. */
+    private static final int AE2_PUT_TRIES = 3;
+    /** AE2 after a skip: the cursor's stack the clear last deposited, and how often in a row it was tried (see {@link #ae2Clear}). */
+    private static ItemStack ae2ClearCarried = ItemStack.EMPTY;
+    private static int ae2ClearDeposits;
+    /** How many deposits of the same cursor stack the clear makes before it stops (as its timeout does). */
+    private static final int AE2_CLEAR_DEPOSITS = 3;
+    /** Whether the chat line naming the skipped recipes was sent in this run (see {@link #saySkipped}). */
+    private static boolean skippedSaid;
 
     private AutoCraft() {}
 
@@ -95,6 +129,9 @@ public final class AutoCraft {
         return CraftSlots.result(m);
     }
 
+    /** AE2: whether the last {@link #inventory()} could read the network's items. */
+    private static boolean networkRead;
+
     /**
      * What the player can craft with: every slot of the open menu except the result, and the grid of a crafting upgrade
      * (Sophisticated Storage keeps it outside the menu's slot list). NEI's getInventoryItems.
@@ -102,6 +139,19 @@ public final class AutoCraft {
     private static Map<String, Long> inventory() {
         Map<String, Long> items = new HashMap<>();
         Player player = Minecraft.getInstance().player;
+        if (ae2) {
+            // the player's inventory, the grid (it goes back into the network before a fill) and the network; not the
+            // terminal's other slots (view cells, upgrades)
+            for (Slot slot : menu.slots) {
+                if (slot.hasItem() && (slot.container instanceof Inventory || gridSlots.contains(slot))) {
+                    items.merge(RecipeData.idOf(slot.getItem()), (long) slot.getItem().getCount(), Long::sum);
+                }
+            }
+            Map<String, Long> network = Ae2Crafting.networkItems(McCompat.screen());
+            networkRead = network != null;
+            if (network != null) network.forEach((id, n) -> items.merge(id, n, Long::sum));
+            return items;
+        }
         List<Slot> slots = new ArrayList<>(menu.slots);
         slots.addAll(CraftSlots.upgradeSlots(menu));
         for (Slot slot : slots) {
@@ -131,8 +181,19 @@ public final class AutoCraft {
                 "§6[NEI Features] §eAutocrafting can't run while the crafting upgrade refills its grid from the storage."));
             return false;
         }
+        if (Ae2Crafting.isTerminal(open)
+            && (Ae2Crafting.broken() || CraftSlots.grid(open).isEmpty() || Ae2Crafting.networkItems(McCompat.screen()) == null)) {
+            // without the grid or the network's items the chain would be planned wrong
+            NeiAddon.LOGGER.info("Autocrafting not started: the AE2 terminal's grid or items could not be read");
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null) mc.player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                "§6[NEI Features] §eAutocrafting can't read this AE2 terminal."));
+            return false;
+        }
         stop();
         menu = open;
+        ae2 = Ae2Crafting.isTerminal(open);
+        ae2Cleared = false;
         gridSlots = craftingGrid(open);
         snapshotLayout();
         clearStorage();
@@ -158,9 +219,22 @@ public final class AutoCraft {
 
             @Override
             public boolean canCraft(String recipeId) {
+                if (skipped.containsKey(recipeId)) return false;
                 RecipeLookup.Target<?> target = target(recipeId);
                 boolean can = target != null && target.canTransfer(menu, Minecraft.getInstance().player);
                 if (!can) NeiAddon.LOGGER.info("Autocrafting: cannot craft {} now (recipe found: {})", recipeId, target != null);
+                if (can && ae2) {
+                    // AE2 fills the grid from the network whatever it holds, so one craft's ingredients are checked here
+                    Map<String, Long> have = AutoCraft.inventory();
+                    String missing = ae2Missing(recipeId, have);
+                    // a tool by item, any wear: a recipe whose tool the chain makes later waits for it (else the grid
+                    // makes something else and the recipe is skipped for the run)
+                    if (missing == null) missing = ae2MissingTool(recipeId, have);
+                    if (missing != null) {
+                        can = false;
+                        if (ae2Logged.add(recipeId)) NeiAddon.LOGGER.info("Autocrafting: skipping {} for now, {} is not in the inventory, the network or the grid", recipeId, missing);
+                    }
+                }
                 lastCan.put(recipeId, can);
                 return can;
             }
@@ -172,11 +246,20 @@ public final class AutoCraft {
         lastCan.clear();
         rechecked.clear();
         craftedBy.clear();
+        skipped.clear();
+        skippedSaid = false;
+        ae2Logged.clear();
+        ae2Putting = false;
+        ae2PutTries = 0;
+        ae2Refused.clear();
+        ae2Retried.clear();
+        ae2RetryWait = 0;
         NeiAddon.LOGGER.info("Autocrafting started: {}", math.outputRecipes);
         return true;
     }
 
     public static void stop() {
+        if (walker != null) saySkipped(Minecraft.getInstance());
         gridSlots = List.of();
         layout.clear();
         pending.clear();
@@ -186,9 +269,14 @@ public final class AutoCraft {
         cleaned.clear();
         clearStorage();
         awaiting = false;
+        ae2Putting = false;
+        ae2Retried.clear();
+        ae2RetryWait = 0;
         walker = null;
         math = null;
         menu = null;
+        ae2 = false;
+        ae2Carried = ItemStack.EMPTY;
     }
 
     /** NEI's autocraftingIgnoreInventory: wanted items the inventory already covers are asked for once more on top. */
@@ -239,6 +327,10 @@ public final class AutoCraft {
             Phase was = phase;
             switch (phase) {
                 case NEXT -> {
+                    if (ae2RetryWait > 0) {
+                        ae2RetryWait--;
+                        return;
+                    }
                     String recipeId = walker.next();
                     if (recipeId == null) {
                         // done: whatever is still on the cursor or in the grid goes back into the inventory
@@ -246,16 +338,28 @@ public final class AutoCraft {
                         startCleanup();
                         return;
                     }
+                    // a retry waits for this same recipe: a mark left by a recipe the chain moved on from is stale
+                    ae2Retried.removeIf(id -> !id.equals(recipeId));
                     RecipeLookup.Target<?> target = target(recipeId);
                     // batching: as many sets as the grid takes while more crafts are wanted than the last full grid of this
                     // recipe held (unknown at first: try); one set otherwise
-                    full = !gridSlots.isEmpty() && walker.remaining() > 1
+                    full = !ae2 && !gridSlots.isEmpty() && walker.remaining() > 1
                         && (AddonConfig.AUTOCRAFTING_FAST.get() || walker.remaining() >= fullSets.getOrDefault(recipeId, 2L));
                     if (target == null || !target.transfer(menu, mc.player, full)) {
-                        NeiAddon.LOGGER.info("Autocrafting: transfer of {} was refused", recipeId);
+                        String why = target == null ? "recipe not found" : refusedWhy(target, mc);
+                        if (ae2 && target != null && ae2Retried.add(recipeId)) {
+                            // AE2's view of the network can lag just behind a put: asked once more after a short wait
+                            NeiAddon.LOGGER.info("Autocrafting: transfer of {} was refused ({}); asking again shortly", recipeId, why);
+                            ae2RetryWait = AE2_RETRY_TICKS;
+                            return;
+                        }
+                        NeiAddon.LOGGER.info("Autocrafting: transfer of {} was refused ({})", recipeId, why);
+                        // a later pass of the chain may offer it again: then it gets its retry again
+                        ae2Retried.remove(recipeId);
                         walker.abandon();
                         return;
                     }
+                    ae2Retried.remove(recipeId);
                     current = recipeId;
                     phase = Phase.WAIT_RESULT;
                     waited = 0;
@@ -263,6 +367,15 @@ public final class AutoCraft {
                 case WAIT_RESULT -> {
                     if (result.hasItem()) {
                         if (wrongResult(result)) return;
+                        if (ae2) {
+                            // AE2 refills the grid from the network after each craft: one craft action per wanted craft
+                            clicksLeft = walker.remaining();
+                            awaiting = false;
+                            phase = Phase.CLICKS;
+                            waited = 0;
+                            clicks(mc, result);
+                            return;
+                        }
                         if (full && gridSets() == 1 && walker.remaining() > 1 && startTopUp()) return;
                         long sets = full ? gridSets() : 1;
                         if (full) fullSets.put(current, sets);
@@ -343,6 +456,7 @@ public final class AutoCraft {
                 case GIVE_BACK -> giveBack(mc);
                 case RESTORE -> restore(mc);
                 case TOPUP -> topUp(mc, result);
+                case AE2_CLEAR -> ae2Clear(mc);
                 case RECHECK -> {
                     // the screen was fetched from the server to see the result slot as the server has it
                     if (menu.getStateId() == clickState && ++waited <= TIMEOUT) return;
@@ -377,7 +491,8 @@ public final class AutoCraft {
      * Is the result slot an item the recipe being crafted does not make? Another recipe with the same ingredients can
      * take priority in the grid (a mod's duplicate of a vanilla tool), and crafting that would never get the wanted item,
      * so the chain would craft it again and again. Only the item is compared (a result's NBT can vary). When it differs
-     * this gives up on the recipe, tells the player and starts the cleanup; returns true then (do not craft).
+     * this gives up on the recipe, tells the player and starts the cleanup (AE2: skips the recipe and goes on, see
+     * {@link #ae2Skip}); returns true then (do not craft).
      */
     /** Recipes whose wrong-looking result was already checked with the server once, and where to go on after the check. */
     private static final java.util.Set<String> rechecked = new java.util.HashSet<>();
@@ -412,8 +527,203 @@ public final class AutoCraft {
             made += " (" + BuiltInRegistries.ITEM.getKey(got.getItem()) + ")";
             wanted += " (" + BuiltInRegistries.ITEM.getKey(expected.getItem()) + ")";
         }
+        if (ae2) {
+            ae2Skip(made, wanted);
+            return true;
+        }
         fail("the grid makes " + made + " instead of " + wanted + " (another recipe with the same ingredients takes priority)");
         return true;
+    }
+
+    /**
+     * AE2: the grid makes another item than the recipe's, so the recipe is skipped for the rest of the run instead of stopping
+     * the chain. Nothing is crafted: the grid goes back into the network (then {@link Phase#AE2_CLEAR} waits for it to be
+     * empty), and the end of the run names what did not reach the grid. Without the clear it stops as on other grids.
+     */
+    private static void ae2Skip(String made, String wanted) {
+        String names = ae2NotInGrid(current);
+        String text = wanted + ": the grid made " + made + (names.isEmpty()
+            ? " (every ingredient is in the grid; another recipe takes them)"
+            : "; " + names + " did not reach the grid");
+        skipped.put(current, text);
+        NeiAddon.LOGGER.info("Autocrafting: skipped {}, the grid made {} instead of {}", current, made, wanted);
+        clicksLeft = 0;
+        awaiting = false;
+        if (!Ae2Crafting.clearGrid(menu)) {
+            ae2GridLeft();
+            stop();
+            return;
+        }
+        waited = 0;
+        ae2ClearCarried = ItemStack.EMPTY;
+        ae2ClearDeposits = 0;
+        phase = Phase.AE2_CLEAR;
+    }
+
+    /**
+     * AE2 after a skip: the cursor is put away and the grid is waited on to go empty, then the walker goes on. The cursor
+     * gets at most {@link #AE2_CLEAR_DEPOSITS} deposits while it stays the same stack; after that the clear stops as its
+     * timeout does.
+     */
+    private static void ae2Clear(Minecraft mc) {
+        if (ae2PutWait()) return;
+        if (awaiting) {
+            if (menu.getStateId() == clickState) {
+                if (++waited > TIMEOUT) stop();
+                return;
+            }
+            awaiting = false;
+        }
+        ItemStack carried = menu.getCarried();
+        if (!carried.isEmpty()) {
+            if (!ItemStack.matches(carried, ae2ClearCarried)) {
+                ae2ClearCarried = carried.copy();
+                ae2ClearDeposits = 0;
+            }
+            if (++ae2ClearDeposits > AE2_CLEAR_DEPOSITS) {
+                // no cleanup: its cursor step would try the same put again
+                sayStopped("what is on the cursor could not be put away");
+                stop();
+                return;
+            }
+            deposit(mc, carried);
+            return;
+        }
+        if (gridSlots.stream().anyMatch(Slot::hasItem)) {
+            if (++waited <= TIMEOUT) return;
+            ae2GridLeft();
+            stop();
+            return;
+        }
+        phase = Phase.NEXT;
+    }
+
+    /**
+     * AE2: the ingredients of one craft of the recipe that the grid holds too little of (names, comma separated). A tool
+     * counts as there when the grid holds the same item (its id can differ by wear, see {@link #ae2Missing}).
+     */
+    private static String ae2NotInGrid(String recipeId) {
+        Map<String, Long> have = new HashMap<>();
+        for (Slot slot : gridSlots) {
+            if (slot.hasItem()) have.merge(RecipeData.idOf(slot.getItem()), (long) slot.getItem().getCount(), Long::sum);
+        }
+        List<String> names = new ArrayList<>();
+        for (ChainItem ingredient : math.recipeIngredients) {
+            if (!recipeId.equals(ingredient.recipeId) || ingredient.emptyFactor() || isFluid(ingredient)) continue;
+            String name = FluidStacks.name(FluidStacks.stackOf(ingredient.item)).getString();
+            if (Tools.isTool(FluidStacks.stackOf(ingredient.item))) {
+                if (!gridHoldsItemOf(ingredient)) names.add(name);
+                continue;
+            }
+            long in = 0;
+            for (String option : candidates(ingredient)) in += have.getOrDefault(option, 0L);
+            if (in < ingredient.factor) names.add(name);
+        }
+        return String.join(", ", names);
+    }
+
+    /** AE2: whether the grid holds an item of the ingredient's kind (the same registry item as one of its candidates). */
+    private static boolean gridHoldsItemOf(ChainItem ingredient) {
+        java.util.Set<String> items = new java.util.HashSet<>();
+        for (String id : candidates(ingredient)) items.add(plainId(id));
+        for (Slot slot : gridSlots) {
+            if (slot.hasItem() && items.contains(plainId(RecipeData.idOf(slot.getItem())))) return true;
+        }
+        return false;
+    }
+
+    /**
+     * AE2: the name of an ingredient of the recipe (of the chain's own recipe) the inventory (player's, grid and network)
+     * does not hold enough of for one craft, or null when all are there. Tools and fluids are left out: a worn tool can
+     * have another id than the recipe's option (its craft is then checked by the wrong-result skip, which names a missing
+     * tool), and a fluid is not an item. Each ingredient's candidates ({@link #candidates}) share the inventory; the ones
+     * with fewest candidates get their items first (a slot that takes only X gets X before one that takes X or Y), and each
+     * takes its amount from the items it accepts, so one item is not counted for two ingredients.
+     */
+    private static String ae2Missing(String recipeId) {
+        return ae2Missing(recipeId, inventory());
+    }
+
+    private static String ae2Missing(String recipeId, Map<String, Long> inventory) {
+        Map<String, Long> have = new HashMap<>(inventory);
+        List<ChainItem> ingredients = new ArrayList<>();
+        for (ChainItem ingredient : math.recipeIngredients) {
+            if (!recipeId.equals(ingredient.recipeId) || ingredient.emptyFactor() || leftToTransfer(ingredient)) continue;
+            ingredients.add(ingredient);
+        }
+        // a stable sort: ingredients with as many candidates keep the chain's order
+        ingredients.sort(java.util.Comparator.comparingInt(i -> candidates(i).size()));
+        for (ChainItem ingredient : ingredients) {
+            long need = ingredient.factor;
+            long in = 0;
+            for (String option : candidates(ingredient)) in += have.getOrDefault(option, 0L);
+            if (in < need) return FluidStacks.name(FluidStacks.stackOf(ingredient.item)).getString();
+            for (String option : candidates(ingredient)) {
+                long n = have.getOrDefault(option, 0L), take = Math.min(n, need);
+                have.put(option, n - take);
+                need -= take;
+            }
+        }
+        return null;
+    }
+
+    /** Why a transfer was refused, for the log: {@code whyNot} when it names something, else a note that it found nothing. */
+    private static String refusedWhy(RecipeLookup.Target<?> target, Minecraft mc) {
+        try {
+            String why = target.whyNot(menu, mc.player);
+            return why != null ? why : "nothing missing on a second look";
+        } catch (RuntimeException | LinkageError e) {
+            return "the check failed: " + e;
+        }
+    }
+
+    /**
+     * AE2: the name of a tool of the recipe that is nowhere in the inventory (player's, grid and network), in any wear
+     * (compared by item, without the subtype), or null; also null when the network's items can't be read. For the
+     * end-of-run line: {@link #ae2Missing} leaves tools out.
+     */
+    private static String ae2MissingTool(String recipeId) {
+        return ae2MissingTool(recipeId, inventory());
+    }
+
+    /** The same with the inventory already read ({@link #inventory()}, which also sets {@link #networkRead}). */
+    private static String ae2MissingTool(String recipeId, Map<String, Long> inventory) {
+        if (!networkRead) return null;
+        java.util.Set<String> have = new java.util.HashSet<>();
+        for (String id : inventory.keySet()) have.add(plainId(id));
+        if (!menu.getCarried().isEmpty()) have.add(plainId(RecipeData.idOf(menu.getCarried())));
+        for (ChainItem ingredient : math.recipeIngredients) {
+            if (!recipeId.equals(ingredient.recipeId) || ingredient.emptyFactor() || isFluid(ingredient)
+                || !Tools.isTool(FluidStacks.stackOf(ingredient.item))) continue;
+            if (candidates(ingredient).stream().noneMatch(id -> have.contains(plainId(id)))) {
+                return FluidStacks.name(FluidStacks.stackOf(ingredient.item)).getString();
+            }
+        }
+        return null;
+    }
+
+    /** AE2: the ids an ingredient accepts: its options (tags) and its own item, each once. */
+    private static java.util.Set<String> candidates(ChainItem ingredient) {
+        java.util.Set<String> ids = new java.util.LinkedHashSet<>(ingredient.options);
+        ids.add(ingredient.item);
+        return ids;
+    }
+
+    /** AE2: a fluid ingredient (the chain marks it by its id, see {@link FluidStacks}); the grid never holds one. */
+    private static boolean isFluid(ChainItem ingredient) {
+        ItemStack stack = FluidStacks.stackOf(ingredient.item);
+        return FluidStacks.isFluidId(ingredient.item) || FluidStacks.isFluid(stack) || FluidStacks.isMilli(stack);
+    }
+
+    /** AE2: an ingredient the item check leaves to the transfer: a fluid, or a tool (a worn tool's id is not its option's). */
+    private static boolean leftToTransfer(ChainItem ingredient) {
+        return isFluid(ingredient) || Tools.isTool(FluidStacks.stackOf(ingredient.item));
+    }
+
+    /** An id without its subtype mark: the registry item a (possibly worn, subtyped) id stands for. */
+    private static String plainId(String id) {
+        int at = id.indexOf(StackIds.MARK);
+        return at < 0 ? id : id.substring(0, at);
     }
 
     /** Shift-clicks the result: vanilla crafts as long as the grid has a full set (and the inventory has room). */
@@ -467,6 +777,10 @@ public final class AutoCraft {
      * cleanup. Anything unexpected stops autocrafting through the cleanup.
      */
     private static void clicks(Minecraft mc, Slot result) {
+        if (ae2) {
+            ae2Clicks(mc, result);
+            return;
+        }
         if (awaiting) {
             if (menu.getStateId() == clickState) {
                 if (++waited > TIMEOUT) fail("the server did not answer a click");
@@ -509,26 +823,151 @@ public final class AutoCraft {
         lastWasCraft = true;
     }
 
-    /** Puts the cursor's stack into the inventory: an empty slot, else a stack of the same item with room for all of it. */
+    /**
+     * {@link #clicks} at an AE2 terminal: each craft is AE2's craft action, answered when the cursor changes, and must have
+     * added one result to it. An empty result slot means the network ran out: the rest of this recipe is left to the
+     * chain (its next fill is refused, and the recipe is given up as at any table).
+     */
+    private static void ae2Clicks(Minecraft mc, Slot result) {
+        if (ae2PutWait()) return;
+        ItemStack carried = menu.getCarried();
+        if (awaiting) {
+            if (lastWasCraft) {
+                if (ItemStack.matches(carried, ae2Carried)) {
+                    if (++waited > TIMEOUT) fail("the terminal did not answer a craft");
+                    return;
+                }
+                awaiting = false;
+                boolean added = !carried.isEmpty() && (ae2Carried.isEmpty() || ItemStack.isSameItemSameComponents(carried, ae2Carried))
+                    && carried.getCount() - ae2Carried.getCount() == ae2Adds;
+                if (!added) {
+                    fail("a craft in the terminal did not put one result on the cursor");
+                    return;
+                }
+                noteCrafted(1);
+                clicksLeft--;
+            } else {
+                if (menu.getStateId() == clickState) {
+                    if (++waited > TIMEOUT) fail("the server did not answer a click");
+                    return;
+                }
+                awaiting = false;
+            }
+        }
+        if (clicksLeft > 0 && !result.hasItem()) {
+            NeiAddon.LOGGER.info("Autocrafting: the terminal's grid is not full again after a craft of {}; the network may be out of an ingredient", current);
+            clicksLeft = 0;
+        }
+        if (clicksLeft <= 0) {
+            if (!carried.isEmpty()) {
+                deposit(mc, carried);
+                return;
+            }
+            phase = Phase.NEXT;
+            return;
+        }
+        ItemStack out = result.getItem();
+        if (wrongResult(result)) return;
+        boolean fits = carried.isEmpty()
+            || ItemStack.isSameItemSameComponents(carried, out) && carried.getCount() + out.getCount() <= carried.getMaxStackSize();
+        if (!fits) {
+            deposit(mc, carried);
+            return;
+        }
+        ae2Carried = carried.copy();
+        ae2Adds = out.getCount();
+        if (!Ae2Crafting.craftOne(result)) {
+            fail("AE2's craft action could not be sent");
+            return;
+        }
+        awaiting = true;
+        waited = 0;
+        lastWasCraft = true;
+    }
+
+    /**
+     * Puts the cursor's stack into the inventory: a stack of the same item with room for all of it, else an empty slot. At an
+     * AE2 terminal what the chain makes on the way goes into the network first ({@link #ae2ToNetwork}), and anything with no
+     * room in the inventory goes there too; only when neither takes it does the run stop.
+     */
     private static void deposit(Minecraft mc, ItemStack carried) {
+        if (ae2ToNetwork(carried) && ae2PutIntoNetwork(carried)) return;
         Slot target = inventorySlotFor(carried);
         if (target == null) {
+            if (ae2 && ae2PutIntoNetwork(carried)) return;
             fail("no room in the inventory for what is on the cursor");
             return;
         }
+        ae2Landed(carried);
         send(mc, target.index, false);
         lastWasCraft = false;
     }
 
+    /**
+     * AE2: true for a stack the chain made on the way (not an item asked for): it goes into the network, where AE2 refills
+     * the grid from (it never refills from the player's inventory), instead of filling the inventory.
+     */
+    private static boolean ae2ToNetwork(ItemStack carried) {
+        if (!ae2) return false;
+        String id = plainId(RecipeData.idOf(carried));
+        // by item, any subtype: when in doubt it is an item asked for and stays with the player
+        return !ae2Refused.contains(id) && askedFor.stream().noneMatch(asked -> plainId(asked).equals(id));
+    }
+
+    /**
+     * AE2: a stack goes into the inventory. When the network refused it {@link #AE2_PUT_TRIES} times, its item skips the
+     * network for the rest of the run (no waiting on every later stack of it); the next stack starts the count again.
+     */
+    private static void ae2Landed(ItemStack carried) {
+        if (ae2PutTries >= AE2_PUT_TRIES) ae2Refused.add(plainId(RecipeData.idOf(carried)));
+        ae2PutTries = 0;
+    }
+
+    /**
+     * AE2: sends the cursor's stack into the network (the terminal's own put, see {@link Ae2Crafting#putCarriedIntoNetwork});
+     * {@link #ae2PutWait} then waits for the cursor to change. False when it cannot be sent, or the network refused this
+     * stack {@link #AE2_PUT_TRIES} times in a row (see {@link #ae2Landed}).
+     */
+    private static boolean ae2PutIntoNetwork(ItemStack carried) {
+        if (ae2PutTries >= AE2_PUT_TRIES) return false;
+        ae2PutTries++;
+        ae2Carried = carried.copy();
+        if (!Ae2Crafting.putCarriedIntoNetwork(menu)) return false;
+        NeiAddon.LOGGER.info("Autocrafting: putting {} into the AE2 network", carried.getHoverName().getString());
+        ae2Putting = true;
+        waited = 0;
+        lastWasCraft = false;
+        return true;
+    }
+
+    /**
+     * AE2: while the cursor's stack goes into the network, waits for the cursor to change (the server answers it). True while
+     * still waiting; when the cursor did not change in time it goes on, and the stack is tried again (or the run stops).
+     */
+    private static boolean ae2PutWait() {
+        if (!ae2Putting) return false;
+        ItemStack carried = menu.getCarried();
+        if (ItemStack.matches(carried, ae2Carried) && ++waited <= TIMEOUT) return true;
+        ae2Putting = false;
+        waited = 0;
+        // progress: the network took all of it, or part of it (the count on the cursor went down); the tries start again
+        if (carried.isEmpty() || ItemStack.isSameItemSameComponents(carried, ae2Carried) && carried.getCount() < ae2Carried.getCount()) ae2PutTries = 0;
+        return false;
+    }
+
+    /** An inventory slot for the whole stack: a stack of the same item with room for all of it first, else an empty slot. */
     private static Slot inventorySlotFor(ItemStack carried) {
-        Slot same = null;
+        Slot empty = null;
         for (Slot slot : menu.slots) {
             if (!(slot.container instanceof Inventory) || !slot.mayPlace(carried)) continue;
             ItemStack in = slot.getItem();
-            if (in.isEmpty()) return slot;
-            if (same == null && ItemStack.isSameItemSameComponents(in, carried) && in.getCount() + carried.getCount() <= Math.min(in.getMaxStackSize(), slot.getMaxStackSize(in))) same = slot;
+            if (in.isEmpty()) {
+                if (empty == null) empty = slot;
+            } else if (ItemStack.isSameItemSameComponents(in, carried) && in.getCount() + carried.getCount() <= Math.min(in.getMaxStackSize(), slot.getMaxStackSize(in))) {
+                return slot;
+            }
         }
-        return same;
+        return empty;
     }
 
     /** Sends a click (pickup, or shift-click) on a slot of the menu and waits for the server's answer. */
@@ -582,11 +1021,23 @@ public final class AutoCraft {
         return done == Long.MAX_VALUE ? 0 : Math.max(0, done);
     }
 
+    /** AE2: the grid could not be put back into the network; says so, the items stay in the terminal's grid. */
+    private static void ae2GridLeft() {
+        NeiAddon.LOGGER.info("Autocrafting: the AE2 terminal's grid was not cleared");
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null) mc.player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+            "§6[NEI Features] §eAutocrafting left items in the terminal's crafting grid."));
+    }
+
     private static void fail(String why) {
+        sayStopped(why);
+        startCleanup();
+    }
+
+    private static void sayStopped(String why) {
         NeiAddon.LOGGER.info("Autocrafting stopped while crafting {}: {}", current, why);
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) mc.player.sendSystemMessage(net.minecraft.network.chat.Component.literal("§6[NEI Features] §eAutocrafting stopped: " + why + "."));
-        startCleanup();
     }
 
     // ---------------------------------------------------------------- cleanup
@@ -601,6 +1052,7 @@ public final class AutoCraft {
     }
 
     private static void cleanup(Minecraft mc) {
+        if (ae2PutWait()) return;
         if (awaiting) {
             if (menu.getStateId() == clickState) {
                 if (++waited > TIMEOUT) stop();
@@ -610,13 +1062,34 @@ public final class AutoCraft {
         }
         ItemStack carried = menu.getCarried();
         if (!carried.isEmpty()) {
+            if (ae2ToNetwork(carried) && ae2PutIntoNetwork(carried)) return;
             Slot target = inventorySlotFor(carried);
             if (target == null) {
+                if (ae2 && ae2PutIntoNetwork(carried)) return;
                 NeiAddon.LOGGER.info("Autocrafting: no room in the inventory for what is on the cursor; it stays there");
                 stop();
                 return;
             }
+            ae2Landed(carried);
             send(mc, target.index, false);
+            return;
+        }
+        if (ae2) {
+            // the grid goes back into the network (the terminal's clear action), then the end once it is empty
+            boolean filled = gridSlots.stream()
+                .anyMatch(Slot::hasItem);
+            if (filled && !ae2Cleared) {
+                ae2Cleared = true;
+                waited = 0;
+                if (!Ae2Crafting.clearGrid(menu)) {
+                    ae2GridLeft();
+                    stop();
+                }
+                return;
+            }
+            if (filled && ++waited <= TIMEOUT) return;
+            if (filled) ae2GridLeft();
+            afterCleanup();
             return;
         }
         for (Slot slot : gridSlots) {
@@ -689,6 +1162,8 @@ public final class AutoCraft {
      * whatever the inventory and storage hold.
      */
     private static final java.util.Set<String> askedFor = new java.util.HashSet<>();
+    /** AE2: items (plain ids) the network refused this run; they go into the inventory. */
+    private static final java.util.Set<String> ae2Refused = new java.util.HashSet<>();
     /** Per asked-for item: how many were asked for (the player keeps that many of what the inventory gained). */
     private static final Map<String, Long> askedAmount = new HashMap<>();
     /** Items this run crafted on the way to the asked-for items (set when the give-back starts). */
@@ -701,7 +1176,7 @@ public final class AutoCraft {
      * that a grid slot is never taken for storage.
      */
     private static boolean storageSlot(Slot slot) {
-        return !gridSlots.isEmpty() && !(slot.container instanceof Inventory) && !gridSlots.contains(slot) && !CraftSlots.isResult(slot);
+        return !ae2 && !gridSlots.isEmpty() && !(slot.container instanceof Inventory) && !gridSlots.contains(slot) && !CraftSlots.isResult(slot);
     }
 
     /** Per item: what the storage slots (or the player's main inventory and hotbar) hold now. */
@@ -1337,15 +1812,30 @@ public final class AutoCraft {
         List<String> parts = new ArrayList<>();
         for (Map.Entry<String, Boolean> e : lastCan.entrySet()) {
             // recipes the chain wanted that never got crafted in this run (in the order they were tried: end results first)
-            if (e.getValue() || parts.size() >= 3 || craftedBy.containsKey(e.getKey())) continue;
+            if (e.getValue() || parts.size() >= 3 || craftedBy.containsKey(e.getKey()) || skipped.containsKey(e.getKey())) continue;
             RecipeLookup.Target<?> target = target(e.getKey());
-            String why = target == null ? "recipe not found" : target.whyNot(menu, mc.player);
+            String missing = ae2 ? ae2Missing(e.getKey()) : null;
+            if (ae2 && missing == null) missing = ae2MissingTool(e.getKey());
+            String why = missing != null ? missing + " is not in the inventory, the network or the grid"
+                : target == null ? "recipe not found" : target.whyNot(menu, mc.player);
             if (why == null) continue;
             parts.add(recipeName(e.getKey()) + " (" + why + ")");
         }
         NeiAddon.LOGGER.info("Autocrafting finished{}", parts.isEmpty() ? "" : "; could not craft " + String.join("; ", parts));
         if (!parts.isEmpty() && mc.player != null) mc.player.sendSystemMessage(net.minecraft.network.chat.Component
             .literal("§6[NEI Features] §eAutocrafting finished, but could not craft " + String.join("; ", parts) + "."));
+        saySkipped(mc);
+    }
+
+    /**
+     * AE2: the chat line naming the recipes the run skipped, sent once per run: at the normal end, or when the run stops
+     * (see {@link #stop}), whichever comes first.
+     */
+    private static void saySkipped(Minecraft mc) {
+        if (skippedSaid || skipped.isEmpty()) return;
+        skippedSaid = true;
+        if (mc.player != null) mc.player.sendSystemMessage(net.minecraft.network.chat.Component
+            .literal("§6[NEI Features] §eAutocrafting skipped these recipes: " + String.join(" | ", skipped.values()) + "."));
     }
 
     /** Crafts done per recipe in this run. */

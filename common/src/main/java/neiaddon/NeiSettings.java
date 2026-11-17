@@ -228,6 +228,7 @@ public final class NeiSettings extends Screen {
             .number("Handler Icon Scale", "Size of the recipe type's icon in the corner of a bookmark, in percent (50 to 200). Extra (not in NEI).", AddonConfig.BM_HANDLER_ICON_SCALE, 50, 200)
             .toggle("Bookmark Items With Recipe", "Pressing the bookmarks key over an item inside a recipe of JEI's recipe screen saves that recipe with the item; its tooltip then shows the recipe.", AddonConfig.BM_ITEMS_WITH_RECIPE)
             .toggle("Bookmark Recipe With Count", "A recipe saved with Shift + the bookmarks key starts with a count of one run. Off: it starts without a count (Ctrl + Shift saves it with one).", AddonConfig.BM_RECIPE_WITH_COUNT)
+            .toggle("Highlight Chain Items", "Tint the items still needed by the crafting trees in crafting mode (crafting tree toolbar) in storage you open. Extra (not in NEI).", AddonConfig.HIGHLIGHT_CHAIN)
             .toggle("Tree Zoom without Ctrl", "Zoom the crafting tree with the plain wheel. Off: Ctrl + wheel zooms the crafting tree and the wheel scrolls it.", AddonConfig.TREE_ZOOM_WITHOUT_CTRL)
             .toggle("Compact Fluid Amounts", "Short fluid amounts in slots: 500mB, then buckets from 1000 mB (2.5B). Off: millibuckets up to 9999 (2500mB), which can run into the next slot. Extra (not in NEI).",
                 AddonConfig.FLUID_COMPACT);

@@ -54,7 +54,7 @@ final class CraftSlots {
 
     /** A result slot (the game's or one that looks like it); not one of the player's inventory slots. */
     static boolean isResult(Slot slot) {
-        if (slot instanceof ResultSlot) return true;
+        if (slot instanceof ResultSlot || Ae2Crafting.isOutput(slot)) return true;
         if (slot.container instanceof Inventory) return false;
         return slot.container instanceof ResultContainer || slot.getClass()
             .getName()
@@ -66,6 +66,9 @@ final class CraftSlots {
         for (Slot slot : menu.slots) {
             if (slot instanceof ResultSlot) return slot;
         }
+        // AE2's crafting terminal: its transfer comes from AE2's EMI plugin under EMI, so JEI may not know the screen
+        Slot ae2 = Ae2Crafting.output(menu);
+        if (ae2 != null) return ae2;
         if (!jeiCanCraft(menu)) return null;
         for (Slot slot : menu.slots) {
             if (isResult(slot)) return slot;
@@ -134,6 +137,7 @@ final class CraftSlots {
 
     /** The menu's crafting grid, or none when it cannot be found (autocrafting then crafts one set at a time). */
     static List<Slot> grid(AbstractContainerMenu menu) {
+        if (Ae2Crafting.isTerminal(menu)) return Ae2Crafting.grid(menu);
         List<Slot> grid = new ArrayList<>();
         for (Slot slot : menu.slots) {
             if (slot.container instanceof CraftingContainer) grid.add(slot);
