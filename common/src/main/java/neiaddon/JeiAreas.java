@@ -10,9 +10,11 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.BaseStream;
 import java.util.stream.Stream;
 import mezz.jei.api.ingredients.ITypedIngredient;
 import net.minecraft.client.gui.screens.Screen;
@@ -156,7 +158,7 @@ public final class JeiAreas {
     /** True while JEI is asked for the areas other mods keep free; our own area handler answers nothing then. */
     static volatile boolean querying;
 
-    private static boolean failedExclusions;
+    private static boolean failedExclusions, warnedExclusionCall;
     private static Object exclusionOwner;
     private static Method exclusionMethod;
     private static Screen exclusionScreen;
@@ -164,10 +166,11 @@ public final class JeiAreas {
     private static List<Rect2i> exclusionCache = List.of();
 
     /**
-     * The areas of the screen that other mods (FTB Quests and Teams, and so on) have asked JEI to keep free: the same list
-     * JEI moves its own overlays out of. Read from JEI's screen helper ({@code getGuiExclusionAreas(Screen)}), found by
-     * name below the runtime, so a JEI that differs just gives an empty list (one logged warning). Cached for a moment
-     * because the panel layout asks every frame.
+     * The areas of the screen that other mods (FTB Quests and Teams, Sophisticated Storage's upgrade tabs, and so on) have
+     * asked JEI to keep free: the same list JEI moves its own overlays out of and keeps its item list's slots out of. Read
+     * from JEI's screen helper ({@code getGuiExclusionAreas(Screen)}, a Stream in JEI 15 to 30), found by name below the
+     * runtime, so a JEI that differs just gives an empty list (one logged warning). Cached for a moment because the panel
+     * layout asks every frame.
      */
     public static List<Rect2i> exclusions(Screen screen) {
         if (querying || failedExclusions || Calculator.runtime == null || screen == null) return List.of();
@@ -175,26 +178,56 @@ public final class JeiAreas {
         if (screen == exclusionScreen && now - exclusionStamp < 250) return exclusionCache;
         querying = true;
         try {
-            if (exclusionMethod == null) findExclusions();
-            Object result = exclusionMethod.invoke(exclusionOwner, screen);
+            try {
+                if (exclusionMethod == null) findExclusions();
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+                fail("exclusions", e);
+                failedExclusions = true;
+                return List.of();
+            }
             List<Rect2i> out = new ArrayList<>();
-            if (result instanceof Iterable<?> areas) {
-                for (Object area : areas) {
-                    Rect2i r = rect(area);
+            try {
+                Object result = exclusionMethod.invoke(exclusionOwner, screen);
+                Iterator<?> areas = result instanceof BaseStream<?, ?> stream ? stream.iterator()
+                    : result instanceof Iterable<?> iterable ? iterable.iterator() : Collections.emptyIterator();
+                while (areas.hasNext()) {
+                    Object area = areas.next();
+                    if (area == null) continue;
+                    // vanilla's Rect2i directly: its getters have other names in the game (SRG on Forge,
+                    // intermediary on Fabric)
+                    Rect2i r = area instanceof Rect2i plain ? plain : rect(area);
                     if (r.getWidth() > 0 && r.getHeight() > 0) out.add(r);
                 }
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+                // the areas come from every mod's handler, run while the stream is read; one of them failing on
+                // this screen gives no areas this time, and the next call (after the cache moment) asks again
+                if (!warnedExclusionCall) {
+                    warnedExclusionCall = true;
+                    NeiAddon.LOGGER.warn("Could not read the screen areas other mods keep free from JEI; "
+                        + "the addon may cover them", e);
+                }
+                out = List.of();
             }
             exclusionScreen = screen;
             exclusionStamp = now;
             exclusionCache = out;
             return out;
-        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
-            fail("exclusions", e);
-            failedExclusions = true;
-            return List.of();
         } finally {
             querying = false;
         }
+    }
+
+    /** Forgets the cached {@link #exclusions}, so the next call asks JEI again (a click must see a tab opened just now). */
+    static void forgetExclusions() {
+        exclusionStamp = 0;
+    }
+
+    /** Is the point inside one of the areas other mods asked JEI to keep free on this screen? */
+    static boolean inExclusion(Screen screen, double x, double y) {
+        for (Rect2i r : exclusions(screen)) {
+            if (x >= r.getX() && x < r.getX() + r.getWidth() && y >= r.getY() && y < r.getY() + r.getHeight()) return true;
+        }
+        return false;
     }
 
     private static void findExclusions() throws ReflectiveOperationException {

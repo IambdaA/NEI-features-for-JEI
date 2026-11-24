@@ -33,11 +33,6 @@ public final class HotkeyTips {
             .hasAltDown();
     }
 
-    /** NEI's "showHotkeys": "Hold ALT for hotkeys", gray with ALT in gold. */
-    public static Component holdAlt() {
-        return Component.literal(HOLD_ALT);
-    }
-
     public static final String HOLD_ALT = "§7Hold §6ALT§7 for hotkeys";
 
     /** Key names like NEI's KeyManager.getKeyName: modifiers first, joined with " + ". */
@@ -87,7 +82,52 @@ public final class HotkeyTips {
     /** The lines to put right after the name: the hint, or the formatted list while Alt is held. */
     public static List<String> hotkeyLines(Map<String, String> hotkeys) {
         if (hotkeys.isEmpty() || !AddonConfig.SHOW_HOTKEYS.get() || !altDown() && !AddonConfig.HOTKEYS_HELP.get()) return List.of();
-        return altDown() ? format(hotkeys) : List.of(HOLD_ALT);
+        return altDown() ? fitList(format(hotkeys)) : List.of(HOLD_ALT);
+    }
+
+    /** Lines of the tooltip besides the Alt list (the name, the mod name and a few more). */
+    private static final int OTHER_TIP_LINES = 4;
+
+    /**
+     * Vanilla's tooltip keeps its bottom on the screen and loses its top lines when it is taller than the screen. When the
+     * list plus the other lines would not fit, two entries share a line (the left column padded to its widest entry), and
+     * three if two still do not fit. A list that fits is returned as it is.
+     */
+    static List<String> fitList(List<String> entries) {
+        int screenH = Minecraft.getInstance().getWindow().getGuiScaledHeight();
+        int per = 1;
+        while (per < 3 && (rows(entries.size(), per) + OTHER_TIP_LINES) * 10 + 16 > screenH) per++;
+        return per == 1 ? entries : pack(entries, per);
+    }
+
+    private static int rows(int count, int per) {
+        return (count + per - 1) / per;
+    }
+
+    /** Column-major: entry r, r + rows, r + 2 * rows... share line r; each column but the last is padded to its widest entry. */
+    private static List<String> pack(List<String> entries, int per) {
+        var font = Minecraft.getInstance().font;
+        int n = entries.size();
+        int rowCount = rows(n, per);
+        int[] widest = new int[per];
+        for (int i = 0; i < n; i++) widest[i / rowCount] = Math.max(widest[i / rowCount], font.width(entries.get(i)));
+        List<String> out = new ArrayList<>();
+        for (int r = 0; r < rowCount; r++) {
+            StringBuilder line = new StringBuilder();
+            for (int c = 0; c < per; c++) {
+                int i = r + c * rowCount;
+                if (i >= n) break;
+                String cell = entries.get(i);
+                line.append(cell);
+                // the next entry of the line comes after this column's widest entry, padded with spaces
+                if (c < per - 1 && r + (c + 1) * rowCount < n) {
+                    for (int pad = widest[c] - font.width(cell); pad > 0; pad -= font.width(" ")) line.append(' ');
+                    line.append("  ");
+                }
+            }
+            out.add(line.toString());
+        }
+        return out;
     }
 
     /** Keys that work on an item of JEI's ingredient list (NEI's ShortcutInputHandler.handleHotkeys, no bookmark slot). */
@@ -131,8 +171,8 @@ public final class HotkeyTips {
         if (!AutoCraft.available()) return;
         String craft = CalcKeys.CRAFT.getTranslatedKeyMessage()
             .getString();
-        k.put(keys("CTRL", "SHIFT", craft), "Craft Missing Items");
-        k.put(keys("SHIFT", craft), "Craft Items");
+        k.put(keys("CTRL", "SHIFT", craft), "Craft Items Again");
+        k.put(keys("SHIFT", craft), "Craft Missing Items");
     }
 
     /** NEI's pull items keys; only offered while a chest is open. */

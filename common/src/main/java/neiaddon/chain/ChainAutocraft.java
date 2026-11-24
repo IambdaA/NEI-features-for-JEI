@@ -44,6 +44,21 @@ public final class ChainAutocraft {
     private String current;
     private long remaining;
     private boolean entryCrafted, batchCrafted, changed, processed;
+    /**
+     * #46 (round 16): the recipes the game side gave a turn back with {@link #defer()}. Nothing was
+     * credited for them, so the chain still owes their crafts and a later pass hands them again; while this set is
+     * not empty, {@link #next()} starts one more pass even when the last one crafted nothing, which is what keeps
+     * a run from ending while a deferred recipe waits for input another recipe of the chain will craft.
+     */
+    private final java.util.LinkedHashSet<String> revisit = new java.util.LinkedHashSet<>();
+    /** Every recipe the chain handed out in this run, in the order it was first handed out. */
+    private final java.util.LinkedHashSet<String> seen = new java.util.LinkedHashSet<>();
+    /**
+     * Per recipe: the crafts the batches of the current pass asked of it, summed. Cleared when a pass starts. The run
+     * ends after a pass that crafted nothing, so at the end this is exactly what the chain still wanted and did not get
+     * (a recipe an earlier pass asked for but the last pass no longer needs is not in it).
+     */
+    private final java.util.HashMap<String, Long> passWanted = new java.util.HashMap<>();
 
     /** @param math a chain that already has its master root */
     public ChainAutocraft(ChainMath math, Host host) {
@@ -76,13 +91,22 @@ public final class ChainAutocraft {
             switch (phase) {
                 case PASS:
                     changed = false;
+                    passWanted.clear();
                     iterator = new ChainIterator(math, initialItems);
                     iterator.updateInventory(host.inventory());
                     phase = Phase.BATCH;
                     break;
                 case BATCH:
                     if (!iterator.hasNext()) {
-                        if (!changed) return null;
+                        if (!changed) {
+                            // #46 (round 16): a deferred visit is still owed its crafts: start one more
+                            // pass even though nothing was crafted, and empty the set: only a visit deferred anew
+                            // keeps the run going, so a recipe that stays refused ends the run as before
+                            if (revisit.isEmpty()) return null;
+                            revisit.clear();
+                            phase = Phase.PASS;
+                            break;
+                        }
                         phase = Phase.PASS;
                         break;
                     }
@@ -107,6 +131,8 @@ public final class ChainAutocraft {
                         .getKey();
                     remaining = batch.get(index)
                         .getValue();
+                    seen.add(current);
+                    if (remaining > 0) passWanted.merge(current, remaining, Long::sum);
                     entryCrafted = false;
                     phase = Phase.STEP;
                     break;
@@ -135,7 +161,31 @@ public final class ChainAutocraft {
         return remaining;
     }
 
+    /**
+     * After {@link #next()} returned null: per recipe, the crafts the chain still wanted and did not get, in the order
+     * the recipes were first handed out (see {@link #passWanted}). Recipes that got everything are left out.
+     */
+    public java.util.Map<String, Long> stillWanted() {
+        java.util.LinkedHashMap<String, Long> out = new java.util.LinkedHashMap<>();
+        for (String recipeId : seen) {
+            Long n = passWanted.get(recipeId);
+            if (n != null && n > 0) out.put(recipeId, n);
+        }
+        return out;
+    }
+
     public void abandon() {
+        remaining = 0;
+    }
+
+    /**
+     * #46 (round 16): like {@link #abandon()}, but the game side says the visit was refused over input
+     * the chain itself plans to craft: the recipe is remembered in {@link #revisit} so its turn comes back later in
+     * this same run. No crafts are credited, so a later pass hands the recipe again through the iterator like any
+     * other recipe the chain still wants.
+     */
+    public void defer() {
+        if (current != null && remaining > 0) revisit.add(current);
         remaining = 0;
     }
 }

@@ -257,6 +257,8 @@ public final class RecipeLookup {
                 .limitFocus(List.of(focus))
                 .get()
                 .toList()) {
+                // a page that only shows information (JEI's information, GregTech's diagrams) is not a recipe
+                if (RecipeShape.infoType(category.getRecipeType().getUid().toString())) continue;
                 scan(rt, manager, category, focus, count);
                 if (count.recipes > 1) break;
             }

@@ -45,6 +45,8 @@ public final class RecipeShape {
 
         public final List<Alt> alts;
         public int active;
+        /** The active item is the player's pick: a saved tag default or a kept pick, not a favorite's (#39). */
+        public boolean picked;
 
         Slot(List<Alt> alts) {
             this.alts = alts;
@@ -80,11 +82,13 @@ public final class RecipeShape {
         for (Slot s : inputs) {
             Slot n = new Slot(s.alts);
             n.active = s.active;
+            n.picked = s.picked;
             c.inputs.add(n);
         }
         for (Slot s : outputs) {
             Slot n = new Slot(s.alts);
             n.active = s.active;
+            n.picked = s.picked;
             c.outputs.add(n);
         }
         return c;
@@ -94,6 +98,7 @@ public final class RecipeShape {
 
         final ItemStack stack;
         long factor;
+        boolean picked;
         final Set<String> options = new LinkedHashSet<>();
 
         Acc(ItemStack stack) {
@@ -135,10 +140,13 @@ public final class RecipeShape {
             Alt a = slot.chosen();
             Acc acc = ingredients.computeIfAbsent(a.id(), k -> new Acc(a.stack()));
             acc.factor += a.count();
+            acc.picked |= slot.picked;
             for (Alt alt : slot.alts) acc.options.add(alt.id());
         }
         for (Acc acc : ingredients.values()) {
-            data.ingredients.add(new RecipeData.Part(acc.stack, acc.factor, new ArrayList<>(acc.options)));
+            RecipeData.Part part = new RecipeData.Part(acc.stack, acc.factor, new ArrayList<>(acc.options));
+            part.picked = acc.picked;
+            data.ingredients.add(part);
         }
         return data;
     }
@@ -204,6 +212,39 @@ public final class RecipeShape {
                 .fluidAmount(fluid) / unitsPerMilliBucket;
             alts.add(new Alt(carrier, (int) Math.max(1, Math.min(Integer.MAX_VALUE, milliBuckets))));
         }
+    }
+
+    // ---------------------------------------------------------------- pages that only show information
+
+    /**
+     * Recipe types of pages that only show information, not recipes (JEI's information pages, GregTech's diagrams,
+     * multiblock and circuit pages): they get no heart and no keys, and never become a favorite or a tree node. Checked ids
+     * only; add a type here only after its uid is checked in the mod's jar.
+     */
+    private static final Set<String> INFO_TYPES = Set.of(
+        "jei:information",
+        "gtceu:ore_processing_diagram",
+        "gtceu:ore_vein_diagram",
+        "gtceu:bedrock_fluid_diagram",
+        "gtceu:bedrock_ore_diagram",
+        "gtceu:multiblock_info",
+        "gtceu:programmed_circuit");
+
+    /** Whether the recipe type uid is one of the pages that only show information. */
+    public static boolean infoType(String typeUid) {
+        return typeUid != null && INFO_TYPES.contains(typeUid);
+    }
+
+    /**
+     * Whether a recipe id ({@code type|identifier} or {@code type#hash}) names a page that only shows information: its type
+     * part, the text before the first {@code |} or {@code #}, is an info type. False for null or an id with neither.
+     */
+    public static boolean infoOnly(String recipeId) {
+        if (recipeId == null) return false;
+        int bar = recipeId.indexOf('|');
+        int hash = recipeId.indexOf('#');
+        int sep = bar < 0 ? hash : hash < 0 ? bar : Math.min(bar, hash);
+        return sep >= 0 && infoType(recipeId.substring(0, sep));
     }
 
     // ---------------------------------------------------------------- recipe ids

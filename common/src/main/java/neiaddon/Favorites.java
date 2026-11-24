@@ -57,6 +57,12 @@ public final class Favorites {
         return ra != null && ra.equals(identifierPart(b));
     }
 
+    /** The item ids that have a favorite recipe saved in the addon's own file (a copy; reads only the file). */
+    static java.util.Set<String> itemIds() {
+        ensureLoaded();
+        return new java.util.HashSet<>(byItem.keySet());
+    }
+
     /** The part after the bar of an identifier id ({@code type|id}), or null for any other id. */
     private static String identifierPart(String id) {
         int bar = id.indexOf('|');
@@ -64,10 +70,14 @@ public final class Favorites {
         return bar >= 0 && (hash < 0 || bar < hash) ? id.substring(bar + 1) : null;
     }
 
-    /** The favorite recipe id of an item (registry id), or null. */
+    /**
+     * The favorite recipe id of an item (registry id), or null. A favorite that is a page which only shows information
+     * (saved before that was ruled out) is ignored: null here, and the entry stays in the file, unchanged.
+     */
     public static String recipeFor(String itemId) {
         ensureLoaded();
-        return byItem.get(itemId);
+        String saved = byItem.get(itemId);
+        return saved == null || RecipeShape.infoOnly(saved) ? null : saved;
     }
 
     /**
@@ -87,10 +97,6 @@ public final class Favorites {
             if (sameRecipe(e.getValue(), recipeId) && sameRecipe(recipeFor(e.getKey()), recipeId)) return e.getKey();
         }
         return null;
-    }
-
-    public static boolean isFavorite(String recipeId) {
-        return itemFor(recipeId) != null;
     }
 
     /**

@@ -207,6 +207,9 @@ public final class JeiBookmarks {
         Optional<ItemStack> stack = shown.getItemStack();
         if (stack.isEmpty() || stack.get()
             .isEmpty()) {
+            // a bee of Productive Bees (see Bees): our entry for it was made by the bookmark key, not by JEI's list, and a
+            // bee in JEI's own list stays there (it has no item to turn into one of ours, and JEI can still draw it)
+            if (Bees.idOf(shown.getIngredient()) != null) return false;
             // a fluid: one bucket of it, as the bookmark key itself gives
             JeiFluids.Hit fluid = JeiFluids.of(shown);
             if (fluid == null) return false;
@@ -241,6 +244,8 @@ public final class JeiBookmarks {
 
     private static <T> boolean moveRecipe(IRecipeCategory<T> category, List<Object> others, Identifier uid,
         ITypedIngredient<?> shown) {
+        // a page that only shows information (JEI's information, GregTech's diagrams) has no recipe to remember: the item it shows
+        if (RecipeShape.infoType(category.getRecipeType().getUid().toString())) return shown != null && moveItem(shown);
         IJeiRuntime rt = Calculator.runtime;
         IRecipeManager manager = rt.getRecipeManager();
         Class<?> type = recipeClass(category);
@@ -288,7 +293,7 @@ public final class JeiBookmarks {
         Bookmarks.Page page = Bookmarks.page();
         Calculator.StackKey key = new Calculator.StackKey(result);
         for (Bookmarks.Entry e : new ArrayList<>(page.entries)) {
-            if (e.isPlain() && e.key.equals(key) && data.recipeId.equals(e.recipeId)) {
+            if (e.isPlain() && !e.isBee() && e.key.equals(key) && data.recipeId.equals(e.recipeId)) {
                 Bookmarks.remove(page, e);
                 return true;
             }

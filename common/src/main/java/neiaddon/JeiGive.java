@@ -28,6 +28,7 @@ public final class JeiGive {
     /** At most this many stacks per click (a full inventory); more would only be dropped on the ground. */
     private static final int MAX_STACKS = 36;
     private static boolean failed;
+    private static boolean toggleWarned;
 
     private JeiGive() {}
 
@@ -174,7 +175,22 @@ public final class JeiGive {
         }
     }
 
-    /** JEI's own cheat mode toggle (not this addon's Cheat Mode). */
+    /**
+     * Whether a failure only means JEI's internals are not there (a missing JEI class). That is normal then, so it is not
+     * logged.
+     */
+    private static boolean jeiAbsent(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof ClassNotFoundException || t instanceof NoClassDefFoundError) {
+                String name = String.valueOf(t.getMessage());
+                if (name.contains("mezz.jei") || name.contains("mezz/jei")) return true;
+            }
+            if (t.getCause() == t) break;
+        }
+        return false;
+    }
+
+    /** JEI's own cheat mode toggle (not this addon's Cheat Mode). One warning when it cannot be read; then it counts as off. */
     static boolean jeiCheating() {
         if (failed) return false;
         try {
@@ -182,6 +198,10 @@ public final class JeiGive {
                 .invoke(null);
             return Boolean.TRUE.equals(JeiAreas.invoke(state, "isCheatItemsEnabled"));
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            if (!toggleWarned && !jeiAbsent(e)) {
+                toggleWarned = true;
+                NeiAddon.LOGGER.warn("Could not read JEI's cheat mode toggle; it counts as off", e);
+            }
             return false;
         }
     }
