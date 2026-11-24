@@ -18,7 +18,8 @@ import neiaddon.event.SubscribeEvent;
 /**
  * NEI's HeldItemHandler: in creative mode or cheat mode, with an item on the cursor over JEI's item list or the bookmark
  * panel, a left click deletes the item and a right click takes one off it; the tooltip says so. JEI does this itself
- * over its list when its own cheat mode is on, so this only steps in where JEI would not.
+ * over its list when its own cheat mode is on, so this only steps in where JEI would not. With EMI installed the panel
+ * deletes in cheat mode only (see deleteAllowed), and over EMI's item list JeiGive does it.
  */
 public final class HeldItemDelete {
 
@@ -30,13 +31,25 @@ public final class HeldItemDelete {
         return mc.player == null ? null : mc.player.containerMenu;
     }
 
+    /**
+     * Over the panel a click deletes: with EMI installed only in cheat mode (see {@link JeiGive#cheatingForClicks}, EMI's
+     * plain clicks are its own), else whenever the panel gives ({@link BookmarkPanel#canGive}).
+     */
+    private static boolean deleteAllowed() {
+        return EmiCompat.installed() ? JeiGive.cheatingForClicks() : BookmarkPanel.canGive();
+    }
+
     /** Is a click at the point a delete? */
     static boolean active(Screen s, double mx, double my) {
         if (s == null || RecipeHearts.isRecipesScreen(s) || Calculator.runtime == null) return false;
         AbstractContainerMenu menu = menuOf(s);
         if (menu == null || menu.getCarried()
-            .isEmpty() || !BookmarkPanel.canGive()) return false;
+            .isEmpty() || !deleteAllowed()) return false;
+        // the panel first: its layout already made room for other mods' areas (all but the very big ones)
         if (BookmarkPanel.contains(s, mx, my)) return true;
+        // another mod's tab or button over JEI's list (Sophisticated Storage's crafting upgrade, for one), or the
+        // screen's own window and slots, takes the click: the item goes there, it is never deleted
+        if (ScreenAreas.othersAt(s, mx, my)) return false;
         Rect2i list = JeiAreas.list();
         boolean overList = list != null && Calculator.runtime.getIngredientListOverlay()
             .isListDisplayed() && mx >= list.getX() && mx < list.getX() + list.getWidth() && my >= list.getY() && my < list.getY() + list.getHeight();
@@ -48,23 +61,32 @@ public final class HeldItemDelete {
     static void onMousePressed(ScreenEvent.MouseButtonPressed.Pre event) {
         int button = event.getButton();
         Screen s = event.getScreen();
-        if (button != 0 && button != 1 || !active(s, event.getMouseX(), event.getMouseY())) return;
-        AbstractContainerMenu menu = menuOf(s);
+        if (button != 0 && button != 1) return;
+        // the areas as they are now: a tab opened a moment ago must already count
+        JeiAreas.forgetExclusions();
+        if (!active(s, event.getMouseX(), event.getMouseY())) return;
+        if (deleteHeld(s, menuOf(s), button)) event.setCanceled(true);
+    }
+
+    /**
+     * Deletes the item on the cursor (left) or takes one off it (right) the way JEI's cheat mode does; false when the server
+     * did not take it. The cursor keeps the item in the creative screen (the game's own delete slot does the same).
+     */
+    static boolean deleteHeld(Screen s, AbstractContainerMenu menu, int button) {
         ItemStack held = menu.getCarried();
         boolean done;
         if (s instanceof CreativeModeInventoryScreen) {
-            // the creative screen keeps the cursor on this side (the game's own delete slot does the same)
             done = true;
         } else if (button == 1 && held.getCount() > 1) {
             done = JeiGive.deleteHeld(held) && JeiGive.giveToMouse(held, held.getCount() - 1);
         } else {
             done = JeiGive.deleteHeld(held);
         }
-        if (!done) return;
+        if (!done) return false;
         // what the server will do anyway, shown right away
         if (button == 1 && held.getCount() > 1) held.shrink(1);
         else menu.setCarried(ItemStack.EMPTY);
-        event.setCanceled(true);
+        return true;
     }
 
     /** True while the delete prompt is what the mouse position shows (set every frame before JEI draws its tooltips). */

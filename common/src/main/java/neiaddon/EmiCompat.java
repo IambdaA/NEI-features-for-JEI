@@ -30,6 +30,12 @@ public final class EmiCompat {
 
         boolean cheatMode();
 
+        /** EMI's own give packet for {@code count} of the stack (#36), onto the cursor when toCursor; false when the server has no EMI on it. */
+        boolean giveEmi(ItemStack stack, long count, boolean toCursor);
+
+        /** The item of EMI's item list (an index or favorites sidebar stack) under the point, empty when none or not an item. */
+        ItemStack sidebarStackAt(int x, int y);
+
         /** Every EMI recipe that makes the stack (an item, or a fluid carrier), as shapes; empty when there are none. */
         List<RecipeShape> recipesFor(ItemStack stack);
 
@@ -50,6 +56,9 @@ public final class EmiCompat {
 
         /** Drops the stack (an item, or a fluid carrier) on a target of the open screen through EMI's drag-and-drop handlers; true when one took it. */
         boolean dropStack(Screen screen, ItemStack stack, int x, int y);
+
+        /** Draws EMI's drop targets of the open screen for a stack (an item, or a fluid carrier) as when EMI's list drags it; true when EMI drew. */
+        boolean renderDropTargets(Screen screen, ItemStack stack, GuiGraphics g, int mouseX, int mouseY, float delta);
 
         /** EMI's player-set default recipe of the item (a stack; a fluid carrier for a fluid), as the addon's recipe id; null when there is none. EMI's built-in defaults do not count. */
         String defaultRecipe(ItemStack item);
@@ -182,6 +191,13 @@ public final class EmiCompat {
 
     /** Set by the EMI plugin when EMI is installed; null otherwise, and for good after one failure. */
     public static volatile LayoutHooks layout;
+
+    /**
+     * Whether the EMI plugin's drag-and-drop handler for the bookmark panel is registered and working. While it is, EMI takes
+     * the drops onto the panel and draws the drop targets, so JEI's own panel targets stand aside; false otherwise (also
+     * after that handler fails, so JEI's targets take over again).
+     */
+    public static volatile boolean panelDropLive;
 
     /**
      * Counts the EMI reloads: the EMI plugin calls {@link #reloaded} when one starts (EMI's loading thread) and
@@ -372,6 +388,45 @@ public final class EmiCompat {
         }
     }
 
+    private static boolean giveEmiFailed;
+
+    /**
+     * Gives through EMI's own give packet (#36): its server takes it for operators and creative players
+     * only, whatever EMI's setting says. {@code toCursor}: one stack onto the cursor, else into the inventory (JEI's give
+     * mode, see JeiGive). False without EMI, when the server has no EMI on it (EMI's own Ctrl + click
+     * gives nothing there either), and for good after one failure (one warning is logged).
+     */
+    public static boolean giveEmi(ItemStack stack, long count, boolean toCursor) {
+        Hooks h = hooks;
+        if (h == null || giveEmiFailed) return false;
+        try {
+            return h.giveEmi(stack, count, toCursor);
+        } catch (RuntimeException | LinkageError e) {
+            giveEmiFailed = true;
+            NeiAddon.LOGGER.warn("Could not give through EMI; the give keeps JEI's way", e);
+            return false;
+        }
+    }
+
+    private static boolean sidebarFailed;
+
+    /**
+     * The item of EMI's item list under the point (GUI coordinates), empty without EMI, when no sidebar stack is there, or
+     * when it is not an item. Off for good after one failure (one warning is logged).
+     */
+    public static ItemStack sidebarStackAt(int x, int y) {
+        Hooks h = hooks;
+        if (h == null || sidebarFailed) return ItemStack.EMPTY;
+        try {
+            ItemStack stack = h.sidebarStackAt(x, y);
+            return stack == null ? ItemStack.EMPTY : stack;
+        } catch (RuntimeException | LinkageError e) {
+            sidebarFailed = true;
+            NeiAddon.LOGGER.warn("Could not ask EMI which item list stack is under the mouse; clicks on EMI's list are left to EMI", e);
+            return ItemStack.EMPTY;
+        }
+    }
+
     private static boolean dropFailed;
 
     /**
@@ -387,6 +442,25 @@ public final class EmiCompat {
         } catch (RuntimeException | LinkageError e) {
             dropFailed = true;
             NeiAddon.LOGGER.warn("Could not drop a bookmark through EMI's drag and drop; only JEI's drop targets are used", e);
+            return false;
+        }
+    }
+
+    private static boolean renderFailed;
+
+    /**
+     * Draws EMI's drop targets of the open screen for a stack dragged out of the bookmark panel, as EMI draws them for a drag
+     * from its own list (see {@link Hooks#renderDropTargets}). False without EMI, when EMI draws nothing, and for good after
+     * one failure (one warning is logged).
+     */
+    public static boolean renderDropTargets(Screen screen, ItemStack stack, GuiGraphics g, int mouseX, int mouseY, float delta) {
+        Hooks h = hooks;
+        if (h == null || renderFailed || screen == null) return false;
+        try {
+            return h.renderDropTargets(screen, stack, g, mouseX, mouseY, delta);
+        } catch (RuntimeException | LinkageError e) {
+            renderFailed = true;
+            NeiAddon.LOGGER.warn("Could not draw EMI's drop targets for a bookmark drag; the addon draws its own targets from now on", e);
             return false;
         }
     }
@@ -663,6 +737,9 @@ public final class EmiCompat {
 
     /** The areas of the screen EMI must keep its sidebars out of. EMI calls this every frame, so it never throws. */
     public static List<Rect2i> areas(Screen screen) {
+        // asked while the bookmark panel reads the areas other mods keep free (a JEI stand-in on EMI, such as
+        // TooManyRecipeViewers, may answer with EMI's areas, ours among them): the panel must not make room for itself
+        if (JeiAreas.querying) return List.of();
         List<Rect2i> out = new ArrayList<>();
         add(out, 0, "bookmark panel", () -> BookmarkPanel.emiArea(screen));
         add(out, 1, "quantity field", QuantityField::extraAreas);

@@ -6,7 +6,9 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.events.ContainerEventHandler;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.Rect2i;
+import neiaddon.platform.ClientPlatform;
 
 /**
  * The buttons other mods add to the open screen (FTB's sidebar, Curios, inventory tweaks, and so on), read from the
@@ -18,6 +20,30 @@ public final class ScreenAreas {
     private static String loggedFor = "";
 
     private ScreenAreas() {}
+
+    /**
+     * Is the point on something that is not JEI's or the addon's: the container window, one of its slots, an area another
+     * mod asked JEI to keep free (an open Sophisticated Storage upgrade tab, FTB's buttons), or a visible widget of the
+     * screen? A click there belongs to that, never to the addon's features over JEI's item list. Every JEI area counts
+     * here, also the very big ones the bookmark panel's layout leaves out.
+     */
+    static boolean othersAt(Screen screen, double x, double y) {
+        if (screen == null) return false;
+        if (screen instanceof AbstractContainerScreen<?> c) {
+            int[] b = ClientPlatform.get()
+                .containerBounds(c);
+            if (x >= b[0] && x < b[0] + b[2] && y >= b[1] && y < b[1] + b[3]) return true;
+            if (ClientPlatform.get()
+                .hoveredSlot(c) != null) return true;
+        }
+        if (JeiAreas.inExclusion(screen, x, y)) return true;
+        for (Rect2i r : widgets(screen)) {
+            if (x >= r.getX() && x < r.getX() + r.getWidth() && y >= r.getY() && y < r.getY() + r.getHeight()) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /** Visible widgets of the screen that are not ours or JEI's, as rectangles. Empty when there are none. */
     public static List<Rect2i> widgets(Screen screen) {
@@ -123,8 +149,10 @@ public final class ScreenAreas {
             .getName() + jei.size() + "/" + widgets.size();
         if (key.equals(loggedFor)) return;
         loggedFor = key;
-        NeiAddon.LOGGER.info("Bookmark panel on {}: {} area(s) from JEI, {} widget(s) from the screen {}", screen.getClass()
-            .getSimpleName(), jei.size(), widgets.size(), describe(widgets));
+        NeiAddon.LOGGER.info("Bookmark panel on {}: {} area(s) from JEI {}, {} widget(s) from the screen {}",
+            screen.getClass()
+                .getSimpleName(),
+            jei.size(), jei.isEmpty() ? "[]" : describe(jei), widgets.size(), describe(widgets));
     }
 
     private static String describe(List<Rect2i> widgets) {

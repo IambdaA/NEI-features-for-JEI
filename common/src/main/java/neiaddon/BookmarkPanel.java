@@ -49,9 +49,10 @@ import neiaddon.event.ScreenEvent;
  * <li>Recipes (from the JEI heart button): in todo-list view every recipe is one row, its results first, then its
  * ingredients; in a crafting-chain group the amounts are calculated (see {@code neiaddon.chain}); amounts are drawn at
  * half size, the first result of an output recipe gets an {@code xN} marker.</li>
- * <li>Strip: Ctrl + click = crafting chain on/off (green), Alt + click = collapse, Ctrl + right click = calculator,
+ * <li>Strip: Ctrl + click = crafting chain on/off (green), Alt + click = collapse,
  * Shift + right click = remove the group.</li>
- * <li>Top label: click = calculator for ungrouped items, right click = chain on/off, scroll = grid page.</li>
+ * <li>Top label (the ungrouped items): click = todo-list view on/off, Alt + click = collapse, right click = chain on/off,
+ * scroll = grid page.</li>
  * <li>Bottom: {@code < n/N >} switch bookmark page, {@code +} adds a page.</li>
  * </ul>
  */
@@ -82,6 +83,14 @@ public final class BookmarkPanel {
      */
     private record Cell(Bookmarks.Entry entry, ChainDetails.Calc calc, String recipe, int slot, int row, int col,
         int groupId, boolean firstOutput) {}
+
+    /**
+     * The item a bookmark stands for. A bee of Productive Bees (see {@link Bees}) has none: everything that shows, gives,
+     * pulls or links an item shows nothing for it instead.
+     */
+    private static ItemStack stackOf(Bookmarks.Entry e) {
+        return e.isBee() ? ItemStack.EMPTY : e.key.sample;
+    }
 
     /** NEI's borderGrid: slot -> id of the box (collapsed group or collapsed recipe) drawn around its slots. */
     private static final Map<Integer, String> borderIds = new HashMap<>();
@@ -158,9 +167,14 @@ public final class BookmarkPanel {
         int y1 = screen.height - band;
         // other mods put buttons and panels beside the inventory (FTB Quests and Teams, for one): the areas they register
         // with JEI, and the buttons on the screen itself; the panel gives way to them instead of covering them
-        List<Rect2i> keepClear = new ArrayList<>(JeiAreas.exclusions(screen));
+        List<Rect2i> keepClear = new ArrayList<>();
+        List<Rect2i> fromJei = JeiAreas.exclusions(screen);
+        for (Rect2i r : fromJei) {
+            // an area that spans most of the screen is a background, not a tab or button (the rule the widgets below use)
+            if (r.getWidth() <= screen.width / 2 && r.getHeight() <= screen.height * 3 / 4) keepClear.add(r);
+        }
         List<Rect2i> found = ScreenAreas.widgets(screen);
-        ScreenAreas.log(screen, keepClear, found);
+        ScreenAreas.log(screen, fromJei, found);
         keepClear.addAll(found);
         // JEI's own overlays (the lookup history at the bottom, the item list on a narrow screen) are never covered either
         for (Rect2i jei : new Rect2i[] { JeiAreas.history(), JeiAreas.list() }) {
@@ -198,7 +212,8 @@ public final class BookmarkPanel {
         gridTop = py + BAR;
         rows = (y1 - y0 - PAD - BAR * 2 - barH) / SLOT;
         footY = y1 - PAD - BTN;
-        active = !isHidden() && cols >= 1 && rows >= 1;
+        // a column too narrow for the page arrows hides the panel instead of drawing them over the container
+        active = !isHidden() && cols >= 1 && rows >= 1 && columnW >= 64;
     }
 
     /** How many slots a free area of this size holds (what the panel would have there), for picking the best way around an obstacle. */
@@ -211,11 +226,6 @@ public final class BookmarkPanel {
     private static boolean isCollapsed(Bookmarks.Page page, int gid) {
         Bookmarks.GroupMeta m = page.metas.get(gid);
         return m != null && m.collapsed;
-    }
-
-    private static boolean isTodo(Bookmarks.Page page, int gid) {
-        Bookmarks.GroupMeta m = page.metas.get(gid);
-        return m != null && m.todo;
     }
 
     private static boolean isChain(Bookmarks.Page page, int gid) {
@@ -249,6 +259,11 @@ public final class BookmarkPanel {
         return index;
     }
 
+    /** A recipe entry whose recipe the crafting tree's SMART collapse hides (see {@link FinishedSteps}). */
+    private static boolean hiddenEntry(Set<String> finished, Bookmarks.Entry e) {
+        return e != null && e.isRecipe() && finished.contains(e.recipeId);
+    }
+
     private static Cell cellOf(Bookmarks.Entry item, ChainDetails d, int next, int gid, boolean first) {
         return new Cell(item, d != null ? d.calculated.get(item) : null, item.isRecipe() ? item.recipeId : null, next,
             next / cols, next % cols, gid, first);
@@ -258,6 +273,14 @@ public final class BookmarkPanel {
     /** Merged slots of a collapsed recipe cannot be edited item by item (tags, reordering). */
     private static boolean single(Cell c) {
         return c.calc() == null || !c.calc().shadow;
+    }
+
+    /**
+     * Whether a middle click opens the tag chooser on this cell (issue #39): a shown slot of a recipe ingredient that
+     * accepts several items, one that can be edited (the wheel gates on the same). Merged and collapsed slots cannot.
+     */
+    private static boolean chooserCell(Bookmarks.Page page, Cell c) {
+        return c != null && Bookmarks.hasOptions(c.entry()) && single(c) && !isCollapsed(page, c.groupId());
     }
 
     private static long amountOf(Cell c) {
@@ -284,6 +307,9 @@ public final class BookmarkPanel {
             int gid = e.groupId;
             Bookmarks.GroupMeta meta = page.metas.get(gid);
             ChainDetails d = Bookmarks.chain(page, gid);
+            // the steps the crafting tree's SMART collapse folds away are not drawn (display only, see FinishedSteps)
+            Set<String> finished = FinishedSteps.hiddenRecipes(page, gid);
+            if (hiddenEntry(finished, e)) continue;
             boolean collapsed = meta != null && meta.collapsed;
             boolean todo = meta != null && meta.todo;
             // NEI: in a crafting chain only the items the maths drew a slot for are shown; a collapsed recipe's own
@@ -300,7 +326,10 @@ public final class BookmarkPanel {
                 int end = index;
                 while (end < page.entries.size() && page.entries.get(end).groupId == gid) {
                     Bookmarks.Entry x = page.entries.get(end++);
-                    if (x.type != ChainItem.Type.INGREDIENT && (d == null || d.calculated.containsKey(x))) sequence.add(x);
+                    if (x.type != ChainItem.Type.INGREDIENT && (d == null || d.calculated.containsKey(x))
+                        && !hiddenEntry(finished, x)) {
+                        sequence.add(x);
+                    }
                 }
                 skipUntil = end;
                 for (int i = 0; i < sequence.size(); i++) {
@@ -325,6 +354,8 @@ public final class BookmarkPanel {
                 // a collapsed recipe in todo-list view: one block of merged slots
                 String recipe = e.recipeId;
                 List<ChainDetails.Calc> block = new ArrayList<>(d.collapsedItems.get(recipe));
+                // the recipes the block swallows that are finished are not drawn in it either
+                block.removeIf(c -> hiddenEntry(finished, (Bookmarks.Entry) c.item.payload));
                 block.sort(
                     Comparator.<ChainDetails.Calc>comparingInt(c -> c.type.toInt())
                         .thenComparing(c -> c.item.item));
@@ -442,7 +473,7 @@ public final class BookmarkPanel {
         layout(s);
         if (!active || !inPanel(lastMx, lastMy)) return ItemStack.EMPTY;
         Cell c = cellAt(lastMx, lastMy);
-        return c == null ? ItemStack.EMPTY : c.entry().key.sample;
+        return c == null ? ItemStack.EMPTY : stackOf(c.entry());
     }
 
     public static List<GroupArea> groupAreas() {
@@ -581,13 +612,21 @@ public final class BookmarkPanel {
         return mx >= x && mx < x + w && my >= y && my < y + h;
     }
 
+    /**
+     * Width of the header and footer bars: the panel's width, or 64 px for the page arrows when the slots are narrower
+     * (the bars then reach into the free column beside the slots, never past it).
+     */
+    private static int barW() {
+        return Math.max(pw, Math.min(columnW, 64));
+    }
+
     // top bar: grid page buttons
     private static int hdrPrevX() {
         return px;
     }
 
     private static int hdrNextX() {
-        return px + pw - BTN;
+        return px + barW() - BTN;
     }
 
     private static int hdrY() {
@@ -601,10 +640,11 @@ public final class BookmarkPanel {
 
     /** Keeps the bookmark-page buttons clear of JEI's own toggle buttons in the bottom-left corner. */
     private static int nsCenter() {
-        int reserve = band == 0 && pw >= 150 ? 92 : 0;
-        int center = px + reserve + (pw - reserve) / 2;
+        int bw = barW();
+        int reserve = band == 0 && bw >= 150 ? 92 : 0;
+        int center = px + reserve + (bw - reserve) / 2;
         // leave room on the right for the P button (pull items); narrow panels (big GUI scales) shift the whole row left
-        int latest = px + pw - (nsLabelW() / 2 + 2 + BTN + 2 + BTN);
+        int latest = px + bw - (nsLabelW() / 2 + 2 + BTN + 2 + BTN);
         return Math.max(px + nsLabelW() / 2 + 2 + BTN, Math.min(center, latest));
     }
 
@@ -623,7 +663,7 @@ public final class BookmarkPanel {
 
     /** NEI shows it only with a chest open and bookmarks to pull. */
     private static boolean pullShown(Bookmarks.Page page) {
-        return Pull.available() && !page.entries.isEmpty() && pullX() + BTN <= px + pw;
+        return Pull.available() && !page.entries.isEmpty() && pullX() + BTN <= px + barW();
     }
 
     /** Giving needs creative mode or cheat mode (JEI's, EMI's or this addon's). */
@@ -634,23 +674,35 @@ public final class BookmarkPanel {
 
     /**
      * The give key over a crafting-chain group's strip: gives what the chain is missing from outside (the red ingredients
-     * of its Shift tooltip), so autocrafting can run: base items in the amounts that are short, and for a tool that is
+     * of its Shift + Ctrl tooltip), so autocrafting can run: base items in the amounts that are short, and for a tool that is
      * short of durability as many new tools as cover it. Always into the inventory (JEI's "give to the mouse" mode would
      * leave only the last item on the cursor). Fluids are skipped (they cannot be given as items).
      */
     private static boolean giveMissing(Bookmarks.Page page, int gid) {
         Map<String, Object[]> give = new LinkedHashMap<>();
         try {
-            computeShift(page, gid, false, give);
+            // the give plan keeps the crafted-again-on-top amount it always had (the Shift + Ctrl tooltip), not the Shift + C one
+            computeShift(page, gid, true, give);
         } catch (RuntimeException e) {
             NeiAddon.LOGGER.warn("Could not work out the missing ingredients of group {}", gid, e);
             return false;
         }
         int given = 0;
-        for (Object[] v : give.values()) {
-            if (JeiGive.give((ItemStack) v[0], (Long) v[1], true)) given++;
+        StringBuilder what = new StringBuilder();
+        int listed = 0;
+        for (Map.Entry<String, Object[]> e : give.entrySet()) {
+            // #46: the amounts given, so the give plan can be compared with the crafting plan in the
+            // log; a GregTech chain can list a lot of kinds, so the line lists at most 60 and counts the rest
+            if (listed++ < 60) {
+                what.append(", ").append(e.getKey()).append(" x").append(e.getValue()[1]);
+            }
+            if (JeiGive.give((ItemStack) e.getValue()[0], (Long) e.getValue()[1], true)) given++;
         }
-        NeiAddon.LOGGER.info("Gave the missing ingredients of bookmark group {}: {} of {} item kind(s)", gid, given, give.size());
+        if (give.size() > 60) {
+            what.append(" (+").append(give.size() - 60).append(" more)");
+        }
+        NeiAddon.LOGGER.info("Gave the missing ingredients of bookmark group {}: {} of {} item kind(s){}", gid, given,
+            give.size(), what);
         return true;
     }
 
@@ -670,7 +722,7 @@ public final class BookmarkPanel {
         boolean overPrev = in(mx, my, hdrPrevX(), hdrY(), BTN, BTN);
         boolean overNext = in(mx, my, hdrNextX(), hdrY(), BTN, BTN);
         int labX = px + BTN;
-        int labW = pw - BTN * 2;
+        int labW = barW() - BTN * 2;
         boolean overLabel = in(mx, my, labX, hdrY(), labW, BTN);
         if (pages > 1 || !page.entries.isEmpty()) {
             button(g, font, hdrPrevX(), hdrY(), BTN, BTN, "<", overPrev);
@@ -759,7 +811,7 @@ public final class BookmarkPanel {
             // NEI showRecipeMarkerMode 2: results of a recipe get a tinted background
             if (recipeResult && !hovered && AddonConfig.BM_MARKER_MODE.get() == 2) g.fill(x, y, x + SLOT, y + SLOT, RESULT_BG);
             if (hovered) g.fill(x, y, x + SLOT, y + SLOT, HIGHLIGHT);
-            ItemStack stack = c.entry().key.sample;
+            ItemStack stack = stackOf(c.entry());
             // Bookmark Scale: what is in the slot is drawn at the slot's size
             int cellX = x, cellY = y;
             Pose cellPose = Pose.of(g);
@@ -768,7 +820,9 @@ public final class BookmarkPanel {
             cellPose.scale(SLOT / 18f, SLOT / 18f);
             x = 0;
             y = 0;
-            FluidStacks.item(g, stack, x + 1, y + 1);
+            // a bookmarked bee is drawn as JEI draws that bee in its own list, in the box an item's picture goes in
+            if (c.entry().isBee()) Bees.draw(g, c.entry().itemId(), x + 1, y + 1);
+            else FluidStacks.item(g, stack, x + 1, y + 1);
             g.renderItemDecorations(font, stack, x + 1, y + 1, null);
             // NEI: amounts are drawn small (half size) bottom right, only when above 0
             long amount = amountOf(c);
@@ -788,6 +842,9 @@ public final class BookmarkPanel {
             }
             if (recipeResult && (c.firstOutput() || AddonConfig.BM_MARKER_MODE.get() == 1)) drawRecipeMarker(g, font, c, x, y);
             else if (jeiStyle(c)) drawRecipeMarker(g, font, c, x, y);
+            // issue #39: a small marker that the slot accepts several items, so the chooser is findable (middle click
+            // opens it); the slot itself is not moved or resized
+            if (chooserCell(page, c)) drawSmall(g, font, "*", x + 1, y + 1 + 16 - 9 * 0.5f, 0xFFE0E0E0);
             cellPose.popMatrix();
             x = cellX;
             y = cellY;
@@ -803,8 +860,11 @@ public final class BookmarkPanel {
             // see HeldItemDelete
         } else if (reorder != null) {
             Pose.begin(g, Pose.OVER);
-            FluidStacks.item(g, reorder.key.sample, mx - 8, my - 8);
+            if (reorder.isBee()) Bees.draw(g, reorder.itemId(), mx - 8, my - 8);
+            else FluidStacks.item(g, stackOf(reorder), mx - 8, my - 8);
             Pose.end(g);
+        } else if (hover != null && hover.entry().isBee() && dragMode == 0) {
+            beeTooltip(g, font, hover, mx, my);
         } else if (!tipStack.isEmpty() && dragMode == 0) {
             itemTooltip(g, font, tipStack, hover, mx, my);
         } else if (groupTip != null && dragMode == 0 && tip == null) {
@@ -881,7 +941,8 @@ public final class BookmarkPanel {
         // a plain item from JEI's recipe bookmark button always shows the recipe type's icon, like JEI's own list
         boolean plain = c.recipe() == null;
         String recipe = tipRecipe(c);
-        if (recipe != null && (plain || AddonConfig.BM_HANDLER_ICON.get())) {
+        // a bee has no item stack to aim the lookup at: it just gets the "R", and must not poison the icon cache
+        if (recipe != null && !c.entry().isBee() && (plain || AddonConfig.BM_HANDLER_ICON.get())) {
             icon = icons.computeIfAbsent(recipe, id -> {
                 try {
                     RecipeLookup.Target<?> target = RecipeLookup.findTarget(id, c.entry().key.sample);
@@ -1088,6 +1149,7 @@ public final class BookmarkPanel {
     /** NEI's RecipeChainTooltipLineHandler.createLines without Shift: what the chain makes and what it needs. */
     private static List<Section> chainSections(Bookmarks.Page page, int gid) {
         if (McCompat.shift()) {
+            // plain Shift plans only what is still missing (as Shift + C does); Shift + Ctrl crafts the full amount again
             List<Section> counted = chainSectionsShift(page, gid, McCompat.ctrl());
             if (!counted.isEmpty()) return counted;
         }
@@ -1118,7 +1180,7 @@ public final class BookmarkPanel {
 
     // ---- Shift: the chain with the inventory counted (NEI's RecipeChainTooltipLineHandler with the Shift key held)
 
-    private record ShiftCache(Bookmarks.Page page, int gid, boolean ctrl, long at, List<Section> sections) {}
+    private record ShiftCache(Bookmarks.Page page, int gid, boolean again, long at, List<Section> sections) {}
 
     private static ShiftCache shiftCache;
 
@@ -1169,33 +1231,34 @@ public final class BookmarkPanel {
     }
 
     /** Recomputed twice a second, not every frame. */
-    private static List<Section> chainSectionsShift(Bookmarks.Page page, int gid, boolean ctrl) {
+    private static List<Section> chainSectionsShift(Bookmarks.Page page, int gid, boolean again) {
         long now = System.currentTimeMillis();
         ShiftCache c = shiftCache;
-        if (c != null && c.page() == page && c.gid() == gid && c.ctrl() == ctrl && now - c.at() < 500) return c.sections();
+        if (c != null && c.page() == page && c.gid() == gid && c.again() == again && now - c.at() < 500) return c.sections();
         List<Section> result;
         try {
-            result = computeShift(page, gid, ctrl);
+            result = computeShift(page, gid, again);
         } catch (RuntimeException e) {
             NeiAddon.LOGGER.warn("Chain tooltip with inventory failed", e);
             result = List.of();
         }
-        shiftCache = new ShiftCache(page, gid, ctrl, now, result);
+        shiftCache = new ShiftCache(page, gid, again, now, result);
         return result;
     }
 
-    private static List<Section> computeShift(Bookmarks.Page page, int gid, boolean ctrl) {
-        return computeShift(page, gid, ctrl, null);
+    /** {@code again}: what the inventory holds is crafted again on top (Shift + Ctrl + C); otherwise only what is missing (Shift + C). */
+    private static List<Section> computeShift(Bookmarks.Page page, int gid, boolean again) {
+        return computeShift(page, gid, again, null);
     }
 
     /** {@code give}, when not null, gets what is short: id -> {stack, how many to give}. */
-    private static List<Section> computeShift(Bookmarks.Page page, int gid, boolean ctrl, Map<String, Object[]> give) {
+    private static List<Section> computeShift(Bookmarks.Page page, int gid, boolean again, Map<String, Object[]> give) {
         ChainMath m = page.hasRecipes(gid) ? Bookmarks.autocraftChain(page, gid) : null;
         if (m == null) return List.of();
         Map<String, Long> have = inventoryCounts();
         m.initialItems.clear();
-        if (!ctrl) {
-            // without Ctrl: what the inventory already holds is crafted again on top (as Shift+C does)
+        if (again) {
+            // Shift + Ctrl + C: what the inventory already holds is crafted again on top
             for (ChainItem item : m.recipeResults) {
                 if (item.emptyFactor() || !m.outputRecipes.containsKey(item.recipeId)) continue;
                 long amount = have.getOrDefault(item.item, 0L);
@@ -1376,8 +1439,23 @@ public final class BookmarkPanel {
         if (y + height + 6 > scrH) y = scrH - height - 6;
         y = Math.max(y, 6);
         x = Math.max(x, 6);
+        // a tooltip taller or wider than the screen is drawn smaller, its top left corner kept on the screen
+        float fit = TreeDraw.fitScale(width, height, scrW, scrH);
+        boolean scaled = fit < 1f;
+        if (scaled) {
+            x = Math.max(6, Math.min(x, scrW - 6 - Math.round(width * fit)));
+            y = 6;
+        }
 
         Pose.begin(g, Pose.TOOLTIP);
+        if (scaled) {
+            Pose scale = Pose.of(g);
+            scale.pushMatrix();
+            scale.translate(x, y);
+            scale.scale(fit, fit);
+            x = 0;
+            y = 0;
+        }
         g.fill(x - 3, y - 4, x + width + 3, y + height + 4, 0xF0100010);
         g.fill(x - 4, y - 3, x + width + 4, y + height + 3, 0xF0100010);
         g.fill(x - 3, y - 3, x + width + 3, y - 2, 0xF0280070);
@@ -1415,7 +1493,16 @@ public final class BookmarkPanel {
             }
             ty += layout.rows() * TIP_SLOT;
         }
+        if (scaled) Pose.of(g).popMatrix();
         Pose.end(g);
+    }
+
+    /** The tooltip of a bookmarked bee: Productive Bees' own tooltip of that bee (see {@link Bees}). */
+    private static void beeTooltip(GuiGraphics g, Font font, Cell cell, int mx, int my) {
+        List<FormattedCharSequence> lines = new ArrayList<>();
+        for (Component line : Bees.tooltip(cell.entry().itemId())) lines.addAll(font.split(line, 260));
+        if (lines.isEmpty()) return;
+        g.renderTooltip(font, lines, mx, my);
     }
 
     private static void itemTooltip(GuiGraphics g, Font font, ItemStack stack, Cell cell, int mx, int my) {
@@ -1437,6 +1524,7 @@ public final class BookmarkPanel {
                 tipRecipe(cell) != null && entry.type != ChainItem.Type.INGREDIENT))) {
             tip.add(Component.literal(line));
         }
+        if (chooserCell(page, cell)) tip.add(Component.literal("§7Middle click: choose the accepted item"));
         for (int i = 1; i < body.size(); i++) tip.add(body.get(i));
         if (cell.recipe() != null) {
             ChainDetails.Calc calc = cell.calc();
@@ -1502,7 +1590,10 @@ public final class BookmarkPanel {
     }
 
     private static boolean inPanel(double mx, double my) {
-        if (!active || !in(mx, my, px, py, pw, footY + BTN - py)) return false;
+        if (!active) return false;
+        // the slots take the panel's own width; only the header and footer bars may reach wider (barW)
+        if (!in(mx, my, px, py, pw, footY + BTN - py) && !in(mx, my, px, hdrY(), barW(), BTN)
+            && !in(mx, my, px, footY, barW(), BTN)) return false;
         // JEI's own button row (bookmarks / history) at the bottom left stays JEI's
         Screen s = McCompat.screen();
         return s == null || !JeiButtons.overButtonRow(mx, my, s.height);
@@ -1573,7 +1664,7 @@ public final class BookmarkPanel {
             if (button == 0) gridPage = gridPage >= gridPages() - 1 ? 0 : gridPage + 1;
             return;
         }
-        if (in(mx, my, px + BTN, hdrY(), pw - BTN * 2, BTN)) {
+        if (in(mx, my, px + BTN, hdrY(), barW() - BTN * 2, BTN)) {
             // NEI: the page label is the handle of the default (ungrouped) group
             if (button == 0 && alt()) {
                 Bookmarks.GroupMeta m = page.meta(Bookmarks.NO_GROUP);
@@ -1623,6 +1714,9 @@ public final class BookmarkPanel {
                 reorder = e;
                 reorderRecipe = c.recipe();
             }
+        } else if (button == 2 && chooserCell(page, c)) {
+            // issue #39: a middle click opens the tag chooser for a slot whose ingredient accepts several items
+            IngredientDirectory.openSelect(e, screen, mx, my);
         } else if (button == 0 || button == 1) {
             // acted on at the release (see clickCell), so that the press can become a drag out of the panel instead
             pressed = c;
@@ -1632,20 +1726,36 @@ public final class BookmarkPanel {
         }
     }
 
+    /**
+     * Does a click on a bookmark give it? Without EMI: in JEI's or this addon's cheat mode, on any click. With EMI: in cheat mode
+     * (see {@link JeiGive#cheatingForClicks}) only with Ctrl held and not Shift or Alt, so a plain click shows the recipes as
+     * on EMI's list.
+     */
+    private static boolean giveClick() {
+        if (!EmiCompat.installed()) return JeiGive.cheating();
+        return JeiGive.cheatingForClicks() && McCompat.ctrl() && !McCompat.shift() && !McCompat.alt();
+    }
+
     /** A click on a bookmark (its press and release both on it, the mouse not dragged away): gives it or shows its recipes. */
     private static void clickCell(Screen screen, Cell c, int button) {
         Bookmarks.Entry e = c.entry();
+        if (e.isBee()) {
+            // a bee (see Bees) has no item to give in Cheat Mode; the click asks JEI for its recipes through Productive
+            // Bees' own ingredient, as a click on any other bookmark does
+            Bees.showRecipes(e.itemId(), button == 0 ? RecipeIngredientRole.OUTPUT : RecipeIngredientRole.INPUT);
+            return;
+        }
         // NEI Cheat Mode (not in the recipe screen): a click gives the item (left: see cheatAmount, right: one);
         // JEI's show-recipes / show-uses keys over the bookmark still show its recipes
-        if (!RecipeHearts.isRecipesScreen(screen) && JeiGive.cheating()
-            && JeiGive.give(e.key.sample, button == 0 ? cheatAmount(c) : 1)) {
+        if (!RecipeHearts.isRecipesScreen(screen) && giveClick()
+            && JeiGive.give(stackOf(e), button == 0 ? cheatAmount(c) : 1)) {
             return;
         }
         if (button == 0) {
             // the recipe the bookmark was made from (a recipe's result, or an item from JEI's recipe bookmark button), else its recipes
-            if (!showBookmarkedRecipe(c)) showRecipes(e.key.sample, RecipeIngredientRole.OUTPUT);
+            if (!showBookmarkedRecipe(c)) showRecipesOf(e, RecipeIngredientRole.OUTPUT);
         } else {
-            showRecipes(e.key.sample, RecipeIngredientRole.INPUT);
+            showRecipesOf(e, RecipeIngredientRole.INPUT);
         }
     }
 
@@ -1655,14 +1765,14 @@ public final class BookmarkPanel {
      */
     private static long cheatAmount(Cell c) {
         long own = amountOf(c);
-        return own > 1 ? own : QuantityField.scrollMultiplier(c.entry().key.sample);
+        return own > 1 ? own : QuantityField.scrollMultiplier(stackOf(c.entry()));
     }
 
     /** Is the point over one of the panel's buttons, its page label, a group strip row or a bookmark? */
     private static boolean overControl(Bookmarks.Page page, double mx, double my) {
         if (in(mx, my, nsPrevX(), footY, BTN, BTN) || in(mx, my, nsNextX(), footY, BTN, BTN)) return true;
         if (pullShown(page) && in(mx, my, pullX(), footY, BTN, BTN)) return true;
-        if (in(mx, my, px, hdrY(), pw, BTN)) return true;
+        if (in(mx, my, px, hdrY(), barW(), BTN)) return true;
         return stripRowAt(mx, my) >= 0 || cellAt(mx, my) != null;
     }
 
@@ -1670,7 +1780,7 @@ public final class BookmarkPanel {
     private static boolean showBookmarkedRecipe(Cell c) {
         String recipeId = tipRecipe(c);
         var rt = Calculator.runtime;
-        if (recipeId == null || rt == null || c.entry().type == ChainItem.Type.INGREDIENT) return false;
+        if (recipeId == null || rt == null || c.entry().isBee() || c.entry().type == ChainItem.Type.INGREDIENT) return false;
         try {
             RecipeLookup.Target<?> target = RecipeLookup.findTarget(recipeId, c.entry().key.sample);
             if (target == null) return false;
@@ -1682,9 +1792,16 @@ public final class BookmarkPanel {
         }
     }
 
+    /** JEI's recipe screen of a bookmark: the item it stands for, or a bee of Productive Bees (see {@link Bees}). */
+    private static void showRecipesOf(Bookmarks.Entry e, RecipeIngredientRole role) {
+        if (e.isBee()) Bees.showRecipes(e.itemId(), role);
+        else showRecipes(e.key.sample, role);
+    }
+
     static void showRecipes(ItemStack stack, RecipeIngredientRole role) {
         var rt = Calculator.runtime;
-        if (rt == null) return;
+        // nothing to ask JEI about (a bookmark with no item behind it, see Bees)
+        if (rt == null || stack.isEmpty()) return;
         var focus = FluidStacks.focus(rt, role, stack);
         rt.getRecipesGui()
             .show(focus);
@@ -1705,7 +1822,9 @@ public final class BookmarkPanel {
             if (!draggingOut && event.getScreen() instanceof AbstractContainerScreen<?>) {
                 double dx = event.getMouseX() - pressX;
                 double dy = event.getMouseY() - pressY;
-                if (dx * dx + dy * dy > DRAG_START * DRAG_START) {
+                if (dx * dx + dy * dy > DRAG_START * DRAG_START && !pressed.entry().isBee()) {
+                    // a bee (see Bees) has no item to hand to another mod's slot, so it is not dragged out of the panel;
+                    // moving it inside the panel, in its order and between groups, works as it does for any other bookmark
                     draggingOut = true;
                     BookmarkDrag.start(event.getScreen(), pressed.entry().key.sample);
                 }
@@ -1878,7 +1997,7 @@ public final class BookmarkPanel {
                     Bookmarks.shiftGroupAmount(page, c.groupId(), dir);
                 } else {
                     // Ctrl+Alt uses the item's stack size as the multiplier
-                    long step = alt() ? QuantityField.scrollMultiplier(c.entry().key.sample) : 1;
+                    long step = alt() ? QuantityField.scrollMultiplier(stackOf(c.entry())) : 1;
                     if (c.recipe() != null) {
                         // NEI: Ctrl + wheel on a recipe item changes how often the whole recipe runs (a collapsed recipe: the collapsed one)
                         Bookmarks.shiftRecipeAmount(page, c.groupId(), c.recipe(), dir * step);
@@ -1909,7 +2028,7 @@ public final class BookmarkPanel {
             int gid = rowGroup.getOrDefault(sr, Bookmarks.NO_GROUP);
             return gid == Bookmarks.NO_GROUP ? -1 : gid;
         }
-        if (!page.entries.isEmpty() && in(mx, my, px + BTN, hdrY(), pw - BTN * 2, BTN)) return Bookmarks.NO_GROUP;
+        if (!page.entries.isEmpty() && in(mx, my, px + BTN, hdrY(), barW() - BTN * 2, BTN)) return Bookmarks.NO_GROUP;
         return -1;
     }
 
@@ -1938,7 +2057,7 @@ public final class BookmarkPanel {
             String payload = gid >= 0 ? Bookmarks.shareGroup(page, gid)
                 : c == null ? null
                 : shift() && c.entry().type == ChainItem.Type.RESULT ? Bookmarks.shareRecipe(page, c.entry())
-                : Bookmarks.shareItem(c.entry().key.sample, amountOf(c));
+                : Bookmarks.shareItem(stackOf(c.entry()), amountOf(c));
             if (ShareClient.send(payload)) event.setCanceled(true);
             return;
         }
@@ -1949,13 +2068,14 @@ public final class BookmarkPanel {
         if (McCompat.matches(CalcKeys.PULL, key)) {
             // NEI: over a group handle every item of the group, over an item that item at its amount; Shift: only what is missing
             boolean pulled = gid >= 0 ? Pull.pull(Bookmarks.pullMath(page, gid), shift())
-                : c != null && Pull.pullItem(c.entry().key.sample, amountOf(c), shift());
+                : c != null && Pull.pullItem(stackOf(c.entry()), amountOf(c), shift());
             if (pulled) event.setCanceled(true);
             return;
         }
         if (shift() && McCompat.matches(CalcKeys.CRAFT, key)) {
-            // NEI: over a crafting-chain group handle it crafts the whole chain, over a recipe's result just that recipe;
-            // Ctrl keeps what the inventory already holds, without it the wanted amount is crafted again
+            // NEI: over a crafting-chain group handle it crafts the whole chain, over a recipe's result just that
+            // recipe; #46: only what the inventory is missing is crafted, Ctrl crafts the wanted amount
+            // again even if the inventory already holds it (NEI has the Ctrl modifier the other way)
             ChainMath math = gid >= 0 && isChain(page, gid) ? Bookmarks.autocraftChain(page, gid)
                 : c != null ? Bookmarks.autocraftRecipe(page, c.entry()) : null;
             NeiAddon.LOGGER.info(
@@ -1965,7 +2085,7 @@ public final class BookmarkPanel {
                 c == null ? null : c.entry().itemId(),
                 c == null ? null : c.entry().type,
                 c == null ? null : c.entry().recipeId);
-            if (AutoCraft.start(math, !ctrl())) event.setCanceled(true);
+            if (AutoCraft.start(math, ctrl())) event.setCanceled(true);
             return;
         }
         if (McCompat.matches(CalcKeys.ADD, key)) {
@@ -1980,7 +2100,7 @@ public final class BookmarkPanel {
             }
         } else if (c != null && !ctrl() && (CalcKeys.isShowRecipe(key) || CalcKeys.isShowUses(key))) {
             // NEI recipe.recipe / recipe.usage over a bookmarked item: JEI's show-recipes / show-uses keys (R / U by default; JEI's own handling only knows its own lists)
-            showRecipes(c.entry().key.sample, CalcKeys.isShowRecipe(key) ? RecipeIngredientRole.OUTPUT : RecipeIngredientRole.INPUT);
+            showRecipesOf(c.entry(), CalcKeys.isShowRecipe(key) ? RecipeIngredientRole.OUTPUT : RecipeIngredientRole.INPUT);
             event.setCanceled(true);
         } else if (McCompat.matches(CalcKeys.TREE, key) && gid >= 0 && isChain(page, gid) && Calculator.available()) {
             // NEI bookmark.open_crafting_tree: only for groups in crafting-chain mode

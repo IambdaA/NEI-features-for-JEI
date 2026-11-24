@@ -82,10 +82,6 @@ public final class ChainItem {
         return new ChainItem(item, recipeId, type, factor, multiplier, options, payload, source);
     }
 
-    public ChainItem withSource(int source) {
-        return new ChainItem(item, recipeId, type, factor, multiplier, options, payload, source);
-    }
-
     public boolean containsItems(ChainItem other) {
         for (String o : options) {
             if (other.options.contains(o)) return true;

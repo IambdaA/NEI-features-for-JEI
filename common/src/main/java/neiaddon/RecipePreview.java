@@ -169,20 +169,24 @@ public final class RecipePreview {
         int ph = picture != null ? picture.getRect().getHeight() : emi.height();
         int bw = pw;
         int bh = ph + 2;
+        // a picture bigger than the screen is drawn smaller (TreeDraw.boxAt): the placement uses the size it is drawn at
+        float fit = TreeDraw.fitScale(bw, bh, screenW, screenH);
+        int dw = Math.round(bw * fit);
+        int dh = Math.round(bh * fit);
         int gap = 6;
         int bx = Integer.MIN_VALUE;
-        int by = Math.max(4, Math.min(tipY, screenH - bh - 4));
-        boolean fitsRight = right + gap + bw + 4 <= screenW;
-        boolean fitsLeft = left - gap - bw - 4 >= 0;
+        int by = Math.max(4, Math.min(tipY, screenH - dh - 4));
+        boolean fitsRight = right + gap + dw + 4 <= screenW;
+        boolean fitsLeft = left - gap - dw - 4 >= 0;
         if (!flipped && fitsRight) bx = right + gap;
-        else if (flipped && fitsLeft) bx = left - gap - bw;
+        else if (flipped && fitsLeft) bx = left - gap - dw;
         else if (fitsRight) bx = right + gap;
-        else if (fitsLeft) bx = left - gap - bw;
+        else if (fitsLeft) bx = left - gap - dw;
         else {
             // no room beside it: below the tooltip, else above it
-            bx = Math.max(4, Math.min(tipX, screenW - bw - 4));
-            if (bottom + gap + bh + 4 <= screenH) by = bottom + gap;
-            else if (top - gap - bh - 4 >= 0) by = top - gap - bh;
+            bx = Math.max(4, Math.min(tipX, screenW - dw - 4));
+            if (bottom + gap + dh + 4 <= screenH) by = bottom + gap;
+            else if (top - gap - dh - 4 >= 0) by = top - gap - dh;
             else return;
         }
         List<FormattedCharSequence> none = List.of();

@@ -57,6 +57,12 @@ public final class Favorites {
         }
     }
 
+    /** The item ids that have a favorite recipe saved in the addon's own file (a copy; reads only the file). */
+    static java.util.Set<String> itemIds() {
+        ensureLoaded();
+        return new java.util.HashSet<>(byItem.keySet());
+    }
+
     /** Forgets the EMI lookups of the last client tick (called once per tick, and on every change of a favorite). */
     public static void clearEmiLookups() {
         emiThisTick.clear();
@@ -80,12 +86,17 @@ public final class Favorites {
         return bar >= 0 && (hash < 0 || bar < hash) ? id.substring(bar + 1) : null;
     }
 
-    /** The favorite recipe id of an item (registry id), or null. EMI's player-set default comes first when EMI has one. */
+    /**
+     * The favorite recipe id of an item (registry id), or null. EMI's player-set default comes first when EMI has one. A
+     * favorite that is a page which only shows information (saved before that was ruled out) is ignored: null here, and the
+     * entry stays in the file, unchanged.
+     */
     public static String recipeFor(String itemId) {
         ensureLoaded();
         String emi = emiDefault(itemId);
-        if (emi != null) return emi;
-        return byItem.get(itemId);
+        if (emi != null && !RecipeShape.infoOnly(emi)) return emi;
+        String saved = byItem.get(itemId);
+        return saved == null || RecipeShape.infoOnly(saved) ? null : saved;
     }
 
     /** EMI's player-set default recipe of the item, once per tick; null when there is none or EMI is not ready. Never writes. */
@@ -123,10 +134,6 @@ public final class Favorites {
             if (sameRecipe(e.getValue(), recipeId) && sameRecipe(recipeFor(e.getKey()), recipeId)) return e.getKey();
         }
         return null;
-    }
-
-    public static boolean isFavorite(String recipeId) {
-        return itemFor(recipeId) != null;
     }
 
     /**

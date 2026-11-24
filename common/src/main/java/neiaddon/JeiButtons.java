@@ -160,6 +160,9 @@ public final class JeiButtons {
             Rect2i r = real.get(0);
             return inside(mx, my, r.getX(), r.getY(), r.getWidth(), r.getHeight());
         }
+        // #44: with EMI's own buttons in the corner nothing is drawn at the fixed box, and EMI takes the
+        // clicks on its widgets: the gaps between them must not toggle the panel, so the box is not claimed
+        if (!EmiCompat.buttonAreas().isEmpty()) return false;
         return inside(mx, my, MARGIN, screenHeight - MARGIN - SIZE, SIZE, SIZE);
     }
 
@@ -195,6 +198,9 @@ public final class JeiButtons {
             int right = configX() + 4 * (SIZE + GAP);
             return inside(mx, my, x, last.getY() - 2, Math.max(right, last.getX() + last.getWidth()) - x, SIZE + 4);
         }
+        // #44: the same corner with EMI's buttons: EMI's widgets already ate their own clicks, so the
+        // fixed row rect must not stand the panel aside over it
+        if (!EmiCompat.buttonAreas().isEmpty()) return false;
         return inside(mx, my, MARGIN - 2, screenHeight - MARGIN - SIZE - 2, SIZE * 4 + GAP * 3 + 4, SIZE + 4);
     }
 

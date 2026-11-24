@@ -21,6 +21,9 @@ import org.lwjgl.glfw.GLFW;
  * opens a list of every item the slot accepts, next to the mouse (JEI++'s ingredient list). In the list a left click shows
  * an item's recipes, a right click its uses, JEI's show-recipes / show-uses keys (R / U) do the same and the bookmark key
  * bookmarks it; the mouse wheel scrolls, and Esc or a click outside closes it.
+ * <p>The tag chooser (#39) reuses the list in a select mode: a middle click on a tag slot of the recipe
+ * tree or the bookmark panel opens it, a left click takes that item for the clicked slot and Ctrl + left click also
+ * remembers it as the tag's default ({@link TagDefaults}). The chosen item gets a frame, the saved default a "D".
  */
 public final class IngredientDirectory {
 
@@ -32,9 +35,14 @@ public final class IngredientDirectory {
     private static final int BACKGROUND = 0xF0100010;
     private static final int BORDER = 0xFF5000A0;
     private static final int HIGHLIGHT = 0x80FFFFFF;
+    private static final int MARK = 0xFFFFE000;
 
     private static List<ItemStack> items = List.of();
     private static int x, y, scroll, hover = -1;
+    // select mode (#39): the entry being chosen for, the ids shown, the screen holding the popup
+    private static Bookmarks.Entry selecting;
+    private static List<String> optionIds = List.of();
+    private static Screen host;
 
     private IngredientDirectory() {}
 
@@ -45,6 +53,9 @@ public final class IngredientDirectory {
     static void close() {
         items = List.of();
         hover = -1;
+        selecting = null;
+        optionIds = List.of();
+        host = null;
     }
 
     /** The item under the mouse in the open list, else empty (for the bookmark key, item zoom...). */
@@ -79,13 +90,43 @@ public final class IngredientDirectory {
         return mx >= x && mx < x + width() && my >= y && my < y + height();
     }
 
+    /**
+     * Open the list in select mode for one bookmark entry (#39) whose ingredient accepts several items.
+     * A left click takes the item for that case, Ctrl + left click also sets it as the tag's default. False when
+     * there is nothing to choose.
+     */
+    static boolean openSelect(Bookmarks.Entry entry, Screen s, double mx, double my) {
+        if (entry == null || !Bookmarks.hasOptions(entry)) return false;
+        List<ItemStack> list = new ArrayList<>();
+        List<String> ids = new ArrayList<>();
+        for (String id : entry.options) {
+            ItemStack stack = FluidStacks.stackOf(id);
+            if (!stack.isEmpty()) {
+                list.add(stack);
+                ids.add(id);
+            }
+        }
+        if (ids.size() < 2) return false;
+        close();
+        items = list;
+        optionIds = ids;
+        selecting = entry;
+        host = s;
+        scroll = 0;
+        hover = -1;
+        // beside the mouse, kept on the screen
+        x = Math.max(2, Math.min((int) mx + 8, s.width - width() - 2));
+        y = Math.max(2, Math.min((int) my - 8, s.height - height() - 2));
+        return true;
+    }
+
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     static void onMousePressed(ScreenEvent.MouseButtonPressed.Pre event) {
         Screen s = event.getScreen();
         double mx = event.getMouseX();
         double my = event.getMouseY();
         if (open()) {
-            if (!RecipeHearts.isRecipesScreen(s)) {
+            if (selecting == null ? !RecipeHearts.isRecipesScreen(s) : s != host) {
                 close();
                 return;
             }
@@ -96,6 +137,21 @@ public final class IngredientDirectory {
             }
             int i = indexAt(mx, my);
             if (i < 0) return;
+            if (selecting != null) {
+                // the chooser (issue #39): left click takes the item, Ctrl takes it and remembers it as the default
+                if (event.getButton() == 0) {
+                    String id = optionIds.get(i);
+                    boolean remember = Screen.hasControlDown();
+                    Bookmarks.Entry entry = selecting;
+                    Screen where = host;
+                    close();
+                    if (remember) TagDefaults.setDefault(entry.options, id);
+                    if (Bookmarks.setOption(entry, id) && where instanceof CraftingTreeScreen tree) {
+                        tree.tagChoiceApplied();
+                    }
+                }
+                return;
+            }
             ItemStack stack = items.get(i);
             if (event.getButton() == 0 || event.getButton() == 1) {
                 close();
@@ -138,6 +194,13 @@ public final class IngredientDirectory {
             event.setCanceled(true);
             return;
         }
+        if (selecting != null) {
+            // select mode: block the host's R/U so the chooser is not swapped away under the cursor; other
+            // global keys still act on the hovered option, as the view-mode popup has always allowed
+            InputConstants.Key key = InputConstants.Type.KEYSYM.getOrCreate(code);
+            if (CalcKeys.isShowRecipe(key) || CalcKeys.isShowUses(key)) event.setCanceled(true);
+            return;
+        }
         ItemStack stack = hoveredStack();
         if (stack.isEmpty()) return;
         InputConstants.Key key = InputConstants.Type.KEYSYM.getOrCreate(code);
@@ -151,7 +214,7 @@ public final class IngredientDirectory {
     @SubscribeEvent(priority = EventPriority.LOWEST)
     static void onRender(ScreenEvent.Render.Post event) {
         if (!open()) return;
-        if (!RecipeHearts.isRecipesScreen(event.getScreen())) {
+        if (selecting == null ? !RecipeHearts.isRecipesScreen(event.getScreen()) : event.getScreen() != host) {
             close();
             return;
         }
@@ -176,6 +239,8 @@ public final class IngredientDirectory {
         g.fill(x, y, x + w, y + h, BACKGROUND);
         String title = items.size() + " accepted items";
         g.drawString(font, title, x + PAD, y + PAD, 0xFFE0E0E0, true);
+        String chosen = selecting == null ? null : selecting.itemId();
+        String saved = selecting == null ? null : TagDefaults.defaultFor(selecting.options);
         for (int row = 0; row < rows(); row++) {
             for (int col = 0; col < COLS; col++) {
                 int index = (scroll + row) * COLS + col;
@@ -186,6 +251,17 @@ public final class IngredientDirectory {
                 if (index == hover) g.fill(cx, cy, cx + CELL, cy + CELL, HIGHLIGHT);
                 FluidStacks.item(g, stack, cx + 1, cy + 1);
                 g.renderItemDecorations(font, stack, cx + 1, cy + 1, null);
+                if (selecting != null) {
+                    // the item that case uses now gets a frame, the tag's saved default a small "D" (#39)
+                    String id = optionIds.get(index);
+                    if (id.equals(chosen)) {
+                        g.fill(cx, cy, cx + CELL, cy + 1, MARK);
+                        g.fill(cx, cy + CELL - 1, cx + CELL, cy + CELL, MARK);
+                        g.fill(cx, cy + 1, cx + 1, cy + CELL - 1, MARK);
+                        g.fill(cx + CELL - 1, cy + 1, cx + CELL, cy + CELL, MARK);
+                    }
+                    if (id.equals(saved)) g.drawString(font, "D", cx + CELL - 6, cy + CELL - 8, MARK, true);
+                }
             }
         }
         if (hover >= 0) tooltip(g, font, items.get(hover), mx, my);
@@ -196,7 +272,9 @@ public final class IngredientDirectory {
         if (mc.level == null) return;
         List<Component> tip = new ArrayList<>(stack.getTooltipLines(net.minecraft.world.item.Item.TooltipContext.of(mc.level), mc.player, net.minecraft.world.item.TooltipFlag.Default.NORMAL));
         if (tip.isEmpty()) tip.add(FluidStacks.name(stack));
-        tip.add(Component.literal("§7Click: recipes, right click: uses"));
+        tip.add(Component.literal(selecting == null
+            ? "§7Click: recipes, right click: uses"
+            : "§7Click: use for this slot; Ctrl: use and keep as the default"));
         HotkeyTips.addModName(tip, stack);
         List<FormattedCharSequence> lines = new ArrayList<>();
         for (Component line : tip) lines.addAll(font.split(line, 260));

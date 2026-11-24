@@ -243,11 +243,8 @@ import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import mezz.jei.api.runtime.IJeiRuntime;
-import java.util.Map;
 public final class Calculator {
   public static IJeiRuntime runtime;
-  public record Plan(Map<StackKey, Long> raw) {}
-  public static Plan compute(Map<StackKey, Long> wanted) { return null; }
   public static boolean available() { return runtime != null; }
   public static final class StackKey {
     public final Item item; public final DataComponentPatch patch; public final ItemStack sample;
@@ -256,9 +253,6 @@ public final class Calculator {
     @Override public int hashCode() { return 31 * item.hashCode() + patch.hashCode(); }
   }
 }
-""")
-f("neiaddon/CalculatorScreen.java", """package neiaddon;
-public class CalculatorScreen { public static void open(Bookmarks.Group g) {} }
 """)
 f("neiaddon/ShareClient.java", """package neiaddon;
 public class ShareClient { public static boolean send(String payload) { return true; } }

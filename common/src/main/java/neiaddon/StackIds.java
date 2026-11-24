@@ -144,8 +144,7 @@ final class StackIds {
                 ItemStack seen = known.get(id);
                 if (seen == null && !scanned && Calculator.available()) {
                     scanned = true;
-                    for (ItemStack listed : Calculator.runtime.getIngredientManager()
-                        .getAllIngredients(VanillaTypes.ITEM_STACK)) {
+                    for (ItemStack listed : ListHiding.items()) {
                         subtypeId(listed);
                     }
                     seen = known.get(id);

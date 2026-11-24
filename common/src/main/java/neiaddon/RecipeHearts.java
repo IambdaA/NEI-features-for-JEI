@@ -204,8 +204,12 @@ public final class RecipeHearts {
             return any;
         }
 
+        /**
+         * Whether this recipe gets keys at all: it has inputs and results, and it is a recipe, not a page that only shows
+         * information ({@link RecipeShape#infoOnly}). Every key and the heart gate on this.
+         */
         private boolean usable() {
-            return !resultIds.isEmpty() && !shape.inputs.isEmpty();
+            return !resultIds.isEmpty() && !shape.inputs.isEmpty() && !RecipeShape.infoOnly(shape.id);
         }
 
         private static boolean scrolls() {
@@ -229,7 +233,10 @@ public final class RecipeHearts {
             Favorites.set(resultIds.get(selected), off ? null : shape.id);
         }
 
-        /** Whether the heart is shown at all (a recipe without inputs or results has none). */
+        /**
+         * Whether the heart is shown at all: a recipe without inputs or results has none, and neither does a page that only
+         * shows information (JEI's information pages, GregTech's diagrams; see {@link RecipeShape#infoOnly}).
+         */
         public boolean shown() {
             return usable();
         }
@@ -526,7 +533,7 @@ public final class RecipeHearts {
      */
     public static boolean onFillKey(boolean max) {
         Controller recipe = fresh(hoverView, viewStamp);
-        if (recipe == null) return false;
+        if (recipe == null || !recipe.usable()) return false;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return false;
         try {

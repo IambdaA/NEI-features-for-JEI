@@ -19,7 +19,7 @@ import neiaddon.event.ClientTickEvent;
 import neiaddon.event.ScreenEvent;
 import org.lwjgl.glfw.GLFW;
 
-/** Key bindings with NEI's defaults: A add bookmark, T crafting tree (calculator), B hide the panel. */
+/** Key bindings with NEI's defaults: A add bookmark, T crafting tree, B hide the panel. */
 public final class CalcKeys {
 
     // 1.21.1: a key category is just its translation key
@@ -30,7 +30,8 @@ public final class CalcKeys {
     public static final KeyMapping TREE = new KeyMapping("key.neiaddon.open_crafting_tree", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_T, CATEGORY);
     // NEI: bookmark.favorite = F (Shift+F over an item of the list saves its favorite recipe tree)
     public static final KeyMapping FAVORITE = new KeyMapping("key.neiaddon.bookmark_favorite", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F, CATEGORY);
-    /** NEI's gui.craft_items: with Shift, autocraft (Ctrl: only what is missing). */
+    /** NEI's gui.craft_items: with Shift, autocraft what the inventory is missing (#46; with Ctrl, craft
+     *  the wanted amount again; NEI has the Ctrl rule the other way). */
     public static final KeyMapping CRAFT = new KeyMapping("key.neiaddon.craft_items", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_C, CATEGORY);
     /** NEI's bookmark.chat_link: with Ctrl, send a link to chat (Ctrl + Shift for a recipe). */
     public static final KeyMapping CHAT_LINK = new KeyMapping("key.neiaddon.chat_link", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_L, CATEGORY);
@@ -283,10 +284,11 @@ public final class CalcKeys {
             return;
         }
         if (shift && McCompat.matches(CRAFT, key)) {
-            // NEI runAutoCrafting over an item that has a favorite recipe; Ctrl keeps what the inventory already holds
+            // #46: plain Shift + C crafts only what the inventory is missing; Ctrl crafts the wanted
+            // amount again even if the inventory already holds it (NEI has the Ctrl modifier the other way)
             ItemStack stack = hoveredStack(screen);
-            if (!stack.isEmpty() && (CraftablesPanel.autocraft(stack, !McCompat.ctrl())
-                || RecipeHearts.autocraftFavorite(stack, !McCompat.ctrl()))) {
+            if (!stack.isEmpty() && (CraftablesPanel.autocraft(stack, McCompat.ctrl())
+                || RecipeHearts.autocraftFavorite(stack, McCompat.ctrl()))) {
                 event.setCanceled(true);
                 return;
             }
@@ -342,7 +344,14 @@ public final class CalcKeys {
                         McCompat.ctrl() ? fluid.milliBuckets() : 1000,
                         AddonConfig.BM_ITEMS_WITH_RECIPE.get() ? RecipeHearts.hoveredRecipeId() : null);
                     event.setCanceled(true);
+                    return;
                 }
+                // in an item's place a bee of Productive Bees (its own ingredient type): an entry of its own (see Bees),
+                // always one of it, and the key is used up here too, or JEI would put the bee into its own bookmark list
+                String bee = Bees.underMouse();
+                if (bee == null) return;
+                Bookmarks.toggleBee(bee, AddonConfig.BM_ITEMS_WITH_RECIPE.get() ? RecipeHearts.hoveredRecipeId() : null);
+                event.setCanceled(true);
             }
         } else if (McCompat.matches(HIDE, key) && BookmarkPanel.supports(screen)) {
             BookmarkPanel.toggleHidden();

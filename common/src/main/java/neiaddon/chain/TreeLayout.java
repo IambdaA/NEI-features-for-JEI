@@ -88,7 +88,7 @@ public final class TreeLayout {
 
         for (List<TreeSlot> row : this.rows.values()) {
             for (TreeSlot node : row) {
-                this.treeWidth = Math.max(this.treeWidth, this.pointByNode.get(node).x + SLOT_SIZE);
+                this.treeWidth = Math.max(this.treeWidth, this.pointByNode.get(node).x + nodeWidth(node));
                 this.treeHeight = Math.max(this.treeHeight, this.pointByNode.get(node).y + SLOT_SIZE);
             }
         }
@@ -128,7 +128,8 @@ public final class TreeLayout {
 
         if (children.isEmpty()) {
             final List<int[]> rows = new ArrayList<>();
-            rows.add(new int[] { 0, 0 });
+            // a multi-output recipe (issue #42) is wider than one slot: extra results hang off its right
+            rows.add(new int[] { 0, nodeExtra(node) });
             return rows;
         }
 
@@ -155,10 +156,20 @@ public final class TreeLayout {
         }
 
         final List<int[]> rows = new ArrayList<>(combined.size() + 1);
-        rows.add(new int[] { 0, 0 });
+        rows.add(new int[] { 0, nodeExtra(node) });
         rows.addAll(combined);
 
         return rows;
+    }
+
+    /** How much wider than one slot the node is: its extra results, drawn to the right of the main slot. */
+    private static int nodeExtra(TreeSlot node) {
+        return (node.outputs.size() - 1) * SLOT_SIZE;
+    }
+
+    /** The node's full width: the main slot plus its extra results. */
+    private static int nodeWidth(TreeSlot node) {
+        return SLOT_SIZE + nodeExtra(node);
     }
 
     private static int requiredShift(List<int[]> existing, List<int[]> incoming, int spacing) {

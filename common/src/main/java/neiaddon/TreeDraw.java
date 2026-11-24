@@ -1,6 +1,7 @@
 package neiaddon;
 
 import java.util.List;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -187,7 +188,25 @@ final class TreeDraw {
             x = Math.max(x, 6);
         }
 
+        // a box that does not fit the screen is drawn smaller, its top left corner kept on the screen
+        int fitW = exact ? guiWidth() : screenW;
+        int fitH = exact ? guiHeight() : screenH;
+        float fit = fitScale(width, height, fitW, fitH);
+        boolean scaled = fit < 1f;
+        if (scaled) {
+            x = Math.max(6, Math.min(x, fitW - 6 - Math.round(width * fit)));
+            y = exact ? Math.max(6, Math.min(y, fitH - 6 - Math.round(height * fit))) : 6;
+        }
+
         Pose.begin(g, Pose.TOOLTIP);
+        if (scaled) {
+            Pose scale = Pose.of(g);
+            scale.pushMatrix();
+            scale.translate(x, y);
+            scale.scale(fit, fit);
+            x = 0;
+            y = 0;
+        }
         g.fill(x - 3, y - 4, x + width + 3, y + height + 4, 0xF0100010);
         g.fill(x - 4, y - 3, x + width + 4, y + height + 3, 0xF0100010);
         g.fill(x - 3, y - 3, x + width + 3, y - 2, 0xF0280070);
@@ -218,7 +237,27 @@ final class TreeDraw {
             ty += 2;
             extra.paint(g, x, ty);
         }
+        if (scaled) Pose.of(g).popMatrix();
         Pose.end(g);
+    }
+
+    /**
+     * The scale a tooltip box of {@code width x height} (its content, without the 4 px frame) needs to fit a
+     * {@code screenW x screenH} screen: 1 when it fits, else the smaller of the two ratios, never above 1.
+     */
+    static float fitScale(int width, int height, int screenW, int screenH) {
+        if (height + 12 <= screenH && width + 12 <= screenW) return 1f;
+        float s = Math.min((screenH - 12f) / (height + 8), (screenW - 12f) / (width + 8));
+        return Math.max(0.1f, Math.min(1f, s));
+    }
+
+    /** The GUI size of the window (the screen size of a box placed by its caller). */
+    private static int guiWidth() {
+        return Minecraft.getInstance().getWindow().getGuiScaledWidth();
+    }
+
+    private static int guiHeight() {
+        return Minecraft.getInstance().getWindow().getGuiScaledHeight();
     }
 
     /** A string with legacy colour codes (section sign) as drawable text. */

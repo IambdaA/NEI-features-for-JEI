@@ -45,7 +45,10 @@ public final class Bookmarks {
 
     public static final class Entry {
 
-        /** Null only for ghosts (lines of items that are not installed), which never appear in {@link Page#entries}. */
+        /**
+         * Null only for ghosts (lines of items that are not installed) and for a bee of Productive Bees (see {@link Bees}),
+         * which has no item at all; ghosts never appear in {@link Page#entries}.
+         */
         public Calculator.StackKey key;
         /** The item id as written in the file. */
         private final String rawId;
@@ -63,6 +66,12 @@ public final class Bookmarks {
          * recipe on Shift). An item saved with its recipe by the bookmark key looks like a plain item, as in NEI.
          */
         public boolean jeiRecipe;
+        /**
+         * The player chose this tag slot's item (the chooser or a recipe-tree refresh kept it). A picked slot takes only
+         * its item in the chain maths (see {@link #toChain}); the chooser still lists every item of {@link #options}.
+         * #39.
+         */
+        public boolean picked;
 
         public Entry(Calculator.StackKey key, long amount, int groupId) {
             this(key, null, amount, groupId);
@@ -77,6 +86,16 @@ public final class Bookmarks {
 
         public static Entry ghost(String rawId, long amount, int groupId) {
             return new Entry(null, rawId, amount, groupId);
+        }
+
+        /** A bee of Productive Bees (see {@link Bees}): no item behind it, always exactly one of it. */
+        public static Entry bee(String rawId, int groupId) {
+            return new Entry(null, rawId, 1, groupId);
+        }
+
+        /** A bee (see {@link Bees}): it is drawn and tooltipped by its id, and nothing that needs an item applies to it. */
+        public boolean isBee() {
+            return key == null && rawId != null && rawId.startsWith(Bees.PREFIX);
         }
 
         public boolean isRecipe() {
@@ -102,7 +121,10 @@ public final class Bookmarks {
 
         ChainItem toChain() {
             if (isRecipe()) {
-                return new ChainItem(itemId(), recipeId, type, factor, multiplier(), new LinkedHashSet<>(options), this);
+                // #39: a picked tag slot takes only the item the player picked, so a recipe that makes
+                // another accepted item does not link to this slot
+                Set<String> accepted = picked && options.contains(itemId()) ? Set.of(itemId()) : new LinkedHashSet<>(options);
+                return new ChainItem(itemId(), recipeId, type, factor, multiplier(), accepted, this);
             }
             return new ChainItem(itemId(), null, ChainItem.Type.ITEM, 1, amount, null, this);
         }
@@ -244,65 +266,10 @@ public final class Bookmarks {
                         e.recipeId = null;
                         e.factor = 1;
                         e.options = List.of();
+                        e.picked = false;
                     }
                 }
             }
-        }
-    }
-
-    /**
-     * A snapshot of one group (or the ungrouped items) of a page, handed to the calculator. Edit {@link #items} and
-     * call {@link #commit()} to write the changes back. Only plain items are written back; the results of the group's
-     * output recipes are shown as read-only wishes.
-     */
-    public static final class Group {
-
-        public final Page page;
-        public final int groupId;
-        public String name;
-        public final Map<Calculator.StackKey, Long> items = new LinkedHashMap<>();
-        private final Set<Calculator.StackKey> derived = new HashSet<>();
-
-        public Group(Page page, int groupId, String name) {
-            this.page = page;
-            this.groupId = groupId;
-            this.name = name;
-            for (Entry e : page.entries) {
-                if (e.groupId == groupId && e.isPlain()) items.merge(e.key, e.amount, Long::sum);
-            }
-            ChainDetails details = page.hasRecipes(groupId) ? computeChain(page, groupId) : null;
-            if (details != null) {
-                for (Entry e : page.entries) {
-                    ChainDetails.Calc c = e.groupId == groupId && e.isRecipe() ? details.calculated.get(e) : null;
-                    if (c != null && c.type == ChainDetails.Calculated.RESULT && !items.containsKey(e.key)) {
-                        items.put(e.key, c.calculatedAmount());
-                        derived.add(e.key);
-                    }
-                }
-            }
-        }
-
-        public void commit() {
-            int insertAt = page.entries.size();
-            for (int i = 0; i < page.entries.size(); i++) {
-                if (page.entries.get(i).groupId == groupId) {
-                    insertAt = Math.min(insertAt, i);
-                }
-            }
-            page.entries.removeIf(e -> e.groupId == groupId && e.isPlain() && !items.containsKey(e.key));
-            Map<Calculator.StackKey, Long> pending = new LinkedHashMap<>(items);
-            pending.keySet()
-                .removeAll(derived);
-            for (Entry e : page.entries) {
-                if (e.groupId == groupId && e.isPlain() && pending.containsKey(e.key)) {
-                    e.amount = pending.remove(e.key);
-                }
-            }
-            for (Map.Entry<Calculator.StackKey, Long> p : pending.entrySet()) {
-                page.entries.add(Math.min(insertAt, page.entries.size()), new Entry(p.getKey(), p.getValue(), groupId));
-            }
-            page.normalize();
-            save();
         }
     }
 
@@ -381,7 +348,11 @@ public final class Bookmarks {
         activePage = Math.max(0, Math.min(activePage, pages.size() - 1));
     }
 
-    /** {@code item id amount group [type recipeId factor options]}; unknown items become ghosts. */
+    /**
+     * {@code item id amount group [type recipeId factor options [j] [p]]}; unknown items become ghosts. Column 8 is "j" for
+     * an item from JEI's button (empty when there is none), column 9 is "p" for a picked tag slot (#39);
+     * versions that do not know a column ignore it.
+     */
     private static void readItem(Page page, String[] p, int gid) {
         long amount = parseAmount(p[2]);
         ChainItem.Type type = ChainItem.Type.ITEM;
@@ -396,6 +367,7 @@ public final class Bookmarks {
         }
         // a column after the options (versions before 1.3.0 write none, and ignore it): "j" for an item from JEI's button
         boolean jeiRecipe = p.length >= 9 && p[8].equals("j");
+        boolean picked = p.length >= 10 && p[9].equals("p");
         if (recipeId == null) {
             type = ChainItem.Type.ITEM;
             factor = 1;
@@ -403,18 +375,26 @@ public final class Bookmarks {
         }
         Entry entry;
         ItemStack parsed = FluidStacks.stackOf(p[1]);
-        if (!parsed.isEmpty()) {
+        if (Bees.isBeeId(p[1])) {
+            // a bee of Productive Bees (see Bees): an entry of its own, not a ghost, whatever the file says
+            // its amount, type or options are; only a remembered recipe applies
+            entry = Entry.bee(p[1], gid);
+            page.entries.add(entry);
+        } else if (!parsed.isEmpty()) {
             entry = new Entry(new Calculator.StackKey(parsed), amount, gid);
             page.entries.add(entry);
         } else {
             entry = Entry.ghost(p[1], amount, gid);
             page.ghosts.add(entry);
         }
-        entry.type = type;
         entry.recipeId = recipeId;
-        entry.factor = factor;
-        entry.options = options;
-        entry.jeiRecipe = jeiRecipe && recipeId != null && type == ChainItem.Type.ITEM;
+        if (!entry.isBee()) {
+            entry.type = type;
+            entry.factor = factor;
+            entry.options = options;
+            entry.jeiRecipe = jeiRecipe && recipeId != null && type == ChainItem.Type.ITEM;
+            entry.picked = picked && recipeId != null && type == ChainItem.Type.INGREDIENT;
+        }
     }
 
     private static long parseAmount(String s) {
@@ -453,24 +433,17 @@ public final class Bookmarks {
     }
 
     private static String line(Entry e, int groupId) {
+        // "j" (column 8) and "p" (column 9) are written only when set, so a line without them is the same as before
         return "item\t" + clean(e.itemId()) + "\t" + e.amount + "\t" + groupId + "\t" + e.type.toInt() + "\t"
             + (e.recipeId == null ? "-" : clean(e.recipeId)) + "\t" + e.factor + "\t" + String.join(",", e.options)
-            + (e.jeiRecipe ? "\tj" : "");
+            + (e.jeiRecipe || e.picked ? "\t" + (e.jeiRecipe ? "j" : "") : "")
+            + (e.picked ? "\tp" : "");
     }
 
     public static Page page() {
         ensureLoaded();
         activePage = Math.max(0, Math.min(activePage, pages.size() - 1));
         return pages.get(activePage);
-    }
-
-    /** The calculator's view of the ungrouped items of the active page. */
-    public static Group activeGroup() {
-        return new Group(page(), NO_GROUP, "Bookmarks");
-    }
-
-    public static Group group(Page page, int groupId) {
-        return new Group(page, groupId, groupId == NO_GROUP ? "Bookmarks" : "Group " + groupId);
     }
 
     /** Adds an item to the active page. An item already on the page just gets its amount increased. */
@@ -498,7 +471,7 @@ public final class Bookmarks {
         Page page = page();
         Calculator.StackKey key = new Calculator.StackKey(stack);
         for (Entry e : page.entries) {
-            if (e.isPlain() && e.key.equals(key) && sameRecipeOrNone(e.recipeId, recipeId)) {
+            if (e.isPlain() && !e.isBee() && e.key.equals(key) && sameRecipeOrNone(e.recipeId, recipeId)) {
                 e.amount += amount;
                 if (e.recipeId == null) e.recipeId = recipeId;
                 if (jeiRecipe && recipeId != null && recipeId.equals(e.recipeId)) e.jeiRecipe = true;
@@ -519,7 +492,7 @@ public final class Bookmarks {
         Page page = page();
         Calculator.StackKey key = new Calculator.StackKey(stack);
         for (Entry e : page.entries) {
-            if (e.isPlain() && e.key.equals(key) && recipeId.equals(e.recipeId) && e.jeiRecipe) {
+            if (e.isPlain() && !e.isBee() && e.key.equals(key) && recipeId.equals(e.recipeId) && e.jeiRecipe) {
                 remove(page, e);
                 return;
             }
@@ -603,7 +576,7 @@ public final class Bookmarks {
         Page page = page();
         Calculator.StackKey key = new Calculator.StackKey(stack);
         for (Entry e : page.entries) {
-            if (e.isPlain() && e.key.equals(key) && sameRecipeOrNone(e.recipeId, recipeId)) {
+            if (e.isPlain() && !e.isBee() && e.key.equals(key) && sameRecipeOrNone(e.recipeId, recipeId)) {
                 remove(page, e);
                 return;
             }
@@ -611,12 +584,32 @@ public final class Bookmarks {
         add(stack, amount, NO_GROUP, recipeId);
     }
 
+    /**
+     * The bookmark key over a bee of Productive Bees (see {@link Bees}): adds it as an entry of its own, or takes it out
+     * again. Like {@link #toggle(ItemStack, long, String)} except that a bee is known by its id and is always one of it:
+     * the amount keys, the chain maths and everything else that needs an item do not apply to it.
+     */
+    public static void toggleBee(String beeId, String recipeId) {
+        if (beeId == null) return;
+        Page page = page();
+        for (Entry e : page.entries) {
+            if (e.isBee() && e.isPlain() && e.itemId().equals(beeId) && sameRecipeOrNone(e.recipeId, recipeId)) {
+                remove(page, e);
+                return;
+            }
+        }
+        Entry added = Entry.bee(beeId, NO_GROUP);
+        added.recipeId = recipeId;
+        page.entries.add(insertIndex(page, NO_GROUP), added);
+        save();
+    }
+
     /** Is this item bookmarked as a plain item on the active page? */
     public static boolean isBookmarked(ItemStack stack) {
         if (stack.isEmpty()) return false;
         Calculator.StackKey key = new Calculator.StackKey(stack);
         for (Entry e : page().entries) {
-            if (e.isPlain() && e.key.equals(key)) return true;
+            if (e.isPlain() && !e.isBee() && e.key.equals(key)) return true;
         }
         return false;
     }
@@ -659,6 +652,8 @@ public final class Bookmarks {
         e.recipeId = recipeId;
         e.factor = part.factor;
         e.options = type == ChainItem.Type.INGREDIENT ? List.copyOf(part.options) : List.of();
+        // a tag slot whose item the tree took as the player's pick (#39), not from a favorite
+        e.picked = type == ChainItem.Type.INGREDIENT && part.picked;
         return e;
     }
 
@@ -727,6 +722,14 @@ public final class Bookmarks {
             }
         }
         if (fresh.isEmpty()) return NO_GROUP;
+        // the rows are rebuilt, so a picked tag slot keeps its pick over the rebuild (#39)
+        Set<String> picks = new HashSet<>();
+        for (Entry e : page.entries) {
+            if (e.groupId == groupId && e.picked) picks.add(e.recipeId + ID_SEPARATOR + e.itemId());
+        }
+        for (Entry e : fresh) {
+            if (e.type == ChainItem.Type.INGREDIENT && picks.contains(e.recipeId + ID_SEPARATOR + e.itemId())) e.picked = true;
+        }
         // the place of the group: where its first item is now (the recipes go back to that index)
         int at = page.entries.size();
         for (int i = 0; i < page.entries.size(); i++) {
@@ -864,6 +867,8 @@ public final class Bookmarks {
         boolean recipes = false;
         for (Entry e : page.entries) {
             if (e.groupId == groupId) {
+                // a bee (see Bees) has no item behind it: it takes no part in the chain maths, the panel only shows it
+                if (e.isBee()) continue;
                 items.add(e.toChain());
                 recipes |= e.isRecipe();
             }
@@ -990,8 +995,32 @@ public final class Bookmarks {
         ItemStack chosen = FluidStacks.stackOf(id);
         if (chosen.isEmpty()) return false;
         entry.key = new Calculator.StackKey(chosen);
+        // a wheel step is a pick too, as the chooser's click is (#39)
+        entry.picked = true;
         save();
         return true;
+    }
+
+    /**
+     * The tag chooser's left click (#39): this accepted item for this entry, picked by id instead of
+     * stepping around the list like {@link #cycleOption}. A false return means nothing changed.
+     */
+    public static boolean setOption(Entry entry, String itemId) {
+        if (!hasOptions(entry) || !entry.options.contains(itemId)) return false;
+        boolean changed = false;
+        if (!itemId.equals(entry.itemId())) {
+            ItemStack chosen = FluidStacks.stackOf(itemId);
+            if (chosen.isEmpty()) return false;
+            entry.key = new Calculator.StackKey(chosen);
+            changed = true;
+        }
+        // the player's pick also counts when it is the item already shown: the slot then keeps it (#39)
+        if (!entry.picked) {
+            entry.picked = true;
+            changed = true;
+        }
+        if (changed) save();
+        return changed;
     }
 
     /** Fresh chain maths of a crafting-chain group for autocrafting (which changes it), or null. */
@@ -999,7 +1028,7 @@ public final class Bookmarks {
         if (chain(page, groupId) == null) return null;
         List<ChainItem> items = new ArrayList<>();
         for (Entry e : page.entries) {
-            if (e.groupId == groupId) items.add(e.toChain());
+            if (e.groupId == groupId && !e.isBee()) items.add(e.toChain());
         }
         return ChainMath.of(items, page.meta(groupId).collapsedRecipes);
     }
@@ -1013,7 +1042,7 @@ public final class Bookmarks {
         boolean chain = m != null && m.chain;
         List<ChainItem> items = new ArrayList<>();
         for (Entry e : page.entries) {
-            if (e.groupId != groupId) continue;
+            if (e.groupId != groupId || e.isBee()) continue;
             ChainItem c = e.toChain();
             items.add(chain ? c : new ChainItem(e.itemId(), null, ChainItem.Type.ITEM, 1, c.amount(), null, e));
         }
@@ -1050,7 +1079,7 @@ public final class Bookmarks {
         }
         List<ChainItem> items = new ArrayList<>();
         for (Entry e : page.entries) {
-            if (e.groupId != entry.groupId) continue;
+            if (e.groupId != entry.groupId || e.isBee()) continue;
             if (!wholeGroup && (e.recipeId == null || !family.contains(e.recipeId))) continue;
             ChainDetails.Calc c = wholeGroup ? null : calc(page, e);
             if (!wholeGroup && top.equals(e.recipeId)) {
@@ -1088,9 +1117,32 @@ public final class Bookmarks {
         List<ChainItem> items = new ArrayList<>();
         if (chain(page, groupId) == null) return items;
         for (Entry e : page.entries) {
-            if (e.groupId == groupId) items.add(e.toChain());
+            // #39: the crafting tree's maths take a tag slot's ingredient as exactly the item its slot
+            // chose, without the other items it also accepts. Kept wide, a favorited sub-recipe of another accepted
+            // item went on supplying the slot after a chooser pick (its result still matched through the options), so
+            // the pick never showed in the tree and its maths. The panel chain, pulling and autocrafting keep the
+            // accepted items (they use Entry.toChain, not these chain items).
+            if (e.groupId == groupId && !e.isBee()) items.add(hasOptions(e) ? pickedChain(e) : e.toChain());
         }
         return items;
+    }
+
+    /** #39: the chain item of a picked tag slot: the chosen item only, not every item the slot accepts. */
+    private static ChainItem pickedChain(Entry e) {
+        return new ChainItem(e.itemId(), e.recipeId, e.type, e.factor, e.multiplier(), null, e);
+    }
+
+    /**
+     * #39: the ingredient entries of a chain group's tag slots (each one holds the item its slot
+     * picked). Feeds {@link RecipeTree#build(RecipeShape, int, List)} when a tree group is refreshed, so a refresh
+     * keeps the player's picks.
+     */
+    public static List<Entry> slotPicks(Page page, int groupId) {
+        List<Entry> picks = new ArrayList<>();
+        for (Entry e : page.entries) {
+            if (e.groupId == groupId && !e.isBee() && hasOptions(e)) picks.add(e);
+        }
+        return picks;
     }
 
     /** Is the group still there (the page can be removed, or the group emptied, while a recipe screen is open)? */
@@ -1112,9 +1164,13 @@ public final class Bookmarks {
 
     // ---------------------------------------------------------------- amounts
 
-    /** NEI's shiftMultiplier: {@code multiplier + shift} rounded to a multiple of |shift|, never below the minimum. */
+    /**
+     * Ctrl + wheel: {@code multiplier + shift}; a step up from below the step lands on the step itself (1 + 64 = 64), a
+     * step down never goes below the minimum (from above 1 it stops at 1). Amounts are not rounded to a multiple of the
+     * step: 64 + 3 = 67, 66 - 63 = 3.
+     */
     static long shiftMultiplier(long multiplier, long shift, long minMultiplier) {
-        long current = ((multiplier + shift) / shift) * shift;
+        long current = shift > 0 && multiplier < shift ? shift : multiplier + shift;
         return Math.min(Integer.MAX_VALUE, current <= 0 && multiplier > 1 ? 1 : Math.max(minMultiplier, current));
     }
 
@@ -1136,6 +1192,8 @@ public final class Bookmarks {
 
     /** NEI's shiftItemAmount for a plain item. */
     public static void shiftItemAmount(Page page, Entry entry, long shift) {
+        // a bee (see Bees) stands for exactly one of itself: its amount is never changed
+        if (entry.isBee()) return;
         entry.amount = shiftMultiplier(entry.amount, shift, 1);
         save();
     }
@@ -1166,7 +1224,7 @@ public final class Bookmarks {
         List<Entry> items = new ArrayList<>();
         long gcd = 0;
         for (Entry e : page.entries) {
-            if (e.groupId == groupId) {
+            if (e.groupId == groupId && !e.isBee()) {
                 items.add(e);
                 gcd = gcd(gcd, e.amount);
             }
