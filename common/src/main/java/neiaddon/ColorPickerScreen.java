@@ -78,34 +78,43 @@ public final class ColorPickerScreen extends Screen {
     // ---------------------------------------------------------------- layout
 
     private int left() {
-        return width / 2 - (SIZE + 10 + BAR) / 2;
+        return width / 2 - (size() + 10 + BAR) / 2;
     }
 
+    /** The square's side: SIZE, smaller on a short screen (the hue bar follows it). */
+    private int size() {
+        return Math.max(60, Math.min(SIZE, height - 102));
+    }
+
+    /**
+     * The square's top: centred as before, moved up just enough on a short screen that the Done button (76 below the
+     * square's top edge plus its size) stays on it, and never so high that the title (22 above) leaves it.
+     */
     private int top() {
-        return height / 2 - SIZE / 2 - 10;
+        return Math.max(24, Math.min(height / 2 - size() / 2 - 10, height - size() - 78));
     }
 
     private boolean inSquare(double mx, double my) {
-        return mx >= left() && mx < left() + SIZE && my >= top() && my < top() + SIZE;
+        return mx >= left() && mx < left() + size() && my >= top() && my < top() + size();
     }
 
     private boolean inBar(double mx, double my) {
-        int x = left() + SIZE + 10;
-        return mx >= x && mx < x + BAR && my >= top() && my < top() + SIZE;
+        int x = left() + size() + 10;
+        return mx >= x && mx < x + BAR && my >= top() && my < top() + size();
     }
 
     private boolean inDone(double mx, double my) {
         int x = width / 2 - 100;
-        int y = top() + SIZE + 56;
+        int y = top() + size() + 56;
         return mx >= x && mx < x + 200 && my >= y && my < y + 20;
     }
 
     private void pick(double mx, double my) {
         if (drag == 1) {
-            sat = (float) Math.max(0, Math.min(1, (mx - left()) / (SIZE - 1)));
-            val = (float) Math.max(0, Math.min(1, 1 - (my - top()) / (SIZE - 1)));
+            sat = (float) Math.max(0, Math.min(1, (mx - left()) / (size() - 1)));
+            val = (float) Math.max(0, Math.min(1, 1 - (my - top()) / (size() - 1)));
         } else if (drag == 2) {
-            hue = (float) Math.max(0, Math.min(359.9, (my - top()) / (SIZE - 1) * 360));
+            hue = (float) Math.max(0, Math.min(359.9, (my - top()) / (size() - 1) * 360));
         }
     }
 
@@ -116,32 +125,32 @@ public final class ColorPickerScreen extends Screen {
         g.drawString(font, title, (width - font.width(title)) / 2, top() - 22, 0xFFFFFFFF, true);
         int l = left();
         int t = top();
-        for (int cx = 0; cx < SIZE; cx += STEP) {
-            for (int cy = 0; cy < SIZE; cy += STEP) {
-                int rgb = fromHsv(hue, cx / (float) (SIZE - 1), 1 - cy / (float) (SIZE - 1));
-                g.fill(l + cx, t + cy, l + Math.min(cx + STEP, SIZE), t + Math.min(cy + STEP, SIZE), 0xFF000000 | rgb);
+        for (int cx = 0; cx < size(); cx += STEP) {
+            for (int cy = 0; cy < size(); cy += STEP) {
+                int rgb = fromHsv(hue, cx / (float) (size() - 1), 1 - cy / (float) (size() - 1));
+                g.fill(l + cx, t + cy, l + Math.min(cx + STEP, size()), t + Math.min(cy + STEP, size()), 0xFF000000 | rgb);
             }
         }
-        int bx = l + SIZE + 10;
-        for (int cy = 0; cy < SIZE; cy += 2) {
-            g.fill(bx, t + cy, bx + BAR, t + Math.min(cy + 2, SIZE), 0xFF000000 | fromHsv(cy / (float) (SIZE - 1) * 360, 1, 1));
+        int bx = l + size() + 10;
+        for (int cy = 0; cy < size(); cy += 2) {
+            g.fill(bx, t + cy, bx + BAR, t + Math.min(cy + 2, size()), 0xFF000000 | fromHsv(cy / (float) (size() - 1) * 360, 1, 1));
         }
         // handles
-        int hx = l + Math.round(sat * (SIZE - 1));
-        int hy = t + Math.round((1 - val) * (SIZE - 1));
+        int hx = l + Math.round(sat * (size() - 1));
+        int hy = t + Math.round((1 - val) * (size() - 1));
         g.fill(hx - 3, hy - 3, hx + 4, hy + 4, 0xFFFFFFFF);
         g.fill(hx - 2, hy - 2, hx + 3, hy + 3, 0xFF000000 | current());
-        int by = t + Math.round(hue / 360f * (SIZE - 1));
+        int by = t + Math.round(hue / 360f * (size() - 1));
         g.fill(bx - 2, by - 1, bx + BAR + 2, by + 2, 0xFFFFFFFF);
         // old / new and the value
-        int y = t + SIZE + 10;
+        int y = t + size() + 10;
         g.fill(l, y, l + 60, y + 20, 0xFF000000 | before);
         g.fill(l + 60, y, l + 120, y + 20, 0xFF000000 | current());
         g.drawString(font, "old", l + 4, y + 6, 0xFFFFFFFF, true);
         g.drawString(font, "new", l + 64, y + 6, 0xFFFFFFFF, true);
         String hex = String.format("#%06X", current());
-        g.drawString(font, hex, l + SIZE + 10 + BAR - font.width(hex), y + 6, 0xFFFFFFFF, true);
-        BookmarkPanel.button(g, font, width / 2 - 100, t + SIZE + 56, 200, 20, "Done", inDone(mouseX, mouseY));
+        g.drawString(font, hex, l + size() + 10 + BAR - font.width(hex), y + 6, 0xFFFFFFFF, true);
+        BookmarkPanel.button(g, font, width / 2 - 100, t + size() + 56, 200, 20, "Done", inDone(mouseX, mouseY));
     }
 
     @Override

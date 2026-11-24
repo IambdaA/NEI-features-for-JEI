@@ -8,7 +8,8 @@
     "KeyMappingAccessor",
     "GuiGraphicsMixin",
     "KeyboardHandlerMixin",
-    "MinecraftMixin"
+    "MinecraftMixin",
+    "MouseHandlerMixin"
   ],
   "injectors": {
     "defaultRequire": 0

@@ -6,15 +6,22 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 import mezz.jei.api.constants.VanillaTypes;
+import mezz.jei.api.ingredients.IIngredientHelper;
+import mezz.jei.api.ingredients.IIngredientType;
 import mezz.jei.api.ingredients.ITypedIngredient;
+import mezz.jei.api.ingredients.subtypes.UidContext;
+import mezz.jei.api.runtime.IIngredientManager;
 import mezz.jei.api.runtime.IJeiRuntime;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -38,17 +45,25 @@ import neiaddon.platform.Platform;
  * id with {@code *} wildcards ({@code *:*_spawn_egg}). The first matching group of an item wins.
  *
  * <p>
- * JEI has no grouping of its own, so the members other than the first are taken out of JEI's list at runtime (and put back
- * when the group is opened, while JEI's search box has text, or when the setting is turned off). A small "+" in the slot
+ * JEI has no grouping of its own, so the members other than the shown one are taken out of JEI's list at runtime and put
+ * back when the group is opened or the setting is turned off. NEI's rules (its ItemsPanelGrid): a closed group shows one
+ * entry - the first member that passes JEI's current search, so a narrowing search narrows that entry too; and if the
+ * filtered list holds nothing but one group's members, that group shows open for the search. A small "+" in the slot
  * marks a closed group, "-" an open one. Off by default (Settings > Inventory > Collapsible Item Groups).
  */
 public final class CollapsibleItems {
 
     private static final String DEFAULTS = """
-        # NEI Features for JEI: collapsible item groups (Settings > Inventory > Collapsible Item Groups).
+        # NEI Features for JEI: collapsible item groups.
+        # Off by default: turn on Settings > Inventory > Collapsible Item Groups (not used when EMI is installed).
+        # Changes here are read when you join a world, when JEI reloads, or when the setting is turned on.
         # One group per line:  Name = filter, filter, ...
         # A filter is an item tag (#minecraft:wool), a mod (@ae2) or an item id with * wildcards (*:*_spawn_egg).
         # An item joins the first group that matches it. Alt + click on a group in JEI's list opens or closes it.
+        # Lines starting with # are ignored. Examples, remove the # in front to use one:
+        # Limited Barrels I = sophisticatedstorage:limited_barrel_1
+        # AE2 Cables = #ae2:glass_cable, #ae2:covered_cable, #ae2:smart_cable
+        # All of Mekanism = @mekanism
         Wool = #minecraft:wool
         Carpets = #minecraft:wool_carpets
         Beds = #minecraft:beds
@@ -73,12 +88,18 @@ public final class CollapsibleItems {
     /** A group of the file: its name and filters. */
     private record Rule(String name, List<String> filters) {}
 
-    /** A group as found in JEI's list: two or more members, the first stays shown. */
+    /** A group as found in JEI's list: two or more members; while closed, one entry (the representative) stays shown. */
     private static final class Found {
 
         final String name;
         final List<ItemStack> members = new ArrayList<>();
-        boolean open, hidden;
+        /** JEI list keys of the members, same order as {@code members}; null when JEI has no id for one. */
+        final List<String> keys = new ArrayList<>();
+        boolean open;
+        /** The member that is shown while the group is closed; null while the search shows the whole group. */
+        ItemStack rep;
+        /** True while the filtered list holds nothing but this group's members: it shows open for the search. */
+        boolean expandedBySearch;
 
         Found(String name) {
             this.name = name;
@@ -88,8 +109,11 @@ public final class CollapsibleItems {
     private static final List<Found> found = new ArrayList<>();
     /** Every filter is item-level, so an item belongs to at most one group. */
     private static final Map<Item, Found> byItem = new IdentityHashMap<>();
+    /** A member's JEI list key mapped to its group. */
+    private static final Map<String, Found> byKey = new HashMap<>();
     private static Object seenRuntime;
-    private static boolean built, searching, applied, failed;
+    private static boolean built, searching, applied, failed, filterApiFailed;
+    private static String lastText = "";
 
     private CollapsibleItems() {}
 
@@ -100,17 +124,35 @@ public final class CollapsibleItems {
 
     // ---------------------------------------------------------------- the groups
 
-    private static List<Rule> rules() {
-        Path file = Platform.get()
+    private static Path file() {
+        return Platform.get()
             .configDir()
             .resolve("neiaddon")
             .resolve("collapsibleitems.cfg");
-        List<Rule> rules = new ArrayList<>();
+    }
+
+    /**
+     * Writes the file with its defaults and examples if it is missing, so a player can find and edit it before turning
+     * the setting on (#47: the file was only written once the groups were first built, which needs the
+     * setting on and no EMI). Called at client start and before every read; never touches a file that exists.
+     */
+    public static void writeDefaultsIfMissing() {
+        Path file = file();
         try {
             if (!Files.exists(file)) {
                 Files.createDirectories(file.getParent());
                 Files.writeString(file, DEFAULTS, StandardCharsets.UTF_8);
             }
+        } catch (IOException | RuntimeException e) {
+            NeiAddon.LOGGER.warn("Could not write {}", file, e);
+        }
+    }
+
+    private static List<Rule> rules() {
+        Path file = file();
+        List<Rule> rules = new ArrayList<>();
+        writeDefaultsIfMissing();
+        try {
             for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
                 line = line.strip();
                 if (line.isEmpty() || line.startsWith("#")) continue;
@@ -130,7 +172,8 @@ public final class CollapsibleItems {
         return rules;
     }
 
-    private static boolean matches(String filter, ItemStack stack, String id) {
+    /** Does the filter ({@code #tag}, {@code @mod} or an id with wildcards) match the item? {@code id} is its registry id. */
+    static boolean matches(String filter, ItemStack stack, String id) {
         if (filter.startsWith("#")) {
             String tag = filter.substring(1);
             return stack.getTags().anyMatch(t -> t.location()
@@ -147,11 +190,11 @@ public final class CollapsibleItems {
         built = true;
         found.clear();
         byItem.clear();
+        byKey.clear();
         List<Rule> rules = rules();
         if (rules.isEmpty()) return;
         Map<String, Found> byName = new LinkedHashMap<>();
-        Collection<ItemStack> all = rt.getIngredientManager()
-            .getAllIngredients(VanillaTypes.ITEM_STACK);
+        Collection<ItemStack> all = ListHiding.items();
         for (ItemStack stack : all) {
             String id = BuiltInRegistries.ITEM.getKey(stack.getItem())
                 .toString();
@@ -172,32 +215,116 @@ public final class CollapsibleItems {
         for (Found f : byName.values()) {
             if (f.members.size() > 1) {
                 found.add(f);
-                for (ItemStack m : f.members) byItem.put(m.getItem(), f);
+                for (ItemStack m : f.members) {
+                    byItem.put(m.getItem(), f);
+                    String key = ListHiding.keyOf(m);
+                    f.keys.add(key);
+                    if (key != null) byKey.put(key, f);
+                }
             }
         }
         NeiAddon.LOGGER.info("Collapsible item groups: {} groups from collapsibleitems.cfg", found.size());
     }
 
-    /** Takes the members of closed groups out of JEI's list and puts the others back, in one call each. */
+    /** Decides which members of closed groups stay out of JEI's list, and brings the list in line (NEI's rules). */
     private static void apply(IJeiRuntime rt, boolean showAll) {
-        List<ItemStack> hide = new ArrayList<>();
-        List<ItemStack> show = new ArrayList<>();
+        String text = rt.getIngredientFilter()
+            .getFilterText();
+        lastText = text;
+        searching = !text.isBlank();
         for (Found f : found) {
-            boolean shouldHide = !showAll && !searching && !f.open;
-            if (shouldHide == f.hidden) continue;
-            (shouldHide ? hide : show).addAll(f.members.subList(1, f.members.size()));
-            f.hidden = shouldHide;
+            f.expandedBySearch = false;
+            f.rep = f.members.get(0);
         }
-        try {
-            if (!hide.isEmpty()) rt.getIngredientManager()
-                .removeIngredientsAtRuntime(VanillaTypes.ITEM_STACK, hide);
-            if (!show.isEmpty()) rt.getIngredientManager()
-                .addIngredientsAtRuntime(VanillaTypes.ITEM_STACK, show);
-        } catch (RuntimeException | LinkageError e) {
+        Set<String> hide = new HashSet<>();
+        if (!showAll) {
+            if (searching && !filterApiFailed) searchHide(rt, hide);
+            else if (!searching) for (Found f : found) {
+                if (!f.open) hideRest(f, 0, hide);
+            }
+        }
+        ListHiding.setHidden("collapsible", hide);
+        if (ListHiding.failed()) {
             failed = true;
-            NeiAddon.LOGGER.warn("Could not change JEI's item list; collapsible item groups are off for this session", e);
+            NeiAddon.LOGGER.warn("Could not change JEI's item list; collapsible item groups are off for this session");
         }
         applied = !showAll;
+    }
+
+    /**
+     * NEI's rules while a search is active (its ItemsPanelGrid groups what the filter left, so we let the filter see
+     * every member first): put the members back into JEI's list, read JEI's own filtered list once, then take out what
+     * stays out - a closed group keeps only the first member that matches (so a narrowing search narrows the entry, and
+     * Alt + click changes the list right away); and a group shows open for the search when the whole filtered list is
+     * that one group's members.
+     */
+    private static void searchHide(IJeiRuntime rt, Set<String> hide) {
+        ListHiding.setHidden("collapsible", Set.of());
+        if (ListHiding.failed()) {
+            failed = true;
+            return;
+        }
+        IIngredientManager mgr = rt.getIngredientManager();
+        try {
+            int total = 0;
+            Map<Found, Integer> hits = new IdentityHashMap<>();
+            Map<Found, String> firstKey = new IdentityHashMap<>();
+            for (IIngredientType<?> type : mgr.getRegisteredIngredientTypes()) {
+                IIngredientHelper<?> helper = mgr.getIngredientHelper(type);
+                String prefix = type.getUid() + "|";
+                for (Object ingredient : rt.getIngredientFilter()
+                    .getFilteredIngredients(type)) {
+                    total++;
+                    String uid = uniqueId(helper, ingredient);
+                    if (uid == null) continue;
+                    String key = prefix + uid;
+                    Found g = byKey.get(key);
+                    if (g == null) continue;
+                    hits.merge(g, 1, Integer::sum);
+                    firstKey.putIfAbsent(g, key);
+                }
+            }
+            for (Found f : found) {
+                if (f.open) continue; // an open group's members stay in the list; JEI's filter shows the ones that match
+                int hit = hits.getOrDefault(f, 0);
+                if (hit == 0) {
+                    f.rep = null;
+                    for (String k : f.keys) {
+                        if (k != null) hide.add(k);
+                    }
+                } else if (hit == total) {
+                    f.rep = null;
+                    f.expandedBySearch = true;
+                } else {
+                    int at = f.keys.indexOf(firstKey.get(f));
+                    f.rep = f.members.get(at < 0 ? 0 : at);
+                    hideRest(f, at < 0 ? 0 : at, hide);
+                }
+            }
+        } catch (RuntimeException | LinkageError e) {
+            filterApiFailed = true;
+            hide.clear();
+            for (Found f : found) f.rep = f.members.get(0);
+            NeiAddon.LOGGER.warn("Could not read JEI's filtered item list; collapsible groups show all their members while you search", e);
+        }
+    }
+
+    /** Hide every member of the group except index {@code keep}. */
+    private static void hideRest(Found f, int keep, Set<String> hide) {
+        for (int i = 0; i < f.keys.size(); i++) {
+            if (i == keep) continue;
+            String k = f.keys.get(i);
+            if (k != null) hide.add(k);
+        }
+    }
+
+    @SuppressWarnings({"unchecked", "deprecation"})
+    private static String uniqueId(IIngredientHelper<?> helper, Object ingredient) {
+        try {
+            return ((IIngredientHelper<Object>)helper).getUniqueId(ingredient, UidContext.Ingredient);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     @SubscribeEvent
@@ -209,7 +336,12 @@ public final class CollapsibleItems {
             seenRuntime = rt;
             found.clear();
             byItem.clear();
+            byKey.clear();
             built = applied = false;
+            failed = false;
+            filterApiFailed = false;
+            lastText = "";
+            ListHiding.setHidden("collapsible", Set.of());
         }
         if (rt == null || failed) return;
         if (!enabled()) {
@@ -222,14 +354,9 @@ public final class CollapsibleItems {
             build(rt);
             applied = false;
         }
-        boolean nowSearching = !rt.getIngredientFilter()
+        if (!rt.getIngredientFilter()
             .getFilterText()
-            .isBlank();
-        if (nowSearching != searching || !applied) {
-            searching = nowSearching;
-            apply(rt, false);
-            applied = true;
-        }
+            .equals(lastText) || !applied) apply(rt, false);
     }
 
     // ---------------------------------------------------------------- JEI's list: marker, click, tooltip
@@ -243,9 +370,9 @@ public final class CollapsibleItems {
         return byItem.get(stack.getItem());
     }
 
-    private static boolean isFirst(Found f, ItemStack stack) {
-        ItemStack first = f.members.get(0);
-        return first.getItem() == stack.getItem() && ItemStack.isSameItemSameTags(first, stack);
+    private static boolean isRep(Found f, ItemStack stack) {
+        ItemStack rep = f.rep;
+        return rep != null && rep.getItem() == stack.getItem() && ItemStack.isSameItemSameTags(rep, stack);
     }
 
     private static Optional<ItemStack> hoveredInList() {
@@ -263,6 +390,7 @@ public final class CollapsibleItems {
         if (stack.isEmpty()) return;
         Found f = groupOf(stack.get());
         if (f == null) return;
+        if (f.expandedBySearch) return; // NEI: while the search opens the group, the click goes to JEI as normal
         f.open = !f.open;
         IJeiRuntime rt = Calculator.runtime;
         if (rt != null) apply(rt, false);
@@ -278,8 +406,15 @@ public final class CollapsibleItems {
                 .getItem()) return;
         Found f = groupOf(event.getItemStack());
         if (f == null) return;
+        String line;
+        if (f.expandedBySearch) {
+            line = "§8" + f.name + " (" + f.members.size() + ") - shown open, your search matches this whole group";
+        } else {
+            line = "§8" + f.name + " (" + f.members.size() + "), Alt+click: " + (f.open ? "close" : "open");
+            if (searching && !f.open && filterApiFailed) line += " - members stay shown while you search";
+        }
         event.getToolTip()
-            .add(Component.literal("§8" + f.name + " (" + f.members.size() + "), Alt+click: " + (f.open ? "close" : "open")));
+            .add(Component.literal(line));
     }
 
     private static Field gridField, rendererField, slotsField, elementField, areaField;
@@ -318,13 +453,15 @@ public final class CollapsibleItems {
                     Optional<ItemStack> stack = ti.getItemStack();
                     if (stack.isEmpty()) continue;
                     Found f = groupOf(stack.get());
-                    if (f == null || !isFirst(f, stack.get())) continue;
+                    if (f == null || f.expandedBySearch || !isRep(f, stack.get())) continue;
                     Object area = areaField.get(slot);
                     int sx = ((Number) JeiAreas.invoke(area, "getX")).intValue();
                     int sy = ((Number) JeiAreas.invoke(area, "getY")).intValue();
                     int sw = ((Number) JeiAreas.invoke(area, "getWidth")).intValue();
-                    String mark = f.hidden ? "+" : "-";
-                    g.drawString(font, mark, sx + sw - font.width(mark) - 1, sy, f.hidden ? 0xFF55FF55 : 0xFFFFAA00, true);
+                    // the marker shows the group's open/closed state and sits on its shown entry (the representative),
+                    // so Alt + click is always pointing at the state it will change
+                    String mark = f.open ? "-" : "+";
+                    g.drawString(font, mark, sx + sw - font.width(mark) - 1, sy, f.open ? 0xFFFFAA00 : 0xFF55FF55, true);
                 }
             } finally {
                 pose.popMatrix();

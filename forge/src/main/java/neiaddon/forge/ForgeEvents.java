@@ -9,6 +9,7 @@ import neiaddon.event.ScreenEvent;
 import neiaddon.event.TickEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.EventPriority;
+import org.lwjgl.glfw.GLFW;
 
 /**
  * Hooks Forge's events to the addon's own bus. One Forge listener per priority that has handlers, so the order
@@ -63,6 +64,17 @@ final class ForgeEvents {
             (n, m) -> {
                 if (m.isCanceled()) n.setCanceled(true);
             });
+        // a press of a mouse button, before any screen sees it (EMI's item list takes its presses on the way in); presses only
+        for (neiaddon.event.EventPriority p : neiaddon.event.EventPriority.values()) {
+            if (!Bus.hasHandlers(neiaddon.event.InputEvent.MouseButtonPre.class, p)) continue;
+            MinecraftForge.EVENT_BUS.addListener(priority(p), false, net.minecraftforge.client.event.InputEvent.MouseButton.Pre.class,
+                (net.minecraftforge.client.event.InputEvent.MouseButton.Pre event) -> {
+                    if (event.getAction() != GLFW.GLFW_PRESS) return;
+                    neiaddon.event.InputEvent.MouseButtonPre mine = new neiaddon.event.InputEvent.MouseButtonPre(event.getButton());
+                    Bus.post(mine, p);
+                    if (mine.isCanceled()) event.setCanceled(true);
+                });
+        }
         bridge(
             net.minecraftforge.client.event.ScreenEvent.MouseButtonReleased.Pre.class,
             ScreenEvent.MouseButtonReleased.Pre.class,

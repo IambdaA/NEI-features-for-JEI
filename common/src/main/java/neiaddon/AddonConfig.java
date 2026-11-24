@@ -68,7 +68,7 @@ public final class AddonConfig {
         .define("autocrafting", true);
 
     public static final ConfigSpec.BooleanValue AUTOCRAFTING_FAST = B
-        .comment("Faster Autocrafting: when a full crafting grid would make more than is wanted, click the result once per wanted craft instead of crafting one set at a time. Every click waits for the server and is checked; anything unexpected stops autocrafting and puts the cursor and grid back into the inventory. Extra (not in NEI).")
+        .comment("Faster Autocrafting: off, a recipe is crafted in full-grid batches only once at least one full grid of sets is still wanted (fewer go one set at a time); on, it batches even when fewer are wanted. Batches are fast checked clicks on the result; every click waits for the server, and when the filled grid would make more than is wanted the extra sets are trimmed off first. Anything unexpected stops autocrafting and puts the cursor and grid back into the inventory. A recipe with an item that stacks to 1 (a GregTech tool) never batches its first fill either way. Extra (not in NEI).")
         .define("autocraftingFast", false);
 
     public static final ConfigSpec.BooleanValue AUTOCRAFTING_RESTORE = B
@@ -76,8 +76,17 @@ public final class AddonConfig {
         .define("autocraftingRestoreLayout", false);
 
     public static final ConfigSpec.BooleanValue COLLAPSIBLE_ITEMS = B
-        .comment("NEI's collapsible item groups: families of items (wool colours, spawn eggs, ...) show as one entry in JEI's list; Alt + click opens or closes a group. Groups are in config/neiaddon/collapsibleitems.cfg. Takes the members out of JEI's list while closed.")
+        .comment("NEI's collapsible item groups: families of items (wool colours, spawn eggs, ...) show as one entry in JEI's list; Alt + click opens or closes a group, also during a search. Groups are in config/neiaddon/collapsibleitems.cfg. While closed, all members but the shown one are out of JEI's list - during a search the shown entry is the first item of the group that matches the search; the group shows open only while all of the search's results are its members.")
         .define("collapsibleItems", false);
+
+    // NEI: subsets visibility and widget position (inventory.subsets / Widget Position)
+    public static final ConfigSpec.BooleanValue SUBSETS = B
+        .comment("The Subsets button and menu next to the N button (or at the top of the screen). Off hides both.")
+        .define("subsets", true);
+
+    public static final ConfigSpec.IntValue SUBSETS_POSITION = B
+        .comment("Where the Subsets button is: 0 Bottom (the S button next to N, default), 1 Top (an Item Subsets button at the top centre of the screen, when the window leaves room above it; otherwise the S button).")
+        .defineInRange("subsetsPosition", 0, 0, 1);
 
     public static final ConfigSpec.BooleanValue HEART_SCROLL_RESULT = B
         .comment("Mouse wheel over a recipe's heart picks which result to favorite (as NEI does). Off: the heart uses the first result, and Shift+F over a result slot favorites that result.")

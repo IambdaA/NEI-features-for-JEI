@@ -6,6 +6,8 @@ import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.recipe.EmiRecipeCategory;
 import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.stack.EmiStack;
+import dev.emi.emi.api.stack.EmiStackInteraction;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -72,6 +74,75 @@ public final class EmiBridge implements EmiCompat.Hooks {
     @Override
     public boolean cheatMode() {
         return EmiApi.isCheatMode();
+    }
+
+    // #36: EMI's own give, like its Ctrl + click. Only EMI's api is on our compile classpath, so its
+    // packet classes are used by reflection like its other internals.
+    private static Constructor<?> createItemPacket;
+    private static Method emiSendToServer;
+    private static Field emiOnServer;
+    private static boolean giveFailed;
+
+    /**
+     * Gives through EMI's own packet: mode 0 adds the stack to the inventory, mode 1 puts one stack on the cursor
+     * ({@code toCursor}, EMI's CreateItemC2SPacket.apply). Its server takes it for operators and creative
+     * players, whatever EMI's own (client side) setting says - the same reach EMI's Ctrl + click has. False when the
+     * server has no EMI on it (its ping flag: EMI's own clicks give nothing there either), and for good after one
+     * failure (one warning is logged). One packet per stack (1.20.1 writes a stack's count as a byte), at most a
+     * full inventory's stacks per give as over JEI's list; on the cursor one stack at most.
+     */
+    @Override
+    public boolean giveEmi(ItemStack stack, long count, boolean toCursor) {
+        if (stack.isEmpty() || count <= 0 || giveFailed) return false;
+        try {
+            if (createItemPacket == null) {
+                createItemPacket = Class.forName("dev.emi.emi.network.CreateItemC2SPacket")
+                    .getConstructor(int.class, ItemStack.class);
+                emiSendToServer = Class.forName("dev.emi.emi.network.EmiNetwork")
+                    .getMethod("sendToServer", Class.forName("dev.emi.emi.network.EmiPacket"));
+                emiOnServer = Class.forName("dev.emi.emi.platform.EmiClient")
+                    .getField("onServer");
+            }
+            if (!emiOnServer.getBoolean(null)) return false;
+            int max = Math.max(1, Math.min(64, stack.getMaxStackSize()));
+            int mode = toCursor ? 1 : 0;
+            long left = toCursor ? Math.min(count, max) : Math.min(count, (long) max * 36);
+            while (left > 0) {
+                int n = (int) Math.min(left, max);
+                emiSendToServer.invoke(null, createItemPacket.newInstance(mode, stack.copyWithCount(n)));
+                left -= n;
+            }
+            return true;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            giveFailed = true;
+            NeiAddon.LOGGER.warn("Could not use EMI's own give packet; gives under EMI keep JEI's way", e);
+            return false;
+        }
+    }
+
+    private static boolean sidebarClassChecked;
+
+    /**
+     * The item of an EMI sidebar stack (the item list or the favorites) under the point. EMI's sidebar interaction is its
+     * internal class, so it is recognised by its name; a stack of one item only (not a fluid, not a tag of several).
+     */
+    @Override
+    public ItemStack sidebarStackAt(int x, int y) {
+        if (!sidebarClassChecked) {
+            // a renamed internal class would otherwise just stop the clicks without a word: fail once, loudly
+            try {
+                Class.forName("dev.emi.emi.screen.EmiScreenManager$SidebarEmiStackInteraction");
+            } catch (ClassNotFoundException e) {
+                throw new IllegalStateException("EMI's sidebar stack class is not there", e);
+            }
+            sidebarClassChecked = true;
+        }
+        EmiStackInteraction hit = EmiApi.getHoveredStack(x, y, false);
+        if (hit == null || !"SidebarEmiStackInteraction".equals(hit.getClass().getSimpleName())) return ItemStack.EMPTY;
+        List<EmiStack> stacks = hit.getStack().getEmiStacks();
+        if (stacks.size() != 1) return ItemStack.EMPTY;
+        ItemStack item = stacks.get(0).getItemStack();
+        return item == null || item.isEmpty() ? ItemStack.EMPTY : item;
     }
 
     /** EMI's reload manager is not in its API, so it is asked by reflection; if that fails, EMI counts as loaded. */
@@ -443,6 +514,45 @@ public final class EmiBridge implements EmiCompat.Hooks {
         }
     }
 
+    private static Method dropRenderMethod;
+
+    /**
+     * EMI's drop targets are drawn by the static {@code EmiDragDropHandlers.render(screen, stack, g, x, y, delta)}, found by
+     * name like {@link #dropStack}. It is drawn at a Z of 400, as EMI draws it when an item is dragged from its own list.
+     * A failure throws, so {@link EmiCompat#renderDropTargets} turns this off for good.
+     */
+    @Override
+    public boolean renderDropTargets(Screen screen, ItemStack stack, GuiGraphics g, int mouseX, int mouseY, float delta) {
+        EmiStack emi = emiStackOf(stack);
+        if (emi.isEmpty()) return false;
+        try {
+            if (dropRenderMethod == null) {
+                for (Method m : Class.forName("dev.emi.emi.registry.EmiDragDropHandlers")
+                    .getMethods()) {
+                    if (m.getName()
+                        .equals("render") && m.getParameterCount() == 6 && java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
+                        dropRenderMethod = m;
+                        break;
+                    }
+                }
+                if (dropRenderMethod == null) throw new NoSuchMethodException("EmiDragDropHandlers.render(screen, stack, g, x, y, delta)");
+            }
+            g.pose()
+                .pushPose();
+            try {
+                g.pose()
+                    .translate(0, 0, 400);
+                dropRenderMethod.invoke(null, screen, emi, g, mouseX, mouseY, delta);
+            } finally {
+                g.pose()
+                    .popPose();
+            }
+            return true;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("EMI's drop targets could not be drawn", e);
+        }
+    }
+
     // ---------------------------------------------------------------- EMI's favorites as bookmarks
 
     /**
@@ -572,12 +682,16 @@ public final class EmiBridge implements EmiCompat.Hooks {
         return bar < 0 ? null : id.substring(bar + 1);
     }
 
-    /** Whether the recipe is a real recipe with ingredients (not a tag, info or resolution page). */
+    /**
+     * Whether the recipe is a real recipe with ingredients (not a tag, info or resolution page, nor a page that only shows
+     * information such as JEI's information or GregTech's diagrams: {@link RecipeShape#infoType}).
+     */
     private static boolean usable(EmiRecipe r) {
-        return !SKIPPED.contains(r.getCategory()
+        String category = r.getCategory()
             .getId()
-            .toString()) && !r.getInputs()
-                .isEmpty();
+            .toString();
+        return !SKIPPED.contains(category) && !RecipeShape.infoType(category) && !r.getInputs()
+            .isEmpty();
     }
 
     /** The recipe as a shape, or null. Each step falls through to the next when it fails or has no inputs. */

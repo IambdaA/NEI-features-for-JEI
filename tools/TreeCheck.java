@@ -69,6 +69,21 @@ public class TreeCheck {
         return p.x + "," + p.y;
     }
 
+    /** The node's result slots in order, as item names (issue #42 follow-up: which one sits leftmost). */
+    static String outOrder(TreeLayout l, String name) {
+        List<String> out = new ArrayList<>();
+        for (TreeSlot.Output o : find(l, name).outputs()) out.add(o.shown().item);
+        return out.toString();
+    }
+
+    /** The node's result slots as sorted "item=amount" pairs: pairs, so the order cannot make it pass. */
+    static String outAmounts(TreeLayout l, String name) {
+        List<String> out = new ArrayList<>();
+        for (TreeSlot.Output o : find(l, name).outputs()) out.add(o.shown().item + "=" + o.requestedAmount);
+        java.util.Collections.sort(out);
+        return out.toString();
+    }
+
     public static void main(String[] args) {
         TreeLayout l = new TreeLayout();
         l.graph.rebuild(new TreeMath(chain(false), Set.of()));
@@ -129,6 +144,67 @@ public class TreeCheck {
         check("12345 is cut to the width", ReadableNumber.amount(12345), "12k");
         check("1.5M keeps its decimal", ReadableNumber.wide(1_500_000), "1.5M");
         check("10000", ReadableNumber.amount(10_000), "10k");
+
+        // #39: the tree's chain items take a picked tag slot as exactly the chosen item, without the
+        // other items the slot accepts: a sub-recipe of another accepted item (the favorited one from before the
+        // pick) then no longer supplies, and no longer shows on, the slot.
+        List<ChainItem> picked = new ArrayList<>();
+        picked.add(new ChainItem("mix", "M", Type.RESULT, 1, 2, Set.of("mix"), "mix@M"));
+        picked.add(new ChainItem("crystal", "M", Type.INGREDIENT, 2, 2, Set.of("crystal"), "slot"));
+        picked.add(new ChainItem("charged", "G", Type.RESULT, 1, 1, Set.of("charged"), "charged@G"));
+        picked.add(new ChainItem("pearl", "G", Type.INGREDIENT, 1, 1, Set.of("pearl"), "pearl@G"));
+        TreeMath pm = new TreeMath(picked, Set.of());
+        TreeLayout pl = new TreeLayout();
+        pl.graph.rebuild(pm);
+        pl.recalculate(Set.of(), Set.of(), null);
+        check("picked slot: the old favorite recipe of another accepted item does not supply it",
+            find(pl, "crystal").prefItem == null, true);
+        check("picked slot: still asks for the chosen item", find(pl, "crystal").requestedAmount, 4L);
+
+        // the same slot with the accepted items left in the maths (the old, pre-fix shape of the chain items)
+        // keeps the loose link, so that link is what dropping the options breaks
+        List<ChainItem> loose = new ArrayList<>();
+        loose.add(new ChainItem("mix", "M", Type.RESULT, 1, 2, Set.of("mix"), "mix@M"));
+        loose.add(new ChainItem("crystal", "M", Type.INGREDIENT, 2, 2, Set.of("crystal", "charged"), "slot"));
+        loose.add(new ChainItem("charged", "G", Type.RESULT, 1, 1, Set.of("charged"), "charged@G"));
+        loose.add(new ChainItem("pearl", "G", Type.INGREDIENT, 1, 1, Set.of("pearl"), "pearl@G"));
+        TreeMath lm = new TreeMath(loose, Set.of());
+        TreeLayout ll = new TreeLayout();
+        ll.graph.rebuild(lm);
+        ll.recalculate(Set.of(), Set.of(), null);
+        check("with the accepted items still in the maths the old sub-recipe links (the pre-fix shape)",
+            find(ll, "crystal").prefItem != null, true);
+
+        // #42 follow-up: a multi-result recipe entered on one of its results shows that result at the
+        // node's leftmost slot (the tree screen passes it in as the recipe's chosen result, from the favorites);
+        // the other results keep the recipe's order, and without a chosen result the recipe's order stands.
+        List<ChainItem> multi = new ArrayList<>();
+        multi.add(item("plate", "X", Type.RESULT, 2, 1));
+        multi.add(item("ball", "X", Type.RESULT, 1, 1));
+        multi.add(item("lens", "X", Type.RESULT, 1, 1));
+        multi.add(item("dust", "X", Type.INGREDIENT, 1, 1));
+
+        TreeMath nm = new TreeMath(multi, Set.of());
+        TreeLayout nl = new TreeLayout();
+        nl.graph.rebuild(nm);
+        nl.recalculate(Set.of(), Set.of(), null);
+        check("multi-result node with no chosen result: the recipe's own order", outOrder(nl, "plate"), "[plate, ball, lens]");
+
+        TreeMath em = new TreeMath(multi, Set.of());
+        em.setChosenOutputs(java.util.Map.of("X", "lens"));
+        TreeLayout el = new TreeLayout();
+        el.graph.rebuild(em);
+        el.recalculate(Set.of(), Set.of(), null);
+        check("entered on the third result: it shows leftmost, the others keep their order", outOrder(el, "plate"),
+            "[lens, plate, ball]");
+        check("the move keeps every result its own amounts", outAmounts(el, "plate"), outAmounts(nl, "plate"));
+
+        TreeMath fm = new TreeMath(multi, Set.of());
+        fm.setChosenOutputs(java.util.Map.of("X", "plate"));
+        TreeLayout fl = new TreeLayout();
+        fl.graph.rebuild(fm);
+        fl.recalculate(Set.of(), Set.of(), null);
+        check("entered on the first result: the order does not change", outOrder(fl, "plate"), "[plate, ball, lens]");
 
         if (failures > 0) {
             System.out.println(failures + " FAILURE(S)");

@@ -12,6 +12,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.resources.ResourceLocation;
+import neiaddon.emi.EmiHistoryReturn;
 import neiaddon.event.SubscribeEvent;
 import neiaddon.event.ScreenEvent;
 
@@ -116,6 +117,8 @@ public final class TreeRecipes {
         // the viewer stopped on another screen (the inventory, with no recipe screen over it): no pick there
         Screen now = Minecraft.getInstance().screen;
         if (waiting != null && !(now instanceof CraftingTreeScreen) && !RecipeHearts.isRecipesScreen(now)) endWait();
+        // EMI's recipe screen goes back to the inventory it was put over: the tree takes that place in EMI's history
+        if (waiting != null && EmiCompat.isRecipeScreen(now)) EmiHistoryReturn.putTreeBelow(tree, now);
     }
 
     static void stopWaiting() {

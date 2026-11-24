@@ -27,8 +27,10 @@ import org.lwjgl.glfw.GLFW;
  * JEI does itself with the public {@link IGhostIngredientHandler} API: the handlers other mods registered with JEI are
  * read from JEI's screen helper (by reflection, the way {@link JeiAreas} reads JEI's other internals), each is asked for
  * its targets when the drag starts, and the ingredient is handed to the target under the mouse on release. With EMI
- * installed, EMI's own drag-and-drop handlers get the drop first ({@link EmiCompat#dropStack}). Nothing here throws: a
- * JEI that differs just means no targets (one logged warning).
+ * installed, EMI draws the targets instead ({@link EmiCompat#renderDropTargets}, as for a drag from EMI's own list, so the
+ * screen's JEI handlers and EMI's handlers both show), and EMI's own drag-and-drop handlers get the drop first
+ * ({@link EmiCompat#dropStack}; that includes the bookmark panel, see {@link NeiAddonJeiPlugin#dropOnPanel}). Nothing here
+ * throws: a JEI that differs just means no targets (one logged warning).
  */
 final class BookmarkDrag {
 
@@ -88,7 +90,10 @@ final class BookmarkDrag {
         return dragging;
     }
 
-    /** Draws the targets and the dragged item; ends the drag when the left button is no longer held (a release that was lost). */
+    /**
+     * Draws the targets and the dragged item; ends the drag when the left button is no longer held (a release that was lost).
+     * With EMI, EMI draws the targets (its handlers include the screen's JEI handlers) and our own fills are skipped.
+     */
     static void render(GuiGraphics g, int mouseX, int mouseY) {
         if (!dragging) return;
         // not MouseHandler.isLeftPressed(): vanilla only sets that when no screen is open
@@ -98,19 +103,37 @@ final class BookmarkDrag {
             complete();
             return;
         }
-        for (Hit hit : hits) {
-            try {
-                if (!hit.handler()
-                    .shouldHighlightTargets()) continue;
-                Rect2i area = hit.target()
-                    .getArea();
-                g.fill(area.getX(), area.getY(), area.getX() + area.getWidth(), area.getY() + area.getHeight(),
-                    area.contains(mouseX, mouseY) ? TARGET_HOVER : TARGET);
-            } catch (RuntimeException | LinkageError e) {
-                warn("Could not draw a drop target of a bookmark drag", e);
+        // EMI's drawing at its own Z, as for a drag from its list; partial tick is 0 (EMI's handlers ignore it)
+        boolean emiDrew = EmiCompat.renderDropTargets(McCompat.screen(), stack, g, mouseX, mouseY, 0f);
+        if (!emiDrew) {
+            for (Hit hit : hits) {
+                try {
+                    if (!hit.handler()
+                        .shouldHighlightTargets()) continue;
+                    Rect2i area = hit.target()
+                        .getArea();
+                    g.fill(area.getX(), area.getY(), area.getX() + area.getWidth(), area.getY() + area.getHeight(),
+                        area.contains(mouseX, mouseY) ? TARGET_HOVER : TARGET);
+                } catch (RuntimeException | LinkageError e) {
+                    warn("Could not draw a drop target of a bookmark drag", e);
+                }
             }
         }
-        g.renderItem(stack, mouseX - 8, mouseY - 8);
+        if (!emiDrew) {
+            g.renderItem(stack, mouseX - 8, mouseY - 8);
+            return;
+        }
+        // EMI draws its own dragged stack at this Z too: the item goes in front of EMI's targets
+        g.pose()
+            .pushPose();
+        try {
+            g.pose()
+                .translate(0, 0, 400);
+            g.renderItem(stack, mouseX - 8, mouseY - 8);
+        } finally {
+            g.pose()
+                .popPose();
+        }
     }
 
     /** Ends the drag over {@code screen}: the target under the mouse takes the ingredient. True when one did. */

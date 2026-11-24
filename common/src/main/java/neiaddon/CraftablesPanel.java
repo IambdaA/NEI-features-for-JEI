@@ -39,8 +39,9 @@ import neiaddon.event.ScreenEvent;
  * what the "+" button could fill in. Favorite recipes win over other recipes of the same item and come first.
  *
  * <p>
- * Left click: recipes of the item, right click: its uses, Shift + craft key: autocraft one run (Ctrl keeps what the
- * inventory already holds, like NEI), wheel: scroll rows. The scan runs a few milliseconds per frame, at most every
+ * Left click: recipes of the item, right click: its uses, Shift + craft key: autocraft one run of what the inventory is
+ * missing (Ctrl crafts it again even if the inventory holds it; #46, NEI has the Ctrl rule the other way),
+ * wheel: scroll rows. The scan runs a few milliseconds per frame, at most every
  * 600 ms, and only when the inventory changed (or every 5 s), because creating JEI recipe layouts is slow.
  */
 public final class CraftablesPanel {
@@ -187,6 +188,8 @@ public final class CraftablesPanel {
     }
 
     private static <R> void gatherCategory(IJeiRuntime rt, Job j, IRecipeCategory<R> category, List<IFocus<?>> focuses) {
+        // a page that only shows information (JEI's information, GregTech's diagrams) is not a recipe, even with a handler
+        if (RecipeShape.infoType(category.getRecipeType().getUid().toString())) return;
         // only categories this container can take a recipe from, like JEI's "+" button
         if (rt.getRecipeTransferManager()
             .getRecipeTransferHandler(j.menu, category)

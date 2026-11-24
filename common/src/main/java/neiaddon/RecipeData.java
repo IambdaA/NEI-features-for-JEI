@@ -23,6 +23,8 @@ public final class RecipeData {
         public final long factor;
         /** Registry ids of every item the slot accepts; contains the id of {@link #stack}. */
         public final List<String> options;
+        /** An ingredient whose tag slot the player picked (a saved tag default or a kept pick; #39). */
+        public boolean picked;
 
         public Part(ItemStack stack, long factor, List<String> options) {
             this.stack = McCompat.copyWithCount(stack, 1);

@@ -6,9 +6,12 @@ import java.util.Optional;
 import mezz.jei.api.ingredients.ITypedIngredient;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import neiaddon.event.EventPriority;
+import neiaddon.event.InputEvent;
 import neiaddon.event.ScreenEvent;
 import neiaddon.event.SubscribeEvent;
 
@@ -16,18 +19,22 @@ import neiaddon.event.SubscribeEvent;
  * NEI's Cheat Mode giving: a click on an item of JEI's list or of the bookmark panel gives it, left click the Stack Controls
  * amount (0 = one stack; a bookmark gives its own amount when it has one), right click one. Shift + click on JEI's list
  * shows the recipes instead, and nothing is given while JEI's recipe screen is open, as in NEI. On while JEI's cheat mode
- * is on, or while this addon's Cheat Mode is (NEI's cheat mode gives items too).
+ * is on, or while this addon's Cheat Mode is (NEI's cheat mode gives items too). With EMI installed EMI shows the item list,
+ * so the clicks on its stacks are Ctrl + click (see cheatingForClicks and onEmiListPressed).
  *
  * <p>
  * JEI has no API for giving items, so its own cheat code is used by reflection: JEI's give packet when JEI is on the server
  * (the server then checks that the player may cheat, as for JEI's own clicks), else JEI's own fallback (creative mode on a
- * server without JEI). In creative mode the items are put into the inventory directly instead (see giveCreative). If JEI's internals are not found one warning is logged and clicks work as without cheating.
+ * server without JEI). With EMI installed and only EMI's cheat mode on, the give instead goes through EMI's own packet (GitHub
+ * issue #36, see give). In creative mode the items are put into the inventory directly instead (see giveCreative). If JEI's internals are not found one warning is logged and clicks work as without cheating.
  */
 public final class JeiGive {
 
     /** At most this many stacks per click (a full inventory); more would only be dropped on the ground. */
     private static final int MAX_STACKS = 36;
     private static boolean failed;
+    private static boolean modeWarned;
+    private static boolean toggleWarned;
 
     private JeiGive() {}
 
@@ -43,6 +50,18 @@ public final class JeiGive {
             fail(e);
             return false;
         }
+    }
+
+    /**
+     * Is a click on the addon's or EMI's list a give? Any of the three modes says yes (#36, the user's
+     * decision 2026-11-22: if either mod is in cheat mode it works): this addon's Cheat Mode, JEI's own toggle (it
+     * counts again even with EMI installed, overriding the 2026-11-17 decision that only EMI's mode counts there),
+     * or EMI's cheat mode (its setting: Always, or Creative Only in creative on newer EMI). Under EMI the clicks are
+     * still Ctrl + click. Nothing is written into EMI's config.
+     */
+    static boolean cheatingForClicks() {
+        if (!EmiCompat.installed()) return cheating();
+        return cheating() || EmiCompat.cheatMode();
     }
 
     /** Gives {@code count} of the item the way JEI's cheat mode does; false when it cannot (a fluid, JEI not found). */
@@ -63,6 +82,14 @@ public final class JeiGive {
             giveCreative(mc, stack, count);
             return true;
         }
+        // #36 (the user's decision 2026-11-22): each server accepts only its own give, so the packet
+        // follows the mode that is on. JEI's toggle is read from the server: while it is on, JEI's server takes
+        // JEI's packet below (that also covers this addon's Cheat Mode); while it is off and EMI's cheat mode is
+        // on, the give goes through EMI's own packet instead - EMI's server takes it for operators and creative
+        // players only (its setting is client side and never reaches the server), exactly what EMI's own
+        // Ctrl + click would do there. EMI's packet follows JEI's give mode too (see giveToCursor). If that route
+        // is not open either, the JEI way below is kept as before.
+        if (EmiCompat.installed() && EmiCompat.cheatMode() && !jeiCheating() && EmiCompat.giveEmi(stack, count, giveToCursor(toInventory))) return true;
         if (failed) return false;
         try {
             Class<?> internal = internal();
@@ -70,10 +97,7 @@ public final class JeiGive {
                 .invoke(null);
             // getClientConfigs(), or getJeiClientConfigs() on older JEI (15.59 in ATM9, 19.25 in ATM10)
             Object config = JeiButtons.clientConfig();
-            // JEI 15: getGiveMode() gives the value; JEI 19 and later: giveMode() gives a config value read with get()
-            Object mode = JeiAreas.invoke(config, "giveMode", "getGiveMode");
-            if (!(mode instanceof Enum<?>)) mode = JeiAreas.invoke(mode, "get");
-            if (toInventory && mode instanceof Enum<?> e) mode = inventoryMode(e);
+            Object mode = giveModeOf(config, toInventory);
             int max = Math.max(1, stack.getMaxStackSize());
             // JEI's "give to the mouse" mode: the mouse holds one stack at most
             long left = String.valueOf(mode)
@@ -167,6 +191,51 @@ public final class JeiGive {
         if (give(stack.get(), button == 0 ? QuantityField.scrollMultiplier(stack.get()) : 1)) event.setCanceled(true);
     }
 
+    /**
+     * With EMI installed its item list takes the presses on its stacks before any screen sees them, so they are read here first.
+     * On a container screen (not a recipe screen, no text typed): with the cursor empty, Ctrl + click gives the stack under the
+     * mouse while {@link #cheatingForClicks()} (left: the Stack Controls amount, right: one). With an item on the cursor, only
+     * this addon's Cheat Mode deletes it or takes one off (as over the bookmark panel); EMI's own cheat mode does that itself.
+     * Everything else is EMI's.
+     */
+    @SubscribeEvent
+    static void onEmiListPressed(InputEvent.MouseButtonPre event) {
+        int button = event.getButton();
+        if (button != 0 && button != 1 || !EmiCompat.installed()) return;
+        Screen screen = McCompat.screen();
+        if (!(screen instanceof AbstractContainerScreen<?> container) || RecipeHearts.isRecipesScreen(screen) || CalcKeys.typing()) return;
+        ItemStack held = container.getMenu()
+            .getCarried();
+        if (held.isEmpty()) {
+            boolean ctrlOnly = McCompat.ctrl() && !McCompat.shift() && !McCompat.alt();
+            if (!ctrlOnly || !cheatingForClicks()) return;
+        } else if (AddonConfig.CHEAT_MODE.get() != 2 || EmiCompat.cheatMode()) {
+            return;
+        }
+        ItemStack stack = emiSidebarStackUnderMouse();
+        if (stack.isEmpty()) return;
+        boolean used = held.isEmpty()
+            ? give(stack, button == 0 ? QuantityField.scrollMultiplier(stack) : 1)
+            : HeldItemDelete.deleteHeld(screen, container.getMenu(), button);
+        if (!used) return;
+        event.setCanceled(true);
+        // the release of this press is kept from EMI and the screen too (see ReleaseGuard)
+        ReleaseGuard.pressUsed(button);
+    }
+
+    /** The item of EMI's item list (or favorites) under the mouse, empty elsewhere and without EMI. */
+    static ItemStack emiSidebarStackUnderMouse() {
+        Minecraft mc = Minecraft.getInstance();
+        // the mouse in GUI coordinates, as EMI reads it
+        double x = mc.mouseHandler.xpos() * mc.getWindow()
+            .getGuiScaledWidth() / mc.getWindow()
+                .getScreenWidth();
+        double y = mc.mouseHandler.ypos() * mc.getWindow()
+            .getGuiScaledHeight() / mc.getWindow()
+                .getScreenHeight();
+        return EmiCompat.sidebarStackAt((int) x, (int) y);
+    }
+
     @SuppressWarnings({ "unchecked", "rawtypes" })
     private static Object inventoryMode(Enum<?> mode) {
         try {
@@ -176,7 +245,56 @@ public final class JeiGive {
         }
     }
 
-    /** JEI's own cheat mode toggle (not this addon's Cheat Mode). */
+    /**
+     * JEI's give mode from its client config, read the same way by both give paths; {@code toInventory} gives the inventory
+     * mode whatever JEI's setting is.
+     */
+    private static Object giveModeOf(Object config, boolean toInventory) throws ReflectiveOperationException {
+        // JEI 15: getGiveMode() gives the value; JEI 19 and later: giveMode() gives a config value read with get()
+        Object mode = JeiAreas.invoke(config, "giveMode", "getGiveMode");
+        if (!(mode instanceof Enum<?>)) mode = JeiAreas.invoke(mode, "get");
+        if (toInventory && mode instanceof Enum<?> e) mode = inventoryMode(e);
+        return mode;
+    }
+
+    /**
+     * Whether an EMI give puts one stack on the cursor: JEI's give mode is MOUSE_PICKUP, the give is not forced into the
+     * inventory, and the cursor is empty (EMI's mode 1 would replace what is on it). When JEI's config cannot be read the
+     * inventory mode is taken, with one warning.
+     */
+    private static boolean giveToCursor(boolean toInventory) {
+        if (toInventory) return false;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || !mc.player.containerMenu.getCarried()
+            .isEmpty()) return false;
+        try {
+            return String.valueOf(giveModeOf(JeiButtons.clientConfig(), false))
+                .equals("MOUSE_PICKUP");
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            if (!modeWarned && !jeiAbsent(e)) {
+                modeWarned = true;
+                NeiAddon.LOGGER.warn("Could not read JEI's give mode; gives under EMI use the inventory mode", e);
+            }
+            return false;
+        }
+    }
+
+    /**
+     * Whether a failure only means JEI's internals are not there (a pack with another viewer on EMI, such as
+     * TooManyRecipeViewers): a missing JEI class. That is normal there, so it is not logged.
+     */
+    private static boolean jeiAbsent(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof ClassNotFoundException || t instanceof NoClassDefFoundError) {
+                String name = String.valueOf(t.getMessage());
+                if (name.contains("mezz.jei") || name.contains("mezz/jei")) return true;
+            }
+            if (t.getCause() == t) break;
+        }
+        return false;
+    }
+
+    /** JEI's own cheat mode toggle (not this addon's Cheat Mode). One warning when it cannot be read; then it counts as off. */
     static boolean jeiCheating() {
         if (failed) return false;
         try {
@@ -184,6 +302,10 @@ public final class JeiGive {
                 .invoke(null);
             return Boolean.TRUE.equals(JeiAreas.invoke(state, "isCheatItemsEnabled"));
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            if (!toggleWarned && !jeiAbsent(e)) {
+                toggleWarned = true;
+                NeiAddon.LOGGER.warn("Could not read JEI's cheat mode toggle; it counts as off", e);
+            }
             return false;
         }
     }

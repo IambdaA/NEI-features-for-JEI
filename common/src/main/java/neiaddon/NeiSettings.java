@@ -20,8 +20,10 @@ import org.lwjgl.glfw.GLFW;
 
 /**
  * This addon's settings, drawn and laid out like NEI's options screen ({@code GuiOptionList}): a column of at most 320
- * pixels with a thin black scroll bar on its right, the dirt-like tile above and below it (with a short fade into the
- * list), the page's name centered at the top and a Back button at the bottom. A page lists its options as:
+ * pixels with a thin black scroll bar on its right, drawn only when the page scrolls (#45), the full
+ * background of vanilla's own menus behind everything ({@link Screen#renderBackground(GuiGraphics)}: darkened dirt
+ * without a world, darkened world in one; also #45), the page's name centered at the top and a Back
+ * button at the bottom. A page lists its options as:
  * <ul>
  * <li>a full-width button that opens a sub page,</li>
  * <li>a full-width button that cycles a choice (Cheat Mode),</li>
@@ -33,7 +35,8 @@ import org.lwjgl.glfw.GLFW;
  * choice, or a text field that JEI checks when the field is left (a red outline when JEI refuses the text).</li>
  * </ul>
  * The mouse and keys come through screen events, like the other screens of this addon. The screen does not pause the
- * game, and Esc goes back to the screen the settings were opened from.
+ * game. Esc goes back one page at a time (#45): from a sub page to its parent page, from the root page to
+ * the screen the settings were opened from.
  *
  * <p>
  * Ported from GTNH NotEnoughItems (LGPL-3.0-or-later).
@@ -56,7 +59,6 @@ public final class NeiSettings extends Screen {
 
     private static final ResourceLocation SPRITES = new ResourceLocation(NeiAddon.MODID, "textures/nei_sprites.png");
     private static final ResourceLocation WIDGETS = new ResourceLocation("minecraft:textures/gui/widgets.png");
-    private static final ResourceLocation TILE = new ResourceLocation("minecraft:textures/gui/options_background.png");
 
     private enum Kind {
         PAGE, ACTION, TOGGLE, NUMBER, CHOICE, COLOR, ICONS, JEI_TOGGLE, JEI_CHOICE, JEI_TEXT, HEADER
@@ -279,9 +281,12 @@ public final class NeiSettings extends Screen {
             .toggle("Show Hotkeys", "List the keys that work on an item in its tooltip while Alt is held.", AddonConfig.SHOW_HOTKEYS)
             .toggle("Show Item Quantity Widget", "The quantity field above the JEI item list.", AddonConfig.QUANTITY_WIDGET)
             .enabled("Autocrafting", "Allow autocrafting of bookmarked recipes and craftables.", AddonConfig.AUTOCRAFTING)
-            .enabled("Collapsible Item Groups", "Families of items (wool colours, spawn eggs, potions...) show as one entry in JEI's item list; Alt+click opens or closes a group. The groups are in config/neiaddon/collapsibleitems.cfg. While a group is closed its other items are out of JEI's list (a search shows them again). Not with EMI, which shows its own item list.", AddonConfig.COLLAPSIBLE_ITEMS)
+            .enabled("Collapsible Item Groups", "Families of items (wool colours, spawn eggs, potions...) show as one entry in JEI's item list; Alt+click opens or closes a group, also during a search, where the list changes right away. The groups are in config/neiaddon/collapsibleitems.cfg. While a group is closed its other items are out of JEI's list - during a search the shown entry is the first of its items that matches the search. A group shows open while your search's results are all from that one group. Not with EMI, which shows its own item list.", AddonConfig.COLLAPSIBLE_ITEMS)
+            .enabled("Subsets", "The Subsets button and menu next to the N button (or at the top of the screen). Off hides both.", AddonConfig.SUBSETS)
+            .choice("Subsets Widget Position", "Bottom: the S button next to N. Top: an Item Subsets button at the top centre of the screen (the S button when there is no room above the window).",
+                AddonConfig.SUBSETS_POSITION, "Bottom", "Top")
             .enabled("Restore Inventory Layout", "After autocrafting, move the items that were in your inventory back to the slots they were in before (one checked click at a time, after the grid is emptied). Crafted items stay where they landed; items that were used up leave their slot as it is. Extra (not in NEI).", AddonConfig.AUTOCRAFTING_RESTORE)
-            .enabled("Faster Autocrafting", "When a full crafting grid would make more than is wanted, click the result once per wanted craft instead of crafting one set at a time. Each click waits for the server and is checked; if anything is off, autocrafting stops and puts the cursor and grid back into the inventory. Extra (not in NEI).", AddonConfig.AUTOCRAFTING_FAST)
+            .enabled("Faster Autocrafting", "Fill the crafting grid with as many sets as it holds and craft them all with one checked click on the result. Off: only while at least a full grid of sets is still wanted; fewer are crafted one set at a time. On: also when fewer are wanted. Every click waits for the server; if anything is off, autocrafting stops and puts the cursor and grid back into the inventory. Extra (not in NEI).", AddonConfig.AUTOCRAFTING_FAST)
             .toggle("Release Note in Chat", "On joining a world, a chat message asks you to report issues with this release on GitHub. Its [Turn off this message] link turns this off. Extra (not in NEI).", AddonConfig.RELEASE_NOTE)
             .toggle("EMI Note in Chat", "With EMI installed, on joining a world, a chat message asks you to report anything missing or off with EMI on GitHub. Its [Turn off this message] link turns this off. Extra (not in NEI).", AddonConfig.EMI_NOTE)
             .enabled("Item Untranslator", "Also find items by their English name when the game is not in English. Applies after the next JEI reload.", AddonConfig.UNTRANSLATE)
@@ -298,26 +303,28 @@ public final class NeiSettings extends Screen {
             .action("Dump Biomes (in a world)", "", DataDumps::biomes)
             .action("Dump JEI Item List (in a world)", "", DataDumps::jeiItems);
         Page tools = new Page("Tools").sub(dumps);
-        return new Page("NEI Options").sub(inventory)
+        Page base = new Page("NEI Options").sub(inventory)
             .action("KeyBindings", "Configure NEI key bindings in the Minecraft controls screen", () -> {
                 Minecraft mc = Minecraft.getInstance();
                 McCompat.setScreen(new KeyBindsScreen(holder[0], mc.options));
             })
             .sub(world)
-            .sub(tools)
-            .action("JEI Options", "JEI's own settings. Only in a world. Extra (not in NEI).", () -> {
-                List<JeiSettings.Category> categories = JeiSettings.categories();
-                if (categories.isEmpty()) return;
-                // one page in JEI's own order, each category under its title
-                Page jeiPage = new Page("JEI Options");
-                for (JeiSettings.Category category : categories) {
-                    jeiPage.header(category.title());
-                    for (Object value : category.values()) jeiPage.jei(value);
-                }
-                McCompat.setScreen(new NeiSettings(holder[0], jeiPage));
-            })
-            .action("Report Issues", "Opens the NEI Features for JEI issue tracker on GitHub in your browser (after a confirmation), to report a bug or ask for something. Extra (not in NEI).",
-                () -> net.minecraft.client.gui.screens.ConfirmLinkScreen.confirmLinkNow(ReleaseNote.URL, holder[0], true));
+            .sub(tools);
+        // #45: the "JEI Options" row itself only shows when JEI's own settings can actually be read
+        // (no JEI installed, or no world yet: the row used to sit there and its click did nothing)
+        if (JeiSettings.available()) base.action("JEI Options", "JEI's own settings. Only in a world. Extra (not in NEI).", () -> {
+            List<JeiSettings.Category> categories = JeiSettings.categories();
+            if (categories.isEmpty()) return;
+            // one page in JEI's own order, each category under its title
+            Page jeiPage = new Page("JEI Options");
+            for (JeiSettings.Category category : categories) {
+                jeiPage.header(category.title());
+                for (Object value : category.values()) jeiPage.jei(value);
+            }
+            McCompat.setScreen(new NeiSettings(holder[0], jeiPage));
+        });
+        return base.action("Report Issues", "Opens the NEI Features for JEI issue tracker on GitHub in your browser (after a confirmation), to report a bug or ask for something. Extra (not in NEI).",
+            () -> net.minecraft.client.gui.screens.ConfirmLinkScreen.confirmLinkNow(ReleaseNote.URL, holder[0], true));
     }
 
     /** The settings screen, for the loader's mod list button. */
@@ -343,7 +350,6 @@ public final class NeiSettings extends Screen {
     private int caret;
     private boolean dragging;
     private int dragGrab;
-    private Boolean tileThere;
 
     private NeiSettings(Screen parent, Page page) {
         super(Component.literal(page.title));
@@ -356,12 +362,12 @@ public final class NeiSettings extends Screen {
         return false;
     }
 
-    /** Esc: back to the screen the settings were opened from, whatever page this is. */
+    /** Esc: back one page, the same screen the Back button opens (#45): a sub page returns to its
+     * parent page, the root page returns to the screen the settings were opened from. The old code unwound the
+     * whole parent chain, so Esc from any sub page jumped straight out of the settings. */
     @Override
     public void onClose() {
-        Screen p = parent;
-        while (p instanceof NeiSettings s) p = s.parent;
-        McCompat.setScreen(p);
+        McCompat.setScreen(parent);
     }
 
     private static String shown(Entry e) {
@@ -474,27 +480,7 @@ public final class NeiSettings extends Screen {
         }
     }
 
-    private boolean tileThere() {
-        if (tileThere == null) {
-            try {
-                tileThere = Minecraft.getInstance()
-                    .getResourceManager()
-                    .getResource(TILE)
-                    .isPresent();
-            } catch (RuntimeException ex) {
-                tileThere = false;
-            }
-        }
-        return tileThere;
-    }
-
     // ---------------------------------------------------------------- drawing
-
-    private void tiles(GuiGraphics g, int x, int y, int w, int h) {
-        if (h <= 0) return;
-        if (tileThere()) g.blit(TILE, x, y, 0f, 0f, w, h, 32, 32);
-        else g.fill(x, y, x + w, y + h, 0xFF2A2A2A);
-    }
 
     /** NEI's button, cut from the game's widgets.png like LayoutManager.drawButtonBackground: 0 disabled, 1 normal, 2 hovered. */
     static void button(GuiGraphics g, Font font, int x, int y, int w, int h, String label, int type) {
@@ -584,6 +570,10 @@ public final class NeiSettings extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
+        // #45: the whole screen gets the background of vanilla's own menus (Screen.renderBackground
+        // tiles darkened dirt over everything when there is no world, and darkens the world when there is one)
+        // instead of our old bright tile strips over nothing, so this screen looks like every other menu
+        renderBackground(g);
         super.render(g, mouseX, mouseY, delta);
         Font font = Minecraft.getInstance().font;
         scroll = Math.max(0, Math.min(scroll, maxScroll()));
@@ -592,7 +582,9 @@ public final class NeiSettings extends Screen {
         int lb = listBottom();
         List<String> tip = new ArrayList<>();
 
-        g.fill(barX(), LIST_TOP, barX() + BAR_W, lb, 0xFF000000);
+        // #45: draw the scroll bar's track only when there is a scroll bar: short pages used to show
+        // an empty black track under the (already gated) thumb
+        if (maxScroll() > 0) g.fill(barX(), LIST_TOP, barX() + BAR_W, lb, 0xFF000000);
         g.enableScissor(slotX(), LIST_TOP, slotX() + slotW(), lb);
         try {
             for (int i = 0; i < page.entries.size(); i++) {
@@ -637,9 +629,9 @@ public final class NeiSettings extends Screen {
             g.disableScissor();
         }
 
-        // the tile above and below the list, with a short fade into the list
-        tiles(g, 0, 0, width, LIST_TOP);
-        tiles(g, 0, lb, width, height - lb);
+        // #45: our bright tile strips above and below the list are gone, the vanilla background covers
+        // the whole screen now; the short fades stay only at the list's top and bottom edges, where a scrolled row
+        // is cut through and the fade keeps it readable
         fade(g, LIST_TOP, true);
         fade(g, lb, false);
 

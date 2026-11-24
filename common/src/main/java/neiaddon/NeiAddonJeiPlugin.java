@@ -102,6 +102,24 @@ public class NeiAddonJeiPlugin implements IModPlugin {
         registration.addGhostIngredientHandler((Class) AbstractContainerScreen.class, new BookmarkDropHandler());
     }
 
+    /**
+     * A drop of an item on the bookmark panel at (x, y), the same rule for JEI's targets and EMI's drop handler (see
+     * {@link neiaddon.emi.NeiAddonEmiPlugin}): the group under the mouse takes it, else the panel's active group. True when the panel took it.
+     */
+    public static boolean dropOnPanel(ItemStack stack, int x, int y) {
+        if (stack.isEmpty()) return false;
+        Bookmarks.ensureLoaded();
+        for (BookmarkPanel.GroupArea area : BookmarkPanel.groupAreas()) {
+            if (!area.rect().contains(x, y)) continue;
+            Bookmarks.add(stack, 1, area.groupId());
+            return true;
+        }
+        // whole panel as a fallback, after the group headers
+        if (!BookmarkPanel.panelRect().contains(x, y)) return false;
+        Bookmarks.add(stack, 1, Bookmarks.NO_GROUP);
+        return true;
+    }
+
     private static final class BookmarkDropHandler implements IGhostIngredientHandler<AbstractContainerScreen<?>> {
 
         @Override
@@ -109,11 +127,14 @@ public class NeiAddonJeiPlugin implements IModPlugin {
             boolean doStart) {
             java.util.List<Target<I>> targets = new ArrayList<>();
             if (ingredient.getItemStack().isEmpty()) return targets;
+            // while EMI's drag-and-drop handler for the panel works, it takes the drop onto the panel (dropOnPanel) and EMI
+            // draws the targets: JEI's copy would paint the panel green as well
+            if (EmiCompat.panelDropLive) return targets;
             Bookmarks.ensureLoaded();
             for (BookmarkPanel.GroupArea area : BookmarkPanel.groupAreas()) {
                 targets.add(target(area.rect(), area.groupId()));
             }
-            // whole panel as a fallback, listed last so group headers win
+            // whole panel as a fallback, listed last so group headers win (the same rule as dropOnPanel)
             targets.add(target(BookmarkPanel.panelRect(), Bookmarks.NO_GROUP));
             return targets;
         }

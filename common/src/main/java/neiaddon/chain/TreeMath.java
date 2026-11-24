@@ -27,6 +27,25 @@ public class TreeMath extends ChainMath {
     private final List<TreeSlot> parentStack = new ArrayList<>();
     private TreeSlot lastItem = null;
 
+    /**
+     * Issue #42: a recipe with several results is one node, not one per wanted result. Roots go in by their recipe;
+     * children go in under their parent by what they stand for, so the maths can merge into a node it already made.
+     */
+    private final Map<String, TreeSlot> rootByRecipe = new HashMap<>();
+    private final Map<TreeSlot, Map<Object, TreeSlot>> childrenByKey = new HashMap<>();
+
+    /**
+     * Issue #42 follow-up: per recipe, the result the player entered the recipe on — the one whose favorite points at
+     * this recipe (the shift+F pick or the heart-pick set it; the tree screen looks it up, this package cannot). The
+     * recipe's node then shows that result at its leftmost slot, the others keep their order. Never set (the plain checks,
+     * the SMART-collapse maths) keeps the recipe's own order.
+     */
+    private Map<String, String> chosenOutputs = Map.of();
+
+    public void setChosenOutputs(Map<String, String> chosenItemByRecipe) {
+        this.chosenOutputs = chosenItemByRecipe == null ? Map.of() : chosenItemByRecipe;
+    }
+
     public TreeMath(List<ChainItem> chainItems, Set<String> collapsedRecipes) {
         super(chainItems, collapsedRecipes);
     }
@@ -35,12 +54,34 @@ public class TreeMath extends ChainMath {
         return parentStack.isEmpty() ? null : parentStack.get(parentStack.size() - 1);
     }
 
+    /** What a child node stands for, for the merge above. */
+    private Object mergeKey(ChainItem ingrItem, ChainItem prefItem) {
+        if (prefItem == null || isForeignBoxBoundary(ingrItem)) {
+            return ingrItem;
+        }
+        return prefItem.recipeId;
+    }
+
+    /** Every other result of the node's recipe, shown too (issue #42: even one nothing downstream needs). */
+    private void addMissingResults(TreeSlot slot, ChainItem prefItem) {
+        if (prefItem == null) {
+            return;
+        }
+        for (ChainItem result : this.resultsByRecipe.getOrDefault(prefItem.recipeId, Collections.emptyList())) {
+            if (!result.emptyFactor() && !slot.hasOutput(result)) {
+                slot.addOutput(result, result, 0, 0, 0, 0, false);
+            }
+        }
+    }
+
     @Override
     public ChainMath refresh() {
         this.rootSlots.clear();
         this.items.clear();
         this.parentOf.clear();
         this.childrenOf.clear();
+        this.rootByRecipe.clear();
+        this.childrenByKey.clear();
         this.parentStack.clear();
         this.lastItem = null;
         return super.refresh();
@@ -51,7 +92,22 @@ public class TreeMath extends ChainMath {
         long containerAmount, long inventoryAmount, long ingrAmount, long produced) {
         if (ingrItem.type == ChainItem.Type.RESULT) {
             final long required = this.requiredAmount.get(prefItem);
+            final TreeSlot known = this.rootByRecipe.get(prefItem.recipeId);
+            if (known != null) {
+                known.addOutput(ingrItem, prefItem, Math.max(0, required - requestedAmount), requestedAmount, required,
+                    0, false);
+                this.lastItem = known;
+                return;
+            }
             final TreeSlot slot = new TreeSlot(ingrItem, Math.max(0, required - requestedAmount), requestedAmount, required, 0, prefItem);
+            addMissingResults(slot, prefItem);
+            // issue #42 follow-up: the entered recipe shows the result it was entered on leftmost (a recipe pulled
+            // into the tree by a parent already leads with the result that parent needs, so only roots need this)
+            final String chosen = this.chosenOutputs.get(prefItem.recipeId);
+            if (chosen != null) {
+                slot.moveOutputFirst(chosen);
+            }
+            this.rootByRecipe.put(prefItem.recipeId, slot);
             this.rootSlots.add(slot);
             this.items.add(slot);
             this.lastItem = slot;
@@ -82,11 +138,26 @@ public class TreeMath extends ChainMath {
                 }
             }
 
+            final TreeSlot parent = peek();
+            final TreeSlot known = parent != null
+                ? this.childrenByKey.getOrDefault(parent, Collections.emptyMap()).get(mergeKey(ingrItem, prefItem))
+                : null;
+            if (known != null) {
+                known.addOutput(ingrItem, prefItem, 0, requestedAmount, produced, containerAmount, isContainerItem);
+                this.lastItem = known;
+                return;
+            }
+
             final TreeSlot slot = new TreeSlot(ingrItem, 0, requestedAmount, produced, containerAmount, prefItem, isContainerItem);
+            addMissingResults(slot, prefItem);
             this.items.add(slot);
-            this.parentOf.put(slot, peek());
-            this.childrenOf.computeIfAbsent(peek(), k -> new ArrayList<>())
+            this.parentOf.put(slot, parent);
+            this.childrenOf.computeIfAbsent(parent, k -> new ArrayList<>())
                 .add(slot);
+            if (parent != null) {
+                this.childrenByKey.computeIfAbsent(parent, k -> new HashMap<>())
+                    .put(mergeKey(ingrItem, prefItem), slot);
+            }
             this.lastItem = slot;
         }
     }
@@ -126,12 +197,34 @@ public class TreeMath extends ChainMath {
 
     protected void calculateSuitableRecipe(ChainItem ingrItem, List<String> visited) {
         final ChainItem prefItem = this.preferredItems.get(ingrItem);
+        final TreeSlot parent = peek();
+        final TreeSlot known = parent != null
+            ? this.childrenByKey.getOrDefault(parent, Collections.emptyMap()).get(mergeKey(ingrItem, prefItem))
+            : null;
+
+        if (known != null) {
+            // the maths visits an item of a node it already drew (issue #42); its recipe shows once
+            this.lastItem = known;
+            if (prefItem != null && !isForeignBoxBoundary(ingrItem) && !visited.contains(prefItem.recipeId)
+                && !this.childrenOf.containsKey(known)) {
+                visited.add(prefItem.recipeId);
+                prepareIngredients(prefItem.recipeId, visited);
+                visited.remove(prefItem.recipeId);
+            }
+            return;
+        }
+
         final TreeSlot slot = new TreeSlot(ingrItem, 0, 0, 0, 0, prefItem);
+        addMissingResults(slot, prefItem);
 
         this.items.add(slot);
-        this.parentOf.put(slot, peek());
-        this.childrenOf.computeIfAbsent(peek(), k -> new ArrayList<>())
+        this.parentOf.put(slot, parent);
+        this.childrenOf.computeIfAbsent(parent, k -> new ArrayList<>())
             .add(slot);
+        if (parent != null) {
+            this.childrenByKey.computeIfAbsent(parent, k -> new HashMap<>())
+                .put(mergeKey(ingrItem, prefItem), slot);
+        }
         this.lastItem = slot;
 
         if (prefItem != null && !isForeignBoxBoundary(ingrItem) && !visited.contains(prefItem.recipeId)) {
