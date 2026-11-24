@@ -4,26 +4,37 @@ import java.nio.file.Path;
 import neiaddon.chain.ChainItem;
 import java.util.ArrayList;
 import java.util.List;
+import neiaddon.AddonConfig;
 import neiaddon.Bookmarks;
 import neiaddon.Favorites;
 import neiaddon.RecipeData;
 import neiaddon.RecipeLookup;
 import neiaddon.RecipeShape;
 import neiaddon.RecipeTree;
+import neiaddon.TagDefaults;
 import neiaddon.chain.ChainDetails;
+import neiaddon.chain.TreeGraph;
+import neiaddon.chain.TreeMath;
+import neiaddon.chain.TreeSlot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
 /**
- * Checks the recipe-tree model (brief sections 3, 4, 7, 9) against stand-in Minecraft classes:
+ * Checks the recipe-tree model against stand-in Minecraft classes:
  *
  * <pre>
  * python3 tools/make_stubs.py /tmp/stubcheck/src
- * javac -d /tmp/stubcheck/out $(find /tmp/stubcheck/src -name '*.java') common/src/main/java/neiaddon/chain/*.java \
- *   common/src/main/java/neiaddon/{Bookmarks,RecipeData,RecipeShape,RecipeTree,RecipeLookup,Favorites}.java \
- *   common/src/main/java/neiaddon/RecipeHearts.java tools/ModelCheck.java
+ * cp -R tools/stubs1201/src/. /tmp/stubcheck/src/    # 1.20.1 shapes over the 26.x ones make_stubs.py writes
+ * javac -nowarn -d /tmp/stubcheck/out -sourcepath /tmp/stubcheck/src \
+ *   common/src/main/java/neiaddon/chain/*.java \
+ *   common/src/main/java/neiaddon/{Bookmarks,RecipeData,RecipeShape,RecipeTree,Favorites,TagDefaults}.java \
+ *   tools/ModelCheck.java
  * java -cp /tmp/stubcheck/out ModelCheck
  * </pre>
+ *
+ * <p>The real RecipeLookup and RecipeHearts stay out of the compile: tools/stubs1201 has a small stand-in store for
+ * RecipeLookup (registered shapes, found by id; one producing recipe per item), and RecipeHearts needs too many game
+ * classes to stub here.
  */
 public class ModelCheck {
 
@@ -71,6 +82,16 @@ public class ModelCheck {
         throw new IllegalStateException("no entry " + recipe + "/" + item);
     }
 
+    static ChainItem chainItem(String name, String recipe, ChainItem.Type type, long factor, long multiplier) {
+        return new ChainItem(name, recipe, type, factor, multiplier, setOfStrings(name), recipe + ":" + name + ":" + type);
+    }
+
+    static java.util.Set<String> setOfStrings(String... s) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        for (String v : s) out.add(v);
+        return out;
+    }
+
     static void resetBookmarks() throws Exception {
         Bookmarks.pages.clear();
         Bookmarks.activePage = 0;
@@ -79,11 +100,27 @@ public class ModelCheck {
         loaded.setBoolean(null, false);
     }
 
+    static void resetTagDefaults() throws Exception {
+        Field loaded = TagDefaults.class.getDeclaredField("loaded");
+        loaded.setAccessible(true);
+        loaded.setBoolean(null, false);
+        Field map = TagDefaults.class.getDeclaredField("defaults");
+        map.setAccessible(true);
+        ((java.util.Map<?, ?>) map.get(null)).clear();
+    }
+
+    static List<String> idsOf(List<RecipeShape> tree) {
+        List<String> ids = new ArrayList<>();
+        for (RecipeShape t : tree) ids.add(t.id);
+        return ids;
+    }
+
     public static void main(String[] args) throws Exception {
         Path cfg = Path.of("/tmp/stubcheck/config/neiaddon");
         Files.createDirectories(cfg);
         Files.deleteIfExists(cfg.resolve("bookmarks.txt"));
         Files.deleteIfExists(cfg.resolve("favorites.txt"));
+        Files.deleteIfExists(cfg.resolve("tagdefaults.txt"));
 
         // ---- section 3: six slots with one iron ingot each = 6; a tag slot keeps its options
         System.out.println("--- recipe -> bookmark items");
@@ -136,7 +173,7 @@ public class ModelCheck {
         Favorites.set("iron", "t|smelt");
         expect("favorite moved to iron", "iron", Favorites.itemFor("t|smelt"));
         expect("blaze lost it", null == Favorites.recipeFor("blaze"), true);
-        List<RecipeShape> tree = RecipeTree.build(rail.copy(), RecipeTree.DEPTH);
+        List<RecipeShape> tree = RecipeTree.build(rail.copy(), AddonConfig.FAVORITES_DEPTH.get());
         List<String> ids = new ArrayList<>();
         for (RecipeShape t : tree) ids.add(t.id);
         expect("tree row order", List.of("t|rail", "t|smelt", "t|torch"), ids);
@@ -259,6 +296,118 @@ public class ModelCheck {
         expect("item added once, amount summed", countBefore + 1, dst.entries.size());
         expect("item amount 10", 10L, dst.entries.stream().filter(e -> e.isPlain()).findFirst().get().amount);
         expect("garbage refused", false, Bookmarks.importShared("hello"));
+
+        // ---- crafting tree of a multi-output recipe (GitHub #42): one column, all its results at its node
+        System.out.println("--- crafting tree of a multi-output recipe");
+        // recipe P makes a, b and c out of flint; recipe D (the group's top, runs x2) wants a and c
+        List<ChainItem> moGroup = new ArrayList<>();
+        moGroup.add(chainItem("d", "D", ChainItem.Type.RESULT, 1, 2));
+        moGroup.add(chainItem("a", "D", ChainItem.Type.INGREDIENT, 1, 2));
+        moGroup.add(chainItem("c", "D", ChainItem.Type.INGREDIENT, 1, 2));
+        moGroup.add(chainItem("a", "P", ChainItem.Type.RESULT, 1, 1));
+        moGroup.add(chainItem("b", "P", ChainItem.Type.RESULT, 1, 1));
+        moGroup.add(chainItem("c", "P", ChainItem.Type.RESULT, 1, 1));
+        moGroup.add(chainItem("flint", "P", ChainItem.Type.INGREDIENT, 1, 1));
+        TreeGraph moTree = new TreeGraph();
+        moTree.rebuild(new TreeMath(moGroup, setOfStrings()));
+        expect("D, P and the flint: one node for P, not one per wanted result", 3, moTree.items.size());
+        expect("one child under the top recipe", 1, moTree.childrenOf.get(moTree.roots.get(0)).size());
+
+        // a multi-output recipe bookmarked on its own: one root, not one per result (the reporter's six columns)
+        List<ChainItem> moTop = new ArrayList<>();
+        moTop.add(chainItem("a", "P", ChainItem.Type.RESULT, 1, 3));
+        moTop.add(chainItem("b", "P", ChainItem.Type.RESULT, 1, 3));
+        moTop.add(chainItem("c", "P", ChainItem.Type.RESULT, 1, 3));
+        moTop.add(chainItem("flint", "P", ChainItem.Type.INGREDIENT, 1, 3));
+        TreeGraph moTopTree = new TreeGraph();
+        moTopTree.rebuild(new TreeMath(moTop, setOfStrings()));
+        expect("one root for the bookmarked multi-output recipe", 1, moTopTree.roots.size());
+        expect("one flint below it", 2, moTopTree.items.size());
+
+        // the merged nodes carry all of the recipe's results at the one node (issue #42)
+        TreeSlot dTop = moTree.roots.get(0);
+        TreeSlot pNode = moTree.childrenOf.get(dTop).get(0);
+        expect("the P node shows all three results", 3, pNode.outputs.size());
+        expect("the P node asks for a and c, and runs twice", 2L, pNode.multiplier);
+        long pWanted = 0;
+        long pMade = 0;
+        for (TreeSlot.Output o : pNode.outputs) {
+            pWanted += o.requestedAmount;
+            pMade += o.leftAmount;
+        }
+        expect("the wanted outputs are the node's demand", pNode.requestedAmount, pWanted);
+        expect("nothing at P is still to be made twice over", pNode.leftAmount, pMade);
+        expect("the flint child wants what two runs of P use", 2L,
+            moTree.childrenOf.get(pNode).get(0).requestedAmount);
+        TreeSlot.Output pUnused = null;
+        for (TreeSlot.Output o : pNode.outputs) {
+            if (o.shown().item.equals("b")) {
+                pUnused = o;
+            }
+        }
+        expect("b, wanted by nothing, is still shown at P", pUnused != null, true);
+        expect("b's share is zero", pUnused != null && pUnused.requestedAmount == 0 && pUnused.leftAmount == 0, true);
+
+        TreeSlot topRoot = moTopTree.roots.get(0);
+        expect("the bookmarked root shows all three results", 3, topRoot.outputs.size());
+        expect("the bookmarked root runs three times", 3L, topRoot.multiplier);
+        // three runs of P, one flint per run: one column says 3 where the old three columns said 3 + 3 + 3
+        expect("the flint below the bookmarked root wants three, not three columns of it", 3L,
+            moTopTree.childrenOf.get(topRoot).get(0).requestedAmount);
+
+        // ---- tag defaults (#39): the saved default comes before the favorite, and only while its item
+        // is still one the tag accepts
+        System.out.println("--- tag defaults");
+        resetTagDefaults();
+        RecipeShape bridge = shape(
+            "t|bridge",
+            new RecipeShape.Slot[] { slot("gate", 1) },
+            new RecipeShape.Slot[] { slot("plank_b", 4, "plank_a", 4) });
+        RecipeShape gate = shape(
+            "t|gate",
+            new RecipeShape.Slot[] { slot("gate", 1) },
+            new RecipeShape.Slot[] { slot("plank_b", 4, "plank_a", 4) });
+        RecipeShape planksA = shape(
+            "t|plank_a",
+            new RecipeShape.Slot[] { slot("plank_a", 4) },
+            new RecipeShape.Slot[] { slot("log", 1) });
+        RecipeShape planksB = shape(
+            "t|plank_b",
+            new RecipeShape.Slot[] { slot("plank_b", 4) },
+            new RecipeShape.Slot[] { slot("log", 1) });
+        for (RecipeShape s : java.util.Arrays.asList(bridge, gate, planksA, planksB)) RecipeLookup.register(s);
+        Favorites.set("plank_b", "t|plank_b");
+        Favorites.set("plank_a", "t|plank_a");
+        List<String> planks = List.of("plank_b", "plank_a");
+        expect("same accepted items, same tag key", TagDefaults.keyFor(planks),
+            TagDefaults.keyFor(List.of("plank_a", "plank_b")));
+        // the default names the item the favorite would not have picked, and wins: that is the point of the feature
+        TagDefaults.setDefault(planks, "plank_a");
+        RecipeShape bc = bridge.copy();
+        expect("default chosen over the favorite", List.of("t|bridge", "t|plank_a"),
+            idsOf(RecipeTree.build(bc, AddonConfig.FAVORITES_DEPTH.get())));
+        expect("the slot's item is the default's", "plank_a", bc.inputs.get(0).alts.get(bc.inputs.get(0).active).id());
+        // the same tag in another recipe gets the same default (the issue's two wrench recipes)
+        RecipeShape gc = gate.copy();
+        expect("the default applies to every recipe with the tag", List.of("t|gate", "t|plank_a"),
+            idsOf(RecipeTree.build(gc, AddonConfig.FAVORITES_DEPTH.get())));
+        // a default naming an item the tag no longer accepts is ignored, and the favorite decides again
+        TagDefaults.setDefault(planks, "mystic:cobblestone");
+        RecipeShape gc2 = gate.copy();
+        expect("default outside the options ignored", List.of("t|gate", "t|plank_b"),
+            idsOf(RecipeTree.build(gc2, AddonConfig.FAVORITES_DEPTH.get())));
+        expect("the favorite item picked again", "plank_b", gc2.inputs.get(0).alts.get(gc2.inputs.get(0).active).id());
+        // the store: a plain line survives a reload, broken lines are ignored
+        Path tagFile = cfg.resolve("tagdefaults.txt");
+        expect("store file written", true, Files.isRegularFile(tagFile));
+        List<String> tagLines = new ArrayList<>(Files.readAllLines(tagFile));
+        tagLines.add(TagDefaults.keyFor(List.of("zz1", "zz2")) + "\tno colon id");
+        tagLines.add(TagDefaults.keyFor(List.of("q1", "q2")));
+        Files.write(tagFile, tagLines);
+        resetTagDefaults();
+        expect("the default survives the reload", "mystic:cobblestone", TagDefaults.defaultFor(planks));
+        expect("a line with an invalid id ignored", null == TagDefaults.defaultFor(List.of("zz1", "zz2")), true);
+        expect("a line without a tab ignored", null == TagDefaults.defaultFor(List.of("q1", "q2")), true);
 
         if (failures > 0) {
             System.out.println(failures + " FAILURE(S)");

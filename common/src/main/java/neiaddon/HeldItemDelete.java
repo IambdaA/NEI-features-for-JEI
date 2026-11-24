@@ -37,7 +37,11 @@ final class HeldItemDelete {
         AbstractContainerMenu menu = menuOf(s);
         if (menu == null || menu.getCarried()
             .isEmpty() || !BookmarkPanel.canGive()) return false;
+        // the panel first: its layout already made room for other mods' areas (all but the very big ones)
         if (BookmarkPanel.contains(s, mx, my)) return true;
+        // another mod's tab or button over JEI's list (Sophisticated Storage's crafting upgrade, for one), or the
+        // screen's own window and slots, takes the click: the item goes there, it is never deleted
+        if (ScreenAreas.othersAt(s, mx, my)) return false;
         Rect2i list = JeiAreas.list();
         boolean overList = list != null && Calculator.runtime.getIngredientListOverlay()
             .isListDisplayed() && mx >= list.getX() && mx < list.getX() + list.getWidth() && my >= list.getY() && my < list.getY() + list.getHeight();
@@ -49,7 +53,10 @@ final class HeldItemDelete {
     static void onMousePressed(ScreenEvent.MouseButtonPressed.Pre event) {
         int button = event.getButton();
         Screen s = event.getScreen();
-        if (button != 0 && button != 1 || !active(s, event.getMouseX(), event.getMouseY())) return;
+        if (button != 0 && button != 1) return;
+        // the areas as they are now: a tab opened a moment ago must already count
+        JeiAreas.forgetExclusions();
+        if (!active(s, event.getMouseX(), event.getMouseY())) return;
         AbstractContainerMenu menu = menuOf(s);
         ItemStack held = menu.getCarried();
         boolean done;

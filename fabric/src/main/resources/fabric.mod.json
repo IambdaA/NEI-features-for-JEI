@@ -3,7 +3,7 @@
   "id": "${mod_id}",
   "version": "${mod_version}",
   "name": "${mod_name}",
-  "description": "An unofficial port of GTNH NotEnoughItems features to Just Enough Items: bookmark groups and recipe chains, the crafting tree window, favorite recipes, autocrafting, pulling items from chests, chat links, highlight tips and a crafting calculator. Not affiliated with the NotEnoughItems authors.",
+  "description": "An unofficial port of GTNH NotEnoughItems features to Just Enough Items: bookmark groups and recipe chains, the crafting tree window, favorite recipes, autocrafting, pulling items from chests, chat links and highlight tips. Not affiliated with the NotEnoughItems authors.",
   "authors": [ "Iambda" ],
   "contact": {
     "homepage": "https://github.com/IambdaA/NEI-features-for-JEI",

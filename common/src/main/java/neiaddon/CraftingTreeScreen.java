@@ -1,6 +1,7 @@
 package neiaddon;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -71,6 +72,7 @@ public final class CraftingTreeScreen extends Screen {
     private static final int LINE_COLOR = 0xFF888888;
     private static final int HOVER_COLOR = 0x66888888;
     private static final int STATS_HOVER_COLOR = 0x66999999;
+    private static final int TAG_MARK = 0xE0E0E0;
     private static final float BADGE_SCALE = 0.6f;
     private static final float FIT_MARGIN = 8f;
     private static final int MENU_ROW = 16;
@@ -93,6 +95,8 @@ public final class CraftingTreeScreen extends Screen {
     }
 
     private final Screen prev;
+    /** JEI's recipe screen's parentScreen when the tree was opened from that screen (see {@link #restoreJeiParent}). */
+    private final Screen jeiParent;
     private final Bookmarks.Page page;
     private final int gid;
     private final TreeState.Group ui;
@@ -130,6 +134,7 @@ public final class CraftingTreeScreen extends Screen {
     private CraftingTreeScreen(Screen prev, Bookmarks.Page page, int gid) {
         super(Component.translatable("neiaddon.tree.title"));
         this.prev = prev;
+        this.jeiParent = jeiParentOf(prev);
         this.page = page;
         this.gid = gid;
         this.ui = TreeState.of(page, gid);
@@ -185,6 +190,7 @@ public final class CraftingTreeScreen extends Screen {
     protected void init() {
         // the group can go while a recipe screen opened from the tree is shown
         if (!Bookmarks.groupExists(page, gid)) {
+            restoreJeiParent();
             McCompat.setScreen(prev);
             return;
         }
@@ -214,11 +220,65 @@ public final class CraftingTreeScreen extends Screen {
 
     @Override
     public void onClose() {
+        restoreJeiParent();
         McCompat.setScreen(prev);
     }
 
+    // ---------------------------------------------------------------- JEI's recipe screen under the tree
+
+    /** JEI's recipe screen, matched by class name (as RecipeHearts does; JEI's class is not part of this addon's API). */
+    private static final String JEI_RECIPES_GUI = "mezz.jei.gui.recipes.RecipesGui";
+    /** JEI's recipe screen's parentScreen (what its Esc goes back to), or null until first used. */
+    private static Field jeiParentField;
+    private static boolean warnedJeiParent;
+
+    /** JEI's recipe screen's parentScreen when {@code prev} is that screen, else null. */
+    private static Screen jeiParentOf(Screen prev) {
+        if (!isJeiRecipesScreen(prev)) return null;
+        try {
+            return (Screen) jeiParentField(prev).get(prev);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            warnJeiParent(e);
+            return null;
+        }
+    }
+
+    /**
+     * A lookup from the tree reuses JEI's recipe screen, and JEI then keeps the tree as that screen's parent, so Esc there
+     * would go back into the tree. Before the tree goes back to JEI's screen, its parent is put back as it was when the tree
+     * was opened from that screen. JEI empties the parent when its Esc already went back to the tree, so an empty parent is
+     * put back too.
+     */
+    private void restoreJeiParent() {
+        if (!isJeiRecipesScreen(prev)) return;
+        try {
+            Field parent = jeiParentField(prev);
+            Object now = parent.get(prev);
+            if (now == this || now == null) parent.set(prev, jeiParent);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            warnJeiParent(e);
+        }
+    }
+
+    private static boolean isJeiRecipesScreen(Screen s) {
+        return s != null && s.getClass()
+            .getName()
+            .equals(JEI_RECIPES_GUI);
+    }
+
+    private static Field jeiParentField(Screen recipes) throws NoSuchFieldException {
+        if (jeiParentField == null) jeiParentField = JeiAreas.field(recipes.getClass(), "parentScreen");
+        return jeiParentField;
+    }
+
+    private static void warnJeiParent(Throwable e) {
+        if (warnedJeiParent) return;
+        warnedJeiParent = true;
+        NeiAddon.LOGGER.warn("Could not read or restore JEI's recipe screen parent; Esc on JEI's recipe screen may return to the crafting tree", e);
+    }
+
     /** What the player has: every slot of the open menu except a result slot (NEI's getInventoryItems). */
-    private static Map<String, Long> readInventory() {
+    static Map<String, Long> readInventory() {
         Minecraft mc = Minecraft.getInstance();
         Map<String, Long> items = new LinkedHashMap<>();
         if (mc.player == null) return items;
@@ -262,8 +322,17 @@ public final class CraftingTreeScreen extends Screen {
         if (!readInventory().equals(inventory)) inventoryChanged();
     }
 
+    /** The chooser took an item for one of the tree's bookmark entries: rebuild the tree as the wheel switch does. */
+    void tagChoiceApplied() {
+        rebuildTree(null);
+    }
+
     private void rebuildTree(TreeSlot anchor) {
-        math = new TreeMath(Bookmarks.chainItems(page, gid), collapsedRecipes());
+        List<ChainItem> chainItems = Bookmarks.chainItems(page, gid);
+        math = new TreeMath(chainItems, collapsedRecipes());
+        // issue #42 follow-up: the node of a multi-result recipe shows the result the player entered the recipe on
+        // at its leftmost slot (the others keep their order); the choice is the result the recipe's heart selects
+        math.setChosenOutputs(chosenOutputs(chainItems));
         math.initialItems.clear();
         inventory = inventoryLive() ? readInventory() : Map.of();
         for (Map.Entry<String, Long> e : inventory.entrySet()) {
@@ -436,8 +505,19 @@ public final class CraftingTreeScreen extends Screen {
     private TreeSlot nodeAt(double mx, double my) {
         return findNode(mx, my, (node, local) -> {
             TreeLayout.Point p = pointOf(node);
-            return local[0] >= p.x && local[0] < p.x + SLOT && local[1] >= p.y && local[1] < p.y + SLOT;
+            // issue #42 follow-up: a merged node is hovered, clicked and keyed as one over all its result slots
+            return local[0] >= p.x && local[0] < p.x + SLOT * node.outputs().size() && local[1] >= p.y && local[1] < p.y + SLOT;
         });
+    }
+
+    /**
+     * Which of a merged node's result slots the mouse is over, 0 = leftmost (issue #42 follow-up: each slot gets a
+     * tooltip of its own; the mouse is inside the node, so the index is always within its outputs).
+     */
+    private int hoveredOutputIndex(TreeSlot node, int mx, int my) {
+        double[] local = ui.camera.toWorldPoint(mx, my);
+        TreeLayout.Point p = pointOf(node);
+        return Math.max(0, Math.min((int) ((local[0] - p.x) / SLOT), node.outputs().size() - 1));
     }
 
     private float badgeSize() {
@@ -517,11 +597,23 @@ public final class CraftingTreeScreen extends Screen {
     }
 
     private static ItemStack stackOf(TreeSlot node) {
-        return stackOf(node.shown());
+        // issue #42 follow-up: the leftmost slot of a merged node is its first output, the chosen result when the
+        // player has one; that is not always the item the maths keyed the node on (node.shown())
+        return stackOf(node.outputs().get(0).shown());
     }
 
-    private static String itemIdOf(TreeSlot node) {
-        return node.shown().item;
+    /**
+     * Issue #42 follow-up: for every recipe of the group, the result the player chose for it — the result whose
+     * favorite points at this recipe, which is what the recipe's heart selects (see {@code RecipeHearts}). Recipes
+     * with no chosen result keep their own order. The map feeds {@link TreeMath}, which puts that result first.
+     */
+    private static Map<String, String> chosenOutputs(List<ChainItem> chainItems) {
+        Map<String, String> chosen = new HashMap<>();
+        for (ChainItem item : chainItems) {
+            if (item.type != ChainItem.Type.RESULT || item.recipeId == null) continue;
+            if (Favorites.sameRecipe(item.recipeId, Favorites.recipeFor(item.item))) chosen.putIfAbsent(item.recipeId, item.item);
+        }
+        return chosen;
     }
 
     /** The stack under the mouse (for the global keys: copy name, bookmark...). */
@@ -548,13 +640,11 @@ public final class CraftingTreeScreen extends Screen {
         hoveredBadge = canHover ? badgeAt(mx, my) : null;
         hoveredNode = canHover && hoveredBadge == null ? nodeAt(mx, my) : null;
 
-        accepting = null;
-        if (hoveredNode != null) {
-            ChainItem item = hoveredNode.ingrItem;
-            boolean none = item.recipeId == null || hoveredNode.prefItem != null
-                || (hoveredNode.leftAmount == 0 && hoveredNode.requestedAmount > 0);
-            if (!none && item.payload instanceof Bookmarks.Entry e && Bookmarks.hasOptions(e)) accepting = e;
-        }
+        // #39: the hover line and the shift+wheel use the same gate as the badge and the middle click
+        // (optionEntry). A favorited recipe resolves one result into the slot's maths (its prefItem, its amounts
+        // produced), but that only sets the slot's default: a tag slot keeps its chooser whatever the favorites
+        // resolved to, and the chooser offers the entry's whole option set either way.
+        accepting = optionEntry(hoveredNode);
     }
 
     @Override
@@ -622,7 +712,7 @@ public final class CraftingTreeScreen extends Screen {
                     if (p.x < cropXMin || p.x > cropXMax) continue;
                     drawSlot(g, node, snapshot, search, ctrl, node == hoveredNode);
                     drawCollapseIcon(g, node, node == collapseHover);
-                    if (node == hoveredNode) g.fill(p.x + 1, p.y + 1, p.x + SLOT - 1, p.y + SLOT - 1, HOVER_COLOR);
+                    if (node == hoveredNode) g.fill(p.x + 1, p.y + 1, p.x + SLOT * node.outputs().size() - 1, p.y + SLOT - 1, HOVER_COLOR);
                     if (hasBadge(node)) {
                         drawBadge(g, node, p.x, p.y);
                         if (node == hoveredBadge) drawDeleteButton(g, p.x, p.y);
@@ -681,12 +771,42 @@ public final class CraftingTreeScreen extends Screen {
         TreeDraw.draw(g, slotSprite(node, snapshot, search), p.x, p.y);
         FluidStacks.item(g, stackOf(node), p.x + (SLOT - 16) / 2, p.y + (SLOT - 16) / 2);
 
-        if (node.requestedAmount > 0 && node.leftAmount == 0) {
-            drawStackSize(g, stackOf(node), node.requestedAmount, p.x, p.y, true, node.isContainerItem);
-        } else if (node.requestedAmount > 0 && node.leftAmount > 0) {
-            long amount = hovered && node.prefItem != null && canvas.graph.roots.contains(node)
-                && canvas.collapsedRecipes.contains(node.prefItem.recipeId) && ctrl ? node.currentRequestedAmount : node.requestedAmount;
-            drawStackSize(g, stackOf(node), amount, p.x, p.y, false, node.isContainerItem);
+        drawOutputAmount(g, node, node.outputs().get(0), stackOf(node), p.x, p.y, ctrl, hovered);
+
+        // issue #39: a small marker on a node whose ingredient accepts several items, so the chooser is findable
+        // (middle click opens it); the slot itself is not moved or resized
+        if (optionEntry(node) != null)
+            TreeDraw.overlayText(g, font, "*", p.x + (SLOT - 16) / 2, p.y + (SLOT - 16) / 2, 16, 16, TAG_MARK,
+                TreeDraw.Align.BOTTOM_LEFT);
+
+        // issue #42: a recipe with several results is one node; its other results sit right of its main slot
+        List<TreeSlot.Output> outputs = node.outputs();
+        for (int i = 1; i < outputs.size(); i++) {
+            TreeSlot.Output output = outputs.get(i);
+            int x = p.x + i * SLOT;
+            TreeDraw.draw(g, outputSprite(node, output, snapshot, search), x, p.y);
+            ItemStack stack = stackOf(output.shown());
+            FluidStacks.item(g, stack, x + (SLOT - 16) / 2, p.y + (SLOT - 16) / 2);
+            drawOutputAmount(g, node, output, stack, x, p.y, false, false);
+        }
+    }
+
+    /** The sprite for one of a merged node's extra result slots (issue #42). */
+    private TreeDraw.Sprite outputSprite(TreeSlot node, TreeSlot.Output output, boolean snapshot, SearchResult search) {
+        if (search != null) return search.matches.contains(node) ? TreeDraw.SLOT_DEFAULT : TreeDraw.SLOT_DISABLED;
+        if (!snapshot) return TreeDraw.SLOT_DEFAULT;
+        return output.requestedAmount > 0 && output.leftAmount > 0 ? TreeDraw.SLOT_DEFAULT : TreeDraw.SLOT_DISABLED;
+    }
+
+    /** One output's amount on its slot; the CTRL hint only ever applies to the node's main slot. */
+    private void drawOutputAmount(GuiGraphicsExtractor g, TreeSlot node, TreeSlot.Output output, ItemStack stack, int x, int y,
+        boolean ctrl, boolean hovered) {
+        if (output.requestedAmount > 0 && output.leftAmount == 0) {
+            drawStackSize(g, stack, output.requestedAmount, x, y, true, output.isContainerItem);
+        } else if (output.requestedAmount > 0 && output.leftAmount > 0) {
+            long amount = hovered && ctrl && node.prefItem != null && canvas.graph.roots.contains(node)
+                && canvas.collapsedRecipes.contains(node.prefItem.recipeId) ? output.currentRequestedAmount : output.requestedAmount;
+            drawStackSize(g, stack, amount, x, y, false, output.isContainerItem);
         }
     }
 
@@ -847,12 +967,17 @@ public final class CraftingTreeScreen extends Screen {
 
     private boolean toolOn(Tool tool) {
         return switch (tool) {
-            case INVENTORY -> TreeState.useInventorySnapshot();
+            case INVENTORY -> TreeState.useInventorySnapshot() || craftingOn();
             case CRAFTING -> craftingOn();
             case COLLAPSE -> TreeState.collapseMode() != CollapseMode.EXPANDED;
             case STATS -> TreeState.statsPanelVisible();
             default -> false;
         };
+    }
+
+    /** A tool that is held on and can't be clicked: the inventory snapshot while crafting mode reads the inventory live. */
+    private boolean toolLocked(Tool tool) {
+        return tool == Tool.INVENTORY && craftingOn();
     }
 
     private String toolTip(Tool tool) {
@@ -989,28 +1114,34 @@ public final class CraftingTreeScreen extends Screen {
             k.put(HotkeyTips.keys("CTRL", "ALT", "Scroll"), tr("change_quantity_step"));
         }
         if (accepting != null) k.put(HotkeyTips.keys("SHIFT", "Scroll"), tr("accepts.scroll"));
+        if (optionEntry(node) != null) k.put(HotkeyTips.keys("MMB"), tr("accepts.scroll"));
         HotkeyTips.recipeAndCopyKeys(k);
         return k;
     }
 
     private void drawNodeTooltip(GuiGraphicsExtractor g, int mx, int my) {
         TreeSlot node = hoveredNode;
-        ItemStack stack = stackOf(node);
-        List<Component> lines = itemLines(stack, node.requestedAmount > 0 ? node.requestedAmount : 1000);
+        // issue #42 follow-up: each result slot of a merged node has its own tooltip: the one under the mouse names
+        // that result and quotes that slot's numbers (issue #42: the node's own totals are the sum over its results)
+        List<TreeSlot.Output> outputs = node.outputs();
+        int slot = hoveredOutputIndex(node, mx, my);
+        TreeSlot.Output main = outputs.get(slot);
+        ItemStack stack = stackOf(main.shown());
+        List<Component> lines = itemLines(stack, main.requestedAmount > 0 ? main.requestedAmount : 1000);
 
         // NEI adds each of these at index 1, so the one added last ends up right under the name
-        if (inventoryLive() && node.requestedAmount > 0) {
-            if (node.leftAmount == 0) {
+        if (inventoryLive() && main.requestedAmount > 0) {
+            if (main.leftAmount == 0) {
                 lines.add(1, gray(tr("item.state.resolved", FluidStacks.name(stack).getString())));
-            } else if (node.leftAmount != node.requestedAmount) {
-                lines.add(1, gray(tr("item.state.partial", ReadableNumber.amount(node.leftAmount))));
+            } else if (main.leftAmount != main.requestedAmount) {
+                lines.add(1, gray(tr("item.state.partial", ReadableNumber.amount(main.leftAmount))));
             }
-            if (node.leftAmount > 0 && canvas.graph.childrenOf.containsKey(node) && !canvas.graph.childrenNeedCraftingCache.contains(node)) {
+            if (main.leftAmount > 0 && canvas.graph.childrenOf.containsKey(node) && !canvas.graph.childrenNeedCraftingCache.contains(node)) {
                 lines.add(1, gray(tr("item.state.craftable")));
             }
         }
         if (node.prefItem != null && canvas.graph.childrenOf.containsKey(node)) {
-            long surplus = node.prefItem.amount(node.multiplier) - node.requestedAmount;
+            long surplus = node.prefItem.amount(main.multiplier()) - main.requestedAmount;
             if (surplus > 0) lines.add(1, gray(tr("item.state.surplus", ReadableNumber.amount(surplus))));
         }
 
@@ -1018,9 +1149,28 @@ public final class CraftingTreeScreen extends Screen {
         for (String line : HotkeyTips.hotkeyLines(nodeKeys(node))) lines.add(at++, Component.literal(line));
         HotkeyTips.addModName(lines, stack);
 
+        // the recipe's other results, drawn beside it on the canvas, are named the same way in the tooltip
+        for (int i = 0; i < outputs.size(); i++) {
+            if (i == slot) continue;
+            TreeSlot.Output output = outputs.get(i);
+            ItemStack alt = stackOf(output.shown());
+            String text = FluidStacks.name(alt).getString()
+                + (output.requestedAmount > 0 ? " " + ReadableNumber.amount(output.requestedAmount) : "");
+            if (output.isContainerItem) text = "~" + text;
+            lines.add(gray(text));
+        }
+
         List<TreeDraw.IconLine> icons = new ArrayList<>();
         if (accepting != null) icons.add(acceptsLine(accepting));
         show(g, mx, my, lines, icons, null);
+    }
+
+    /**
+     * The bookmark entry of a node whose ingredient accepts several items, or null (issue #39: the chooser gate, its
+     * badge and its key line).
+     */
+    private static Bookmarks.Entry optionEntry(TreeSlot node) {
+        return node != null && node.ingrItem.payload instanceof Bookmarks.Entry e && Bookmarks.hasOptions(e) ? e : null;
     }
 
     /** NEI's "Accepts following": the items the slot takes, the chosen one marked (a window of 16 around it). */
@@ -1175,7 +1325,12 @@ public final class CraftingTreeScreen extends Screen {
         result.matches.clear();
         result.highlightNode = null;
         for (TreeSlot node : canvas.graph.items) {
-            if (matches(query, stackOf(node))) result.matches.add(node);
+            for (TreeSlot.Output output : node.outputs()) {
+                if (matches(query, stackOf(output.shown()))) {
+                    result.matches.add(node);
+                    break;
+                }
+            }
         }
     }
 
@@ -1186,8 +1341,18 @@ public final class CraftingTreeScreen extends Screen {
         result.highlightNode = null;
         boolean byHandler = result.guid instanceof String;
         for (TreeSlot node : canvas.graph.items) {
-            boolean match = byHandler ? node.prefItem != null && result.matchesGuid(TreeStats.handlerOf(node.prefItem.recipeId))
-                : result.matchesGuid(new ItemGuid(itemIdOf(node)));
+            boolean match = byHandler;
+            if (byHandler) {
+                match = node.prefItem != null && result.matchesGuid(TreeStats.handlerOf(node.prefItem.recipeId));
+            } else {
+                for (TreeSlot.Output output : node.outputs()) {
+                    // issue #42: a search matches any of the node's results, not just its main slot
+                    if (result.matchesGuid(new ItemGuid(output.shown().item))) {
+                        match = true;
+                        break;
+                    }
+                }
+            }
             if (match) result.matches.add(node);
         }
     }
@@ -1228,6 +1393,7 @@ public final class CraftingTreeScreen extends Screen {
     private void runTool(Tool tool) {
         switch (tool) {
             case INVENTORY -> {
+                if (toolLocked(tool)) return;
                 TreeState.toggleUseInventorySnapshot();
                 rebuildTree(null);
             }
@@ -1274,6 +1440,11 @@ public final class CraftingTreeScreen extends Screen {
         TreeRecipes.stopWaiting();
         if (recipe != null && Bookmarks.groupExists(page, gid)) {
             boolean changed = false;
+            // A chain group of ONE recipe holds every entry under that recipe, so removing the old recipe empties
+            // the group and Bookmarks.normalize() drops the group's meta (chain flag, todo flag, ...). Keep the
+            // object: the picked recipe re-enters the same group, and without the meta back the chain is off -
+            // the tree rebuilds empty ("No crafting chain to display") and the strip goes gray.
+            Bookmarks.GroupMeta meta = page.metas.get(gid);
             if (replace != null) {
                 Set<String> unused = canvas.graph.collectUnusedRecipes(replace);
                 unused.remove(recipe.recipeId);
@@ -1283,6 +1454,7 @@ public final class CraftingTreeScreen extends Screen {
                 changed |= Bookmarks.addRecipe(page, recipe, 1, gid);
             }
             if (changed) {
+                if (meta != null && page.metas.get(gid) == null) page.metas.put(gid, meta);
                 page.normalize();
                 Bookmarks.save();
                 rebuildTree(null);
@@ -1346,6 +1518,7 @@ public final class CraftingTreeScreen extends Screen {
         if (button == 0) {
             Tool tool = toolAt(mx, my);
             if (tool != null) {
+                if (toolLocked(tool)) return true;
                 clickSound();
                 runTool(tool);
                 return true;
@@ -1364,6 +1537,13 @@ public final class CraftingTreeScreen extends Screen {
         }
 
         if (button == 0 && handleCanvasClick(mx, my)) return true;
+
+        // issue #39: a middle click opens the tag chooser for a node whose ingredient accepts several items. Unlike
+        // the wheel it is not gated on prefItem / leftAmount (the reporter's AE2 case), so it works on every such node
+        if (button == 2) {
+            Bookmarks.Entry entry = optionEntry(nodeAt(mx, my));
+            if (entry != null && IngredientDirectory.openSelect(entry, this, mx, my)) return true;
+        }
 
         // what NEI's container does with a click on a hovered item: LMB recipes, RMB usages
         ItemStack stack = hoveredStack();

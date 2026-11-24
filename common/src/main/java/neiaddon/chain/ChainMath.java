@@ -40,7 +40,7 @@ public class ChainMath {
     public final List<ChainItem> recipeResults = new ArrayList<>();
 
     protected final Map<String, List<ChainItem>> ingredientsByRecipe = new HashMap<>();
-    private final Map<String, List<ChainItem>> resultsByRecipe = new HashMap<>();
+    protected final Map<String, List<ChainItem>> resultsByRecipe = new HashMap<>();
 
     /** Ingredient -> the result of another recipe in the group that supplies it. */
     public final Map<ChainItem, ChainItem> preferredItems = new HashMap<>();
