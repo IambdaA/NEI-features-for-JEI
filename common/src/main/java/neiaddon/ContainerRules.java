@@ -18,7 +18,7 @@ import net.minecraft.world.item.ItemStack;
  * Differences from NEI: the GregTech tool stats are not read, and a damaged copy of a tool counts as the same item as a
  * fresh one when comparing (like NEI's "same type crafting" for damageable items).
  */
-final class ContainerRules implements ContainerOps {
+public final class ContainerRules implements ContainerOps {
 
     private final Map<String, ItemStack> byId = new HashMap<>();
 
@@ -76,7 +76,7 @@ final class ContainerRules implements ContainerOps {
     private static final ContainerRules INSTANCE = new ContainerRules();
 
     /** What is left of the stack after one craft (a worn tool, an empty bucket), or EMPTY. The stack is not changed. */
-    static ItemStack leftAfterUse(ItemStack stack) {
+    public static ItemStack leftAfterUse(ItemStack stack) {
         Object left = INSTANCE.remainder(stack.copy());
         return left instanceof ItemStack s ? s : ItemStack.EMPTY;
     }

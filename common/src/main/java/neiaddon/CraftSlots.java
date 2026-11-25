@@ -24,7 +24,7 @@ import net.minecraft.world.item.crafting.RecipeType;
  * grid is the slots on a crafting container, else the recipe slots the screen itself, one of its parts, or JEI's
  * transfer info for it names.
  */
-final class CraftSlots {
+public final class CraftSlots {
 
     private static final Map<Class<?>, Boolean> jeiCrafting = new WeakHashMap<>();
     /** Per class, the public no-argument methods looked up by name (NONE when it has none): looked up once, not every tick. */
@@ -53,7 +53,7 @@ final class CraftSlots {
     private CraftSlots() {}
 
     /** A result slot (the game's or one that looks like it); not one of the player's inventory slots. */
-    static boolean isResult(Slot slot) {
+    public static boolean isResult(Slot slot) {
         if (slot instanceof ResultSlot || Ae2Crafting.isOutput(slot)) return true;
         if (slot.container instanceof Inventory) return false;
         return slot.container instanceof ResultContainer || slot.getClass()
@@ -62,7 +62,7 @@ final class CraftSlots {
     }
 
     /** The crafting result slot of the menu, or null when it is not a crafting screen. */
-    static Slot result(AbstractContainerMenu menu) {
+    public static Slot result(AbstractContainerMenu menu) {
         for (Slot slot : menu.slots) {
             if (slot instanceof ResultSlot) return slot;
         }
@@ -84,7 +84,7 @@ final class CraftSlots {
      * its grid and result slot in a list of its own (the open crafting tab, else the first one, as its JEI recipe
      * transfer picks). Clicks reach them by their slot index like any other slot. Empty for other menus.
      */
-    static List<Slot> upgradeSlots(AbstractContainerMenu menu) {
+    public static List<Slot> upgradeSlots(AbstractContainerMenu menu) {
         Object part = craftingPart(menu);
         if (part == null || !(call(part, "getSlots") instanceof List<?> list)) return List.of();
         List<Slot> slots = new ArrayList<>();
@@ -95,8 +95,13 @@ final class CraftSlots {
     }
 
     /** Whether the menu's crafting upgrade refills its grid from the storage after each craft (Sophisticated's option). */
-    static boolean refillsGrid(AbstractContainerMenu menu) {
+    public static boolean refillsGrid(AbstractContainerMenu menu) {
         return Boolean.TRUE.equals(call(craftingPart(menu), "shouldRefillCraftingGrid"));
+    }
+
+    /** Whether the menu has a crafting upgrade (open or not), so the server path can craft at it (see CraftServer). */
+    public static boolean hasCraftingUpgrade(AbstractContainerMenu menu) {
+        return craftingPart(menu) != null;
     }
 
     /** The open crafting upgrade of a Sophisticated menu, else its first one; null for other menus. */
@@ -136,7 +141,7 @@ final class CraftSlots {
     }
 
     /** The menu's crafting grid, or none when it cannot be found (autocrafting then crafts one set at a time). */
-    static List<Slot> grid(AbstractContainerMenu menu) {
+    public static List<Slot> grid(AbstractContainerMenu menu) {
         if (Ae2Crafting.isTerminal(menu)) return Ae2Crafting.grid(menu);
         List<Slot> grid = new ArrayList<>();
         for (Slot slot : menu.slots) {
@@ -154,7 +159,7 @@ final class CraftSlots {
     }
 
     /** Do the two slots sit on the same item handler ({@code getItemHandler()}), or do both have none? */
-    static boolean sameHandler(Slot a, Slot b) {
+    public static boolean sameHandler(Slot a, Slot b) {
         return call(a, "getItemHandler") == call(b, "getItemHandler");
     }
 
