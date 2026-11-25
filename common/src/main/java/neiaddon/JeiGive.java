@@ -25,8 +25,18 @@ import neiaddon.event.SubscribeEvent;
  */
 public final class JeiGive {
 
-    /** At most this many stacks per click (a full inventory); more would only be dropped on the ground. */
-    private static final int MAX_STACKS = 36;
+    /**
+     * A safety ceiling, not a limit a real plan reaches: at most this many stacks of one item per give (64,000 of a
+     * stackable item; 128 LV Cutters need 11,264 copper). It stops a runaway amount from sending millions of packets in
+     * one key press.
+     */
+    static final int MAX_GIVE_STACKS = 1000;
+
+    /** The amount a give hands out: the count, but at most {@link #MAX_GIVE_STACKS} stacks of the item. */
+    public static long ceiling(long count, int max) {
+        return Math.min(count, (long) max * MAX_GIVE_STACKS);
+    }
+
     private static boolean failed;
     private static boolean toggleWarned;
 
@@ -76,9 +86,10 @@ public final class JeiGive {
             if (!(mode instanceof Enum<?>)) mode = JeiAreas.invoke(mode, "get");
             if (toInventory && mode instanceof Enum<?> e) mode = inventoryMode(e);
             int max = Math.max(1, stack.getMaxStackSize());
-            // JEI's "give to the mouse" mode: the mouse holds one stack at most
-            long left = String.valueOf(mode)
-                .equals("MOUSE_PICKUP") ? Math.min(count, max) : Math.min(count, (long) max * MAX_STACKS);
+            // JEI's "give to the mouse" mode: the mouse holds one stack at most. Otherwise the whole amount is given
+            // up to the safety ceiling (the user's call, 2026-11-25: a crafting plan can need several inventories of
+            // one item); what doesn't fit the inventory is dropped at the player's feet by the server
+            long left = String.valueOf(mode).equals("MOUSE_PICKUP") ? Math.min(count, max) : ceiling(count, max);
             if (Boolean.TRUE.equals(JeiAreas.invoke(connection, "isJeiOnServer"))) {
                 Class<?> modeType = Class.forName("mezz.jei.common.config.GiveMode");
                 Constructor<?> packet = Class.forName("mezz.jei.common.network.packets.PacketGiveItemStack")
@@ -117,12 +128,13 @@ public final class JeiGive {
      * Creative mode: the items go straight into the inventory's slots, on this side and with the creative slot packet, the
      * way the creative screen itself puts items in. The server's give (JEI's packet) would not do here: while the creative
      * screen shows another tab than the inventory, the game ignores the server's updates of the main inventory, so the
-     * items only showed up after the screen was closed. Stacks of the item are topped up first, then empty slots are used.
+     * items only showed up after the screen was closed. Stacks of the item are topped up first, then empty slots are
+     * used, and the rest is dropped.
      */
     private static void giveCreative(Minecraft mc, ItemStack stack, long count) {
         Inventory inventory = mc.player.getInventory();
         int max = Math.max(1, stack.getMaxStackSize());
-        long left = Math.min(count, (long) max * MAX_STACKS);
+        long left = ceiling(count, max);
         for (int pass = 0; pass < 2 && left > 0; pass++) {
             for (int i = 0; i < Inventory.INVENTORY_SIZE && left > 0; i++) {
                 ItemStack in = inventory.getItem(i);
@@ -136,6 +148,12 @@ public final class JeiGive {
                 mc.gameMode.handleCreativeModeItemAdd(put.copy(), i < 9 ? i + 36 : i);
                 left -= n;
             }
+        }
+        // what doesn't fit is dropped at the player's feet, a stack at a time, as the creative screen drops an item
+        while (left > 0) {
+            int n = (int) Math.min(left, max);
+            mc.gameMode.handleCreativeModeItemDrop(stack.copyWithCount(n));
+            left -= n;
         }
     }
 

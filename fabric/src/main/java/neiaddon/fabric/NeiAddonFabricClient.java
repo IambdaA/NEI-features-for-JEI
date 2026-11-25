@@ -1,6 +1,8 @@
 package neiaddon.fabric;
 
+import neiaddon.AutoCraft;
 import neiaddon.CalcKeys;
+import neiaddon.Craft;
 import neiaddon.HighlightTips;
 import neiaddon.NeiAddon;
 import neiaddon.Share;
@@ -23,6 +25,10 @@ public final class NeiAddonFabricClient implements ClientModInitializer {
             .forEach(KeyMappingHelper::registerKeyMapping);
         ClientPlayNetworking.registerGlobalReceiver(Share.SharedPayload.TYPE, (payload, context) -> ShareClient.keep(payload.id(), payload.payload()));
         ClientPlayNetworking.registerGlobalReceiver(Share.ImportRequest.TYPE, (payload, context) -> ShareClient.open(payload.id()));
+        ClientPlayNetworking.registerGlobalReceiver(Craft.CraftResult.TYPE,
+            (payload, context) -> AutoCraft.serverCraftResult(payload));
+        ClientPlayNetworking.registerGlobalReceiver(Craft.CraftChainResult.TYPE,
+            (payload, context) -> AutoCraft.serverChainResult(payload));
         HudElementRegistry.attachElementAfter(VanillaHudElements.CROSSHAIR, HighlightTips.LAYER_ID, HighlightTips::render);
         FabricEvents.install();
     }

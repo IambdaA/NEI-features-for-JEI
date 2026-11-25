@@ -67,9 +67,9 @@ public final class AddonConfig {
         .comment("Allow autocrafting of bookmarked recipes and craftables (NEI autocrafting).")
         .define("autocrafting", true);
 
-    public static final ConfigSpec.BooleanValue AUTOCRAFTING_FAST = B
-        .comment("Faster Autocrafting: off, a recipe is crafted in full-grid batches only once at least one full grid of sets is still wanted (fewer go one set at a time); on, it batches even when fewer are wanted. Batches are fast checked clicks on the result; every click waits for the server, and when the filled grid would make more than is wanted the extra sets are trimmed off first. Anything unexpected stops autocrafting and puts the cursor and grid back into the inventory. A recipe with an item that stacks to 1 (a GregTech tool) never batches its first fill either way. Extra (not in NEI).")
-        .define("autocraftingFast", false);
+    public static final ConfigSpec.IntValue AUTOCRAFTING_SPEED = B
+        .comment("Autocrafting Speed: the most crafts autocrafting asks for in one tick. 0 = no limit. Lower it to go easier on a busy server. Extra (not in NEI).")
+        .defineInRange("autocraftingCraftsPerTick", 0, 0, 4096);
 
     public static final ConfigSpec.BooleanValue AUTOCRAFTING_RESTORE = B
         .comment("After autocrafting, move the items that were in the inventory back to the slots they were in before (one checked click at a time). Crafted items stay in the slots they landed in.")

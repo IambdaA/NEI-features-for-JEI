@@ -1,5 +1,7 @@
 package neiaddon.fabric;
 
+import neiaddon.Craft;
+import neiaddon.CraftServer;
 import neiaddon.NeiAddon;
 import neiaddon.Share;
 import net.fabricmc.api.ModInitializer;
@@ -20,6 +22,18 @@ public final class NeiAddonFabric implements ModInitializer {
         PayloadTypeRegistry.clientboundPlay()
             .register(Share.ImportRequest.TYPE, Share.ImportRequest.STREAM_CODEC);
         ServerPlayNetworking.registerGlobalReceiver(Share.ShareRequest.TYPE, (payload, context) -> Share.broadcast(context.player(), payload.payload()));
+        PayloadTypeRegistry.serverboundPlay()
+            .register(Craft.CraftRequest.TYPE, Craft.CraftRequest.STREAM_CODEC);
+        PayloadTypeRegistry.clientboundPlay()
+            .register(Craft.CraftResult.TYPE, Craft.CraftResult.STREAM_CODEC);
+        PayloadTypeRegistry.serverboundPlay()
+            .register(Craft.CraftChainRequest.TYPE, Craft.CraftChainRequest.STREAM_CODEC);
+        PayloadTypeRegistry.clientboundPlay()
+            .register(Craft.CraftChainResult.TYPE, Craft.CraftChainResult.STREAM_CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(Craft.CraftRequest.TYPE,
+            (payload, context) -> CraftServer.handle(context.player(), payload));
+        ServerPlayNetworking.registerGlobalReceiver(Craft.CraftChainRequest.TYPE,
+            (payload, context) -> CraftServer.handleChain(context.player(), payload));
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher.register(Share.command()));
     }
 }

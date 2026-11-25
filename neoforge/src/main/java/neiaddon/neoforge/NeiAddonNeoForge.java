@@ -1,5 +1,8 @@
 package neiaddon.neoforge;
 
+import neiaddon.AutoCraft;
+import neiaddon.Craft;
+import neiaddon.CraftServer;
 import neiaddon.NeiAddon;
 import neiaddon.Share;
 import neiaddon.ShareClient;
@@ -42,5 +45,28 @@ public final class NeiAddonNeoForge {
                 Share.ImportRequest.TYPE,
                 Share.ImportRequest.STREAM_CODEC,
                 (packet, context) -> context.enqueueWork(() -> ShareClient.open(packet.id())));
+        // Server-side autocrafting (Craft): each payload is a channel of its own, so a server with an older addon
+        // (chat link only) or without the chain request reports that payload missing and the client falls back
+        event.registrar("1")
+            .executesOn(HandlerThread.MAIN)
+            .optional()
+            .playToServer(
+                Craft.CraftRequest.TYPE,
+                Craft.CraftRequest.STREAM_CODEC,
+                (packet, context) -> context.enqueueWork(
+                    () -> CraftServer.handle((ServerPlayer) context.player(), packet)))
+            .playToClient(
+                Craft.CraftResult.TYPE,
+                Craft.CraftResult.STREAM_CODEC,
+                (packet, context) -> context.enqueueWork(() -> AutoCraft.serverCraftResult(packet)))
+            .playToServer(
+                Craft.CraftChainRequest.TYPE,
+                Craft.CraftChainRequest.STREAM_CODEC,
+                (packet, context) -> context.enqueueWork(
+                    () -> CraftServer.handleChain((ServerPlayer) context.player(), packet)))
+            .playToClient(
+                Craft.CraftChainResult.TYPE,
+                Craft.CraftChainResult.STREAM_CODEC,
+                (packet, context) -> context.enqueueWork(() -> AutoCraft.serverChainResult(packet)));
     }
 }

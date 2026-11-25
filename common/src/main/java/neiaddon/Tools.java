@@ -10,11 +10,11 @@ import net.minecraft.world.item.ItemStack;
  * stack, damageable, and what is left after a craft is the same item again. For these the chain tooltip shows durability
  * instead of a count, and autocrafting can put several sets around one tool.
  */
-final class Tools {
+public final class Tools {
 
     private Tools() {}
 
-    static boolean isTool(ItemStack stack) {
+    public static boolean isTool(ItemStack stack) {
         if (stack.isEmpty() || stack.getMaxStackSize() != 1 || !stack.isDamageableItem()) return false;
         ItemStack left = ContainerRules.leftAfterUse(stack);
         return !left.isEmpty() && left.getItem() == stack.getItem();
@@ -38,7 +38,7 @@ final class Tools {
     }
 
     /** Crafts the tool can still do (an estimate: it breaks once its damage goes past the maximum). */
-    static long craftsLeft(ItemStack tool) {
+    public static long craftsLeft(ItemStack tool) {
         int per = durabilityPerCraft(tool);
         if (per <= 0) return Long.MAX_VALUE;
         return Math.max(1, durabilityLeft(tool) / per);

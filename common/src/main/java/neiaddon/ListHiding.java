@@ -13,6 +13,7 @@ import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.ingredients.IIngredientHelper;
 import mezz.jei.api.ingredients.IIngredientType;
 import mezz.jei.api.ingredients.subtypes.UidContext;
+import mezz.jei.api.runtime.IIngredientFilter;
 import mezz.jei.api.runtime.IIngredientManager;
 import mezz.jei.api.runtime.IJeiRuntime;
 import net.minecraft.resources.Identifier;
@@ -39,9 +40,15 @@ final class ListHiding {
     private static List<Entry> snapshot;
     private static Map<String, Entry> byKey = Map.of();
     private static final Map<String, Set<String>> reasons = new LinkedHashMap<>();
+    /** Per reason, how often {@link #setHidden} changed its keys. */
+    private static final Map<String, Integer> changes = new HashMap<>();
     /** Keys taken out of JEI's list right now. */
     private static final Set<String> removed = new HashSet<>();
-    private static boolean failed;
+    private static boolean failed, searchWarned;
+    /** From this many entries in one change, JEI's search is set to {@link #NO_MATCH} meanwhile (see quietSearch). */
+    private static final int QUIET_BATCH = 100;
+    /** A search no entry matches. */
+    private static final String NO_MATCH = "neiaddonmatchesnothing";
 
     private ListHiding() {}
 
@@ -152,10 +159,24 @@ final class ListHiding {
     static void setHidden(String reason, Collection<String> keys) {
         if (keys.isEmpty()) {
             if (reasons.remove(reason) == null) return;
+            changes.merge(reason, 1, Integer::sum);
         } else {
-            reasons.put(reason, new LinkedHashSet<>(keys));
+            Set<String> set = new LinkedHashSet<>(keys);
+            if (!set.equals(reasons.put(reason, set))) changes.merge(reason, 1, Integer::sum);
         }
         apply();
+    }
+
+    /**
+     * How often the reasons other than {@code reason} changed their keys. A feature that keeps a read of JEI's list
+     * (collapsible groups while searching) reads again when this differs.
+     */
+    static int changesExcept(String reason) {
+        int n = 0;
+        for (Map.Entry<String, Integer> e : changes.entrySet()) {
+            if (!e.getKey().equals(reason)) n += e.getValue();
+        }
+        return n;
     }
 
     /** Compares what is wanted with what is removed now and makes the difference, one JEI call per type and direction. */
@@ -191,6 +212,10 @@ final class ListHiding {
             }
         }
         if (remove.isEmpty() && add.isEmpty()) return;
+        int count = 0;
+        for (List<Object> list : remove.values()) count += list.size();
+        for (List<Object> list : add.values()) count += list.size();
+        String text = count >= QUIET_BATCH ? quietSearch() : null;
         try {
             IIngredientManager mgr = runtime.getIngredientManager();
             for (Map.Entry<IIngredientType<?>, List<Object>> e : add.entrySet()) {
@@ -204,7 +229,57 @@ final class ListHiding {
         } catch (RuntimeException | LinkageError e) {
             failed = true;
             NeiAddon.LOGGER.warn("Could not change JEI's item list; hiding items is off for this session", e);
+        } finally {
+            if (text != null) setSearch(text);
         }
+    }
+
+    /**
+     * JEI tells its item list about every added or removed entry on its own, and each time the list filters and sorts
+     * all its entries again when the search is empty (~80k entries in a big modpack, so 2000 entries take 15-20 s).
+     * With a search that matches nothing only the empty result is sorted. Sets that search and returns the player's
+     * text to put back, or null when JEI's search can't be read or set.
+     */
+    private static String quietSearch() {
+        String text;
+        try {
+            text = runtime.getIngredientFilter()
+                .getFilterText();
+        } catch (RuntimeException | LinkageError e) {
+            warnSearch("Could not read JEI's search; big changes to its item list may be slow", e);
+            return null;
+        }
+        try {
+            runtime.getIngredientFilter()
+                .setFilterText(NO_MATCH);
+            return text;
+        } catch (RuntimeException | LinkageError e) {
+            warnSearch("Could not set JEI's search; big changes to its item list may be slow", e);
+            setSearch(text); // in case JEI took the text before it threw
+            return null;
+        }
+    }
+
+    /** Puts the player's search back; if JEI refuses it, clears the search so it never stays on {@link #NO_MATCH}. */
+    private static void setSearch(String text) {
+        try {
+            runtime.getIngredientFilter()
+                .setFilterText(text);
+        } catch (RuntimeException | LinkageError e) {
+            warnSearch("Could not put JEI's search text back after changing its item list; clearing the search", e);
+            try {
+                runtime.getIngredientFilter()
+                    .setFilterText("");
+            } catch (RuntimeException | LinkageError e2) {
+                // JEI refuses any search text: nothing more to do
+            }
+        }
+    }
+
+    private static void warnSearch(String message, Throwable e) {
+        if (searchWarned) return;
+        searchWarned = true;
+        NeiAddon.LOGGER.warn(message, e);
     }
 
     @SuppressWarnings("unchecked")

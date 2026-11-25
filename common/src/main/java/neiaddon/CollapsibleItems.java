@@ -115,6 +115,24 @@ public final class CollapsibleItems {
     private static boolean built, searching, applied, failed, filterApiFailed;
     private static String lastText = "";
 
+    /**
+     * JEI's filtered list as read for {@code searchText} with every member back in the list: the number of entries, the
+     * hits per group and each group's first hit. Putting ~2000 members back into JEI and taking them out again takes
+     * seconds in a big modpack, so Alt + click under the same search reuses this read and only changes the clicked
+     * group. Null text: nothing read yet, or the read may be stale. JEI's own changes to its list (hiding an item,
+     * another mod adding items) don't reset it: a closed group may show an older entry until the search text changes.
+     */
+    private static String searchText;
+    /** {@link ListHiding#changesExcept} when the read was made: the subsets menu hiding more or less makes it stale. */
+    private static int searchOthers;
+    private static int searchTotal;
+    private static final Map<Found, Integer> searchHits = new IdentityHashMap<>();
+    private static final Map<Found, String> searchFirst = new IdentityHashMap<>();
+    /** A new search text waits until it has stayed the same this many ticks, so typing a word costs one read. */
+    private static final int SETTLE_TICKS = 6;
+    private static String typedText = "";
+    private static int typedTicks;
+
     private CollapsibleItems() {}
 
     private static boolean enabled() {
@@ -187,6 +205,7 @@ public final class CollapsibleItems {
 
     private static void build(IJeiRuntime rt) {
         built = true;
+        searchText = null;
         found.clear();
         byItem.clear();
         byKey.clear();
@@ -236,8 +255,9 @@ public final class CollapsibleItems {
             f.rep = f.members.get(0);
         }
         Set<String> hide = new HashSet<>();
+        if (showAll || !searching) searchText = null;
         if (!showAll) {
-            if (searching && !filterApiFailed) searchHide(rt, hide);
+            if (searching && !filterApiFailed) searchHide(rt, text, hide);
             else if (!searching) for (Found f : found) {
                 if (!f.open) hideRest(f, 0, hide);
             }
@@ -255,52 +275,61 @@ public final class CollapsibleItems {
      * every member first): put the members back into JEI's list, read JEI's own filtered list once, then take out what
      * stays out - a closed group keeps only the first member that matches (so a narrowing search narrows the entry, and
      * Alt + click changes the list right away); and a group shows open for the search when the whole filtered list is
-     * that one group's members.
+     * that one group's members. The read is kept for the search text (see {@link #searchText}), so only a new text puts
+     * the members back.
      */
-    private static void searchHide(IJeiRuntime rt, Set<String> hide) {
-        ListHiding.setHidden("collapsible", Set.of());
-        if (ListHiding.failed()) {
-            failed = true;
-            return;
+    private static void searchHide(IJeiRuntime rt, String text, Set<String> hide) {
+        if (!text.equals(searchText) || searchOthers != ListHiding.changesExcept("collapsible")) {
+            searchText = null;
+            ListHiding.setHidden("collapsible", Set.of());
+            if (ListHiding.failed()) {
+                failed = true;
+                return;
+            }
         }
         IIngredientManager mgr = rt.getIngredientManager();
         try {
-            int total = 0;
-            Map<Found, Integer> hits = new IdentityHashMap<>();
-            Map<Found, String> firstKey = new IdentityHashMap<>();
-            for (IIngredientType<?> type : mgr.getRegisteredIngredientTypes()) {
-                IIngredientHelper<?> helper = mgr.getIngredientHelper(type);
-                String prefix = type.getUid() + "|";
-                for (Object ingredient : rt.getIngredientFilter()
-                    .getFilteredIngredients(type)) {
-                    total++;
-                    String uid = uniqueId(helper, ingredient);
-                    if (uid == null) continue;
-                    String key = prefix + uid;
-                    Found g = byKey.get(key);
-                    if (g == null) continue;
-                    hits.merge(g, 1, Integer::sum);
-                    firstKey.putIfAbsent(g, key);
+            if (searchText == null) {
+                searchTotal = 0;
+                searchHits.clear();
+                searchFirst.clear();
+                for (IIngredientType<?> type : mgr.getRegisteredIngredientTypes()) {
+                    IIngredientHelper<?> helper = mgr.getIngredientHelper(type);
+                    String prefix = type.getUid() + "|";
+                    for (Object ingredient : rt.getIngredientFilter()
+                        .getFilteredIngredients(type)) {
+                        searchTotal++;
+                        String uid = uniqueId(helper, ingredient);
+                        if (uid == null) continue;
+                        String key = prefix + uid;
+                        Found g = byKey.get(key);
+                        if (g == null) continue;
+                        searchHits.merge(g, 1, Integer::sum);
+                        searchFirst.putIfAbsent(g, key);
+                    }
                 }
+                searchText = text;
+                searchOthers = ListHiding.changesExcept("collapsible");
             }
             for (Found f : found) {
                 if (f.open) continue; // an open group's members stay in the list; JEI's filter shows the ones that match
-                int hit = hits.getOrDefault(f, 0);
+                int hit = searchHits.getOrDefault(f, 0);
                 if (hit == 0) {
                     f.rep = null;
                     for (String k : f.keys) {
                         if (k != null) hide.add(k);
                     }
-                } else if (hit == total) {
+                } else if (hit == searchTotal) {
                     f.rep = null;
                     f.expandedBySearch = true;
                 } else {
-                    int at = f.keys.indexOf(firstKey.get(f));
+                    int at = f.keys.indexOf(searchFirst.get(f));
                     f.rep = f.members.get(at < 0 ? 0 : at);
                     hideRest(f, at < 0 ? 0 : at, hide);
                 }
             }
         } catch (RuntimeException | LinkageError e) {
+            searchText = null;
             filterApiFailed = true;
             hide.clear();
             for (Found f : found) f.rep = f.members.get(0);
@@ -339,6 +368,9 @@ public final class CollapsibleItems {
             failed = false;
             filterApiFailed = false;
             lastText = "";
+            searchText = null;
+            typedText = "";
+            typedTicks = 0;
             ListHiding.setHidden("collapsible", Set.of());
         }
         if (rt == null || failed) return;
@@ -352,9 +384,15 @@ public final class CollapsibleItems {
             build(rt);
             applied = false;
         }
-        if (!rt.getIngredientFilter()
-            .getFilterText()
-            .equals(lastText) || !applied) apply(rt, false);
+        String text = rt.getIngredientFilter()
+            .getFilterText();
+        if (!text.equals(typedText)) {
+            typedText = text;
+            typedTicks = 0;
+        } else if (typedTicks < SETTLE_TICKS) {
+            typedTicks++;
+        }
+        if (!applied || !text.equals(lastText) && typedTicks >= SETTLE_TICKS) apply(rt, false);
     }
 
     // ---------------------------------------------------------------- JEI's list: marker, click, tooltip
