@@ -7,11 +7,11 @@ import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.gui.screens.Screen;
 
 /** The bits of the client API that differ between Minecraft versions. This is the 1.21.1 copy. */
-final class McCompat {
+public final class McCompat {
 
     private McCompat() {}
 
-    static Screen screen() {
+    public static Screen screen() {
         return Minecraft.getInstance().screen;
     }
 

@@ -113,7 +113,7 @@ methods, ids are `ResourceLocation`s, chat link click and hover events are the 1
   of: the red ingredients of its Shift tooltip (the amounts plain Shift+C needs), so autocrafting can run. A tool short of
   durability is given as enough new tools to cover it. Uses the same giving as cheat-mode clicks (JEI's give, so the
   server decides; creative puts the items straight into the inventory), always into the inventory whatever JEI's give
-  mode says; fluids are skipped.
+  mode says; fluids are skipped. Since 1.3.5 it is not capped at 36 stacks: the whole plan is given, up to a safety ceiling of 1000 stacks per item (`JeiGive.MAX_GIVE_STACKS`), one packet per stack as before; in creative mode what doesn't fit is dropped at the player's feet (`giveCreative`, `handleCreativeModeItemDrop`). The EMI give (`EmiBridge`) follows the same rule.
 - **NTM - Continuum fluids** (1.3.1): NTM shows each of its fluids in JEI's item list as a droplet item (`hbm:fluid_icon`);
   its builds before 26.2 also register the fluids with the game, so JEI listed each one a second time as a plain fluid.
   When the droplets are in the list, the plain `hbm` fluids are taken out of it once JEI has loaded (`NtmFluids`), so each
@@ -217,8 +217,8 @@ the server in multiplayer, while more than one run of a recipe is wanted it fill
 shift-clicks once, counting the runs done from what the grid lost once the server has answered (the menu's state id moved:
 this side's own guess of the click is never counted); when a full grid would make more than is wanted, the rest
 of that recipe goes one set at a time (JEI only transfers one set or all that fit, so the last runs of a recipe are still
-slow). With Faster Autocrafting (`autocraftingFast`, Settings > Inventory, off by default) the grid is always filled and the
-result clicked once per wanted run instead: each click waits for the server and must have used exactly one set, the
+slow). Since 1.3.5 the grid is always filled (the Faster Autocrafting switch, `autocraftingFast`, is gone; see Autocrafting Speed below)
+and the result clicked once per wanted run: each click waits for the server and must have used exactly one set, the
 cursor is emptied into the inventory when the next result would not fit on it, and anything unexpected stops it. At the
 end, and whenever it stops on its own, the cursor and the grid are put back into the inventory, one checked click at a
 time. Recipes with a tool (an item of one per stack that wears instead of being used up: GregTech's hammers, files,
@@ -245,9 +245,66 @@ were not asked for) all go into the storage slots the crafting took from; the pl
 top recipes' results (only leftovers of those items beyond it go back). A second pass (`reclaiming`) then moves to the player what the storage gained:
 all of the asked-for items, and of anything else no more than the player lost (the player's own tools, which a
 Sophisticated storage takes from the grid's shift-click), into the slot each came from first. The give-back runs
-whenever the table has storage slots, also when they were empty at the start. Verified in game on 1.20.1 (ATM9 Expert, Forge: Tinkers with
-and without Faster Autocrafting, Sophisticated, the refill refusal, the vanilla table; 1.20.1 Fabric: the vanilla
+whenever the table has storage slots, also when they were empty at the start. Verified in game on 1.20.1 (ATM9 Expert, Forge: Tinkers with the old Faster Autocrafting switch on and off, Sophisticated, the refill refusal, the vanilla table; 1.20.1 Fabric: the vanilla
 table) and 1.21.1 (ATM10, NeoForge: Sophisticated, the vanilla table); not on 1.21.1 Fabric, 26.1.2 and 26.2.
+Server-side crafting (1.3.5; the 1.20.1 tree's BUILDING.md has the long notes, and this tree follows them apart from the API). When
+the server has the addon (single player included), the client predicts the whole chain at its first pick (`chain/ChainPredict`,
+a second `ChainAutocraft` on a simulated inventory) and sends it as one `Craft.CraftChainRequest` (at most 256 steps, 64 crafts
+per step and 2048 crafts per request; a longer plan goes in several requests). `CraftServer.craftSteps` crafts the steps in order
+in one tick, one `Job` per step, and answers one `ChainAnswer` per step it ran. It stops at the first step that is not DONE; the
+client handles that step as a one-recipe answer (defer, abandon, give up or clicks) and goes on one recipe at a time. A busy
+answer resends the request, and no answer within 200 ticks, or one that does not fit the request, falls back to clicks. The messages
+are typed payloads (`CustomPacketPayload` with a `StreamCodec`; ids `neiaddon:craft_request`, `craft_result`,
+`craft_chain_request` and `craft_chain_result`) registered by `NeiAddonNeoForge` (NeoForge) and `NeiAddonFabric` / `NeiAddonFabricClient` (Fabric); a server without them is detected as missing and the client
+crafts by clicks. The server crafts at: the vanilla table and the inventory's 2x2 grid (the vanilla take); Tinkers' Crafting Station
+(found by class name, only with exactly its nine grid slots, result slot and the player's 36, so a side chest means clicks); AE2
+crafting terminals (`Ae2CraftServer`, by reflection: `CraftingTermMenu` and subclasses, wireless ones and AE2WTLib's too; AE2's own
+fill packet and `CraftingTermSlot` click; AE2WTLib is not tested); Sophisticated Storage's crafting upgrade (`StorageContainerMenuBase`
+with exactly one `CraftingUpgradeContainer`, also for backpacks, and also while the upgrade refills its grid; with the refill on, a
+server give-up stops the run with a chat line, since clicks cannot count its crafts); and Ars Nouveau's crafting lectern
+(`CraftingTerminalMenu` and `CraftingLecternTile`; the expanded view means clicks; the grid goes to the player before each lectern
+fill). Every other menu, and an `UNSUPPORTED_MENU` or `ERROR` answer, means clicks as before.
+1.21.1 names: AE2 19's menu base has `energySource` and `getGridNode()` (1.20.1: `powerSource`, `getNetworkNode()`), and its fill packet is `appeng.core.network.serverbound.FillCraftingGridFromRecipePacket`. Ars Nouveau's lectern keeps a grid and a result per player, so the calls take the player (`getMethod(name, Player.class)`), the menu keeps each player's tab in a map, and the recipe is compared by the recipe manager's own object. In game on 2026-11-25 (NeoForge and Fabric 1.21.1): the chain at a crafting table in one request, Autocrafting Speed 2, a recipe that gives buckets back, the server file written. Not tested in game: the AE2, Sophisticated, Ars and Tinkers server paths (no test on ATM10, the user's call) and a dedicated server.
+
+Autocrafting Speed (1.3.5, `autocraft/Speed`; setting `autocraftingCraftsPerTick` in `neiaddon-client.toml`, Settings >
+Inventory "Autocrafting Speed", 0 to 4096, 0 = no limit, the default): the most crafts one client tick may ask for, over every
+path. `Runner.onTick` resets the count each tick (a tick runs up to three phase steps); a path asks `Speed.fits` before it
+sends crafts and calls `Speed.spend` when it does. A request bigger than the setting (lowered in the middle of a run)
+goes out on a tick that has asked for nothing yet, so a run never waits forever. It replaces Faster Autocrafting
+(`autocraftingFast`): batching is always on, and the old line in an existing `neiaddon-client.toml` is ignored and
+dropped on the next save. On the click path a full fill holds up to a stack of sets, so a limit from 1 to 63 fills
+one set at a time (`ClickPath`, the `speed` check) and a grid with more sets than the limit is crafted by cursor picks;
+a tool recipe's top-up is capped by the limit (`Cleanup`). On the server path a limit below a planned step's crafts
+drops the chain plan (one recipe per request), and an AE2 stack craft needs `Speed.allowed` to cover the stack.
+
+Server time limit (1.3.5, `ServerConfig`): `config/neiaddon-server.toml`, key `autocraftMillisPerTick` (0 to 1000, default 0 =
+no limit), the most server time one player's autocrafting request may use per tick. `ConfigSpec.Builder.build(String)`
+builds a spec for another file; `build()` is still the client file. `ServerConfig` is common code that a dedicated
+server loads (no client classes), and it reads its file once, on the first craft request (`limitNanos`; a failed read
+counts as no limit and logs one warning), so a change needs a server restart. `CraftServer.craftSteps` checks the time
+before each step: when the limit is used up and at least one step has run it stops and answers only the steps it ran, and
+the client sends the rest in its next request. A step is up to 64 crafts of one recipe, so a request can go over a small
+limit by one step. No packet field was added, so an older client on a limited server crafts by clicks.
+
+Code split and `GridMath` (1.3.5): the click path's state machine, once in `AutoCraft`, is the package `neiaddon.autocraft`:
+`Runner` (start, stop, the phase machine, one step per tick), `Run` (the run's static state and constants), `ClickPath` (the
+grid fill through JEI's transfer, shift-clicks and cursor picks), `ServerPath` (one-recipe and chain requests and their
+answers), `Ae2Path` (the AE2 terminal route), `Cleanup` (end of a run, the give-back, the layout restore, a batch's tool
+top-up), `ToolCells` (tool recipes), `Visits` (one recipe visit: crafted, deferred, skipped or given up, and what chat
+says), `Counting` (crafts counted from the grid and the answers) and `Speed`. `AutoCraft` stays as the small entry point.
+`chain/GridMath` holds the click path's pure decisions: grid sizes, where a recipe sits in the 3x3 grid, which cell a
+missing tool goes to, and how big a burst of result clicks is. `tools/AutoCraftLogicCheck.java` tests them without
+Minecraft classes, against values worked out by hand from the code before the split.
+
+AE2 terminal on the server (1.3.5): before each fill the grid's items go into the network (`CraftServer.gridToNetwork`;
+what the network refuses goes to the player's main slots, and what fits nowhere back into its cell), and the network's view is
+refreshed first (`Ae2CraftServer.refreshNetworkView`), because AE2 fills from a cached copy that is stale within a tick. Without
+network storage or a view that can be refreshed it moves the grid into the inventory as before (`gridToInventory`). Each result
+goes into the network first and into the inventory only when the network can't take it (`stowCarried`, `intoNetwork`);
+what fits nowhere is dropped at the player's feet. The room check before a craft counts both: it stops with `INVENTORY_FULL`
+only when the inventory's free room plus what the network would take (simulated) is below the result's count, and then
+logs why (`logAe2NoRoom`). A network call that throws is read back, so nothing is lost or duplicated.
+
 AE2 crafting terminals (1.3.3, `Ae2Crafting`, by reflection on AE2 19.2 names on 1.21.1; a reflection failure logs one warning, lets a
 run in progress clean up, and keeps new runs in terminals from starting):
 the menu is one whose class extends `appeng.menu.me.items.CraftingTermMenu` (wireless terminals too, by class; not

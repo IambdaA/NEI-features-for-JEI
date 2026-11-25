@@ -26,9 +26,9 @@ import net.minecraft.world.item.TooltipFlag;
  * ingredient, whatever else they carry. A stack is rebuilt from such an id from the stacks seen in recipes so far, or
  * else from JEI's ingredient list. An item JEI sees no subtype in keeps its plain registry id.
  */
-final class StackIds {
+public final class StackIds {
 
-    static final char MARK = '~';
+    public static final char MARK = '~';
 
     private static final Map<String, ItemStack> known = new HashMap<>();
     private static boolean scanned;

@@ -12,7 +12,8 @@ Builds for 1.20.1, 26.1.2 and 26.2 are on the same CurseForge page. Not affiliat
 - Minecraft 1.21.1 with NeoForge 21.1, or Fabric (loader 0.16+ and Fabric API)
 - JEI 19.x
 
-Works client side; chat links need the mod on the server too, and autocrafting and cheat mode need JEI on the server.
+Works client side; chat links and server-side autocrafting need the mod on the server too, and
+autocrafting by clicks and cheat mode need JEI on the server.
 
 JEI++ changes the same things this mod does; a chat message warns when it is installed.
 
@@ -58,8 +59,8 @@ Not in NEI:
 - Crafting mode in the crafting tree: it counts your inventory live, and storage you open tints the items the tree
   still needs (orange; Highlight Chain Items in the settings)
 - G in cheat mode gives everything a crafting chain is missing, tools included
-- Autocrafting in AE2 crafting terminals (from the network), Tinkers' Crafting Station and Sophisticated Storage's
-  crafting upgrade
+- Autocrafting on the server in one tick (with the mod there), in AE2 crafting terminals (from the network), Tinkers'
+  Crafting Station, Sophisticated Storage's crafting upgrade and Ars Nouveau's storage lectern
 - AE2 and Refined Storage: bookmarks and tooltips show how many the network holds; T types an item into the AE2
   terminal's search
 - EMI support: the bookmark panel, favorites, recipe trees, autocrafting and the recipe search work with EMI's
@@ -214,8 +215,12 @@ Plain **Shift + C** only crafts what your inventory is missing; **Ctrl + Shift +
 even if your inventory already holds it.
 When a run ends short, chat names the recipes that came up short, how many were crafted and why.
 
-- It moves the ingredients with JEI's recipe transfer and crafts as many sets at once as fit. JEI must be installed on
-  the server in multiplayer.
+- With the mod on the server too (single player included), the whole chain goes to the server in one request (several
+  for very long chains) and the server crafts it in one tick, so lag can't break a run. This works at a crafting table,
+  the inventory's 2x2 grid, a Tinkers' Crafting Station (with no chest next to it), an AE2 crafting terminal (wireless
+  ones too), a Sophisticated Storage or Backpacks crafting upgrade and an Ars Nouveau storage lectern.
+- Anywhere else, or on a server without the mod, it crafts by clicks: it moves the ingredients with JEI's recipe transfer
+  and crafts as many sets at once as fit. JEI must be installed on the server in multiplayer.
 - It works at any crafting table JEI can fill, such as Tinkers' Crafting Station and Sophisticated Storage's crafting
   upgrade (not while the upgrade refills its own grid). Leftover ingredients go back into the table's own storage
   (a crafting station's side chest, the Sophisticated storage) when they came from there, and so do the items made
@@ -224,14 +229,18 @@ When a run ends short, chat names the recipes that came up short, how many were 
   and what is left in the grid goes back into the network at the end (chat says so when it couldn't). A recipe whose
   ingredients are not all in your inventory, the network or the grid is skipped before anything is moved; a recipe
   whose result comes out as another item is skipped too, its ingredients go back into the network, and the end of the
-  run says what did not reach the grid. What the chain makes on the way goes into the network (AE2 refills the
-  grid from there; if the network refuses it, it comes to your inventory), and the items you asked for come to your
-  inventory; anything that doesn't fit there goes into the network too. A recipe whose tool isn't made yet waits for
+  run says what did not reach the grid. The crafted items go into the network (AE2 refills the grid
+  from there), and into your inventory only when the network can't take them. A recipe whose tool isn't made yet waits for
   it.
 - Recipes with a tool are filled up around the tool and crafted in one go; a broken tool is replaced from your inventory.
 - When it stops, or finishes without making something, chat says why.
-- Settings: Faster Autocrafting (crafts the exact amount from a full grid), Restore Inventory Layout (puts your items
+- Settings: Autocrafting Speed (the most crafts autocrafting asks for in one tick; 0 = no limit, the default; below 64,
+  crafting by clicks fills the grid one set at a time and is much slower), Restore Inventory Layout (puts your items
   back in their old slots afterwards).
+- Server owners: `config/neiaddon-server.toml` has `autocraftMillisPerTick` (0 = no limit, the default; 0 to 1000), the
+  most server time one player's autocrafting request may use per tick. At least one step (up to 64 crafts of one
+  recipe) always runs. It is read once, so a change needs a server restart. An older version of the mod on a limited
+  server crafts by clicks.
 - Recipes JEI can't move into a crafting grid (furnaces, machines) are skipped.
 
 </details>
@@ -250,7 +259,8 @@ Using with EMI below); the clicks below are without EMI.
   bookmarks give filled buckets.
 - With an item on the cursor over JEI's list or the bookmark panel: **left click deletes it**, right click removes one.
 - **G** over a crafting chain's strip gives everything the chain is missing (the red ingredients of its Shift tooltip),
-  including enough tools to cover the durability it needs. Also works in creative mode.
+  including enough tools to cover the durability it needs. Also works in creative mode, where what doesn't fit in your
+  inventory is dropped at your feet. Giving is not capped at 36 stacks any more (safety ceiling: 1000 stacks per item).
 - **Utility buttons** above the panel: time of day, rain, heal and feed, game mode. Utility Mode shows the ones you
   pick under Utilities; Cheat Mode shows all. The same actions can be bound to keys (unbound by default).
 
