@@ -17,7 +17,13 @@ public interface ClientPlatform {
     /** Whether the connected server has the addon's chat link channel (it is optional). */
     boolean canSendToServer();
 
-    /** Client to server (a {@code Share.ShareRequest}). */
+    /** Whether the connected server has the addon's server-side crafting channel (it is optional). */
+    boolean canCraftOnServer();
+
+    /** Whether the connected server has the whole-chain crafting channel (optional, its own channel). */
+    boolean canCraftChainOnServer();
+
+    /** Client to server: a {@code Share.ShareRequest}, a {@code Craft.CraftRequest} or a chain request. */
     void sendToServer(Object message);
 
     /** {left, top, width, height} of the container's own area. */

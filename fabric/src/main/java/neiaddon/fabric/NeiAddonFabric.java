@@ -1,5 +1,7 @@
 package neiaddon.fabric;
 
+import neiaddon.Craft;
+import neiaddon.CraftServer;
 import neiaddon.NeiAddon;
 import neiaddon.Share;
 import net.fabricmc.api.ModInitializer;
@@ -16,6 +18,16 @@ public final class NeiAddonFabric implements ModInitializer {
             Share.ShareRequest request = Share.ShareRequest.decode(buf);
             server.execute(() -> Share.broadcast(player, request.payload()));
         });
+        ServerPlayNetworking.registerGlobalReceiver(Craft.CRAFT_REQUEST,
+            (server, player, handler, buf, responseSender) -> {
+                Craft.CraftRequest request = Craft.CraftRequest.decode(buf);
+                server.execute(() -> CraftServer.handle(player, request));
+            });
+        ServerPlayNetworking.registerGlobalReceiver(Craft.CHAIN_REQUEST,
+            (server, player, handler, buf, responseSender) -> {
+                Craft.CraftChainRequest request = Craft.CraftChainRequest.decode(buf);
+                server.execute(() -> CraftServer.handleChain(player, request));
+            });
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher.register(Share.command()));
     }
 }

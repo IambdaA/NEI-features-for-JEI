@@ -5,6 +5,7 @@ import java.util.Optional;
 import neiaddon.platform.Platform;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import neiaddon.Craft;
 import neiaddon.Share;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.network.FriendlyByteBuf;
@@ -46,6 +47,12 @@ final class FabricPlatform implements Platform {
         } else if (message instanceof Share.ImportRequest m) {
             id = Share.IMPORT_REQUEST;
             Share.ImportRequest.encode(m, buf);
+        } else if (message instanceof Craft.CraftResult m) {
+            id = Craft.CRAFT_RESULT;
+            Craft.CraftResult.encode(m, buf);
+        } else if (message instanceof Craft.CraftChainResult m) {
+            id = Craft.CHAIN_RESULT;
+            Craft.CraftChainResult.encode(m, buf);
         } else {
             throw new IllegalArgumentException("Not a message to a client: " + message);
         }

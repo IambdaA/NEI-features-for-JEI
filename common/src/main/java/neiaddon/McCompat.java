@@ -8,11 +8,11 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.world.item.ItemStack;
 
 /** The bits of the client API that differ between Minecraft versions. This is the 1.20.1 copy. */
-final class McCompat {
+public final class McCompat {
 
     private McCompat() {}
 
-    static Screen screen() {
+    public static Screen screen() {
         return Minecraft.getInstance().screen;
     }
 

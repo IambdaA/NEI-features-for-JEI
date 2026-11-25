@@ -1,6 +1,8 @@
 package neiaddon.fabric;
 
+import neiaddon.AutoCraft;
 import neiaddon.CalcKeys;
+import neiaddon.Craft;
 import neiaddon.HighlightTips;
 import neiaddon.NeiAddon;
 import neiaddon.Share;
@@ -26,6 +28,14 @@ public final class NeiAddonFabricClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(Share.IMPORT_REQUEST, (client, handler, buf, responseSender) -> {
             Share.ImportRequest request = Share.ImportRequest.decode(buf);
             client.execute(() -> ShareClient.open(request.id()));
+        });
+        ClientPlayNetworking.registerGlobalReceiver(Craft.CRAFT_RESULT, (client, handler, buf, responseSender) -> {
+            Craft.CraftResult result = Craft.CraftResult.decode(buf);
+            client.execute(() -> AutoCraft.serverCraftResult(result));
+        });
+        ClientPlayNetworking.registerGlobalReceiver(Craft.CHAIN_RESULT, (client, handler, buf, responseSender) -> {
+            Craft.CraftChainResult result = Craft.CraftChainResult.decode(buf);
+            client.execute(() -> AutoCraft.serverChainResult(result));
         });
         HighlightTips tips = HighlightTips.layer();
         HudRenderCallback.EVENT.register((graphics, tickDelta) -> {

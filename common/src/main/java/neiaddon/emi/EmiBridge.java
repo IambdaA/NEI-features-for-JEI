@@ -106,7 +106,9 @@ public final class EmiBridge implements EmiCompat.Hooks {
             if (!emiOnServer.getBoolean(null)) return false;
             int max = Math.max(1, Math.min(64, stack.getMaxStackSize()));
             int mode = toCursor ? 1 : 0;
-            long left = toCursor ? Math.min(count, max) : Math.min(count, (long) max * 36);
+            // the cursor holds one stack; otherwise the whole amount, as JeiGive gives it (the server drops what
+            // doesn't fit the inventory)
+            long left = toCursor ? Math.min(count, max) : neiaddon.JeiGive.ceiling(count, max);
             while (left > 0) {
                 int n = (int) Math.min(left, max);
                 emiSendToServer.invoke(null, createItemPacket.newInstance(mode, stack.copyWithCount(n)));

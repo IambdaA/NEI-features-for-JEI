@@ -35,7 +35,7 @@ public final class ChainAutocraft {
     }
 
     private final ChainMath math;
-    private final Host host;
+    private Host host;
     private final List<ChainItem> initialItems;
     private Phase phase = Phase.PASS;
     private ChainIterator iterator;
@@ -65,6 +65,14 @@ public final class ChainAutocraft {
         this.math = math;
         this.host = host;
         this.initialItems = prepareInitialItems(math, host.inventory());
+    }
+
+    /**
+     * Swaps the host the walker asks from now on. The game side points the walker at a simulated host while it replays
+     * a chain answer (see {@link ChainPredict}), then back at the real one.
+     */
+    public void setHost(Host host) {
+        this.host = host;
     }
 
     /** True once something has been crafted. */

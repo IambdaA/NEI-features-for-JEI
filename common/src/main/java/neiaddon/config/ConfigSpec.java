@@ -15,17 +15,20 @@ import neiaddon.platform.Platform;
 /**
  * A small settings file the same on every loader: {@code config/neiaddon-client.toml}, one {@code key = value} line per
  * setting with its comment above (the file NeoForge wrote before, so existing settings carry over). The values are
- * read on first use, {@code set} changes them in memory and {@code save} writes the file.
+ * read on first use, {@code set} changes them in memory and {@code save} writes the file. {@code build(String)} makes
+ * a spec for another file in the same folder (the server's {@code neiaddon-server.toml}).
  */
 public final class ConfigSpec {
 
     private static final String FILE = "neiaddon-client.toml";
 
     private final List<ConfigValue<?>> values;
+    private final String fileName;
     private boolean loaded;
 
-    private ConfigSpec(List<ConfigValue<?>> values) {
+    private ConfigSpec(List<ConfigValue<?>> values, String fileName) {
         this.values = values;
+        this.fileName = fileName;
         for (ConfigValue<?> v : values) v.spec = this;
     }
 
@@ -54,7 +57,12 @@ public final class ConfigSpec {
         }
 
         public ConfigSpec build() {
-            return new ConfigSpec(values);
+            return new ConfigSpec(values, FILE);
+        }
+
+        /** Builds a spec that reads and writes another file in the config folder. */
+        public ConfigSpec build(String file) {
+            return new ConfigSpec(values, file);
         }
     }
 
@@ -143,7 +151,7 @@ public final class ConfigSpec {
     }
 
     private Path file() {
-        return Platform.get().configDir().resolve(FILE);
+        return Platform.get().configDir().resolve(fileName);
     }
 
     synchronized void ensureLoaded() {
@@ -195,7 +203,7 @@ public final class ConfigSpec {
         Path file = file();
         try {
             Files.createDirectories(file.getParent());
-            Path tmp = file.resolveSibling(FILE + ".tmp");
+            Path tmp = file.resolveSibling(fileName + ".tmp");
             Files.writeString(tmp, out.toString(), StandardCharsets.UTF_8);
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {

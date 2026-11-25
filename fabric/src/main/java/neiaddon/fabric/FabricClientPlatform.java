@@ -4,6 +4,7 @@ import neiaddon.fabric.mixin.AbstractContainerScreenAccessor;
 import neiaddon.platform.ClientPlatform;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import neiaddon.Craft;
 import neiaddon.Share;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.network.FriendlyByteBuf;
@@ -18,7 +19,29 @@ final class FabricClientPlatform implements ClientPlatform {
     }
 
     @Override
+    public boolean canCraftOnServer() {
+        return ClientPlayNetworking.canSend(Craft.CRAFT_REQUEST);
+    }
+
+    @Override
+    public boolean canCraftChainOnServer() {
+        return ClientPlayNetworking.canSend(Craft.CHAIN_REQUEST);
+    }
+
+    @Override
     public void sendToServer(Object message) {
+        if (message instanceof Craft.CraftRequest craft) {
+            FriendlyByteBuf craftBuf = PacketByteBufs.create();
+            Craft.CraftRequest.encode(craft, craftBuf);
+            ClientPlayNetworking.send(Craft.CRAFT_REQUEST, craftBuf);
+            return;
+        }
+        if (message instanceof Craft.CraftChainRequest chain) {
+            FriendlyByteBuf chainBuf = PacketByteBufs.create();
+            Craft.CraftChainRequest.encode(chain, chainBuf);
+            ClientPlayNetworking.send(Craft.CHAIN_REQUEST, chainBuf);
+            return;
+        }
         if (!(message instanceof Share.ShareRequest request)) throw new IllegalArgumentException("Not a message to the server: " + message);
         FriendlyByteBuf buf = PacketByteBufs.create();
         Share.ShareRequest.encode(request, buf);

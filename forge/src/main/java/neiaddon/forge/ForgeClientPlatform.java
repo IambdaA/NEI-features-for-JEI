@@ -4,6 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.world.inventory.Slot;
+import neiaddon.Craft;
 import neiaddon.platform.ClientPlatform;
 
 /** Forge's answers to the shared client code's questions. */
@@ -16,8 +17,21 @@ final class ForgeClientPlatform implements ClientPlatform {
     }
 
     @Override
+    public boolean canCraftOnServer() {
+        ClientPacketListener connection = Minecraft.getInstance().getConnection();
+        return connection != null && ForgeNetwork.CRAFT.isRemotePresent(connection.getConnection());
+    }
+
+    @Override
+    public boolean canCraftChainOnServer() {
+        ClientPacketListener connection = Minecraft.getInstance().getConnection();
+        return connection != null && ForgeNetwork.CRAFT_CHAIN.isRemotePresent(connection.getConnection());
+    }
+
+    @Override
     public void sendToServer(Object message) {
-        ForgeNetwork.CHANNEL.sendToServer(message);
+        (message instanceof Craft.CraftChainRequest ? ForgeNetwork.CRAFT_CHAIN
+            : message instanceof Craft.CraftRequest ? ForgeNetwork.CRAFT : ForgeNetwork.CHANNEL).sendToServer(message);
     }
 
     @Override

@@ -25,7 +25,11 @@ public interface Platform {
     /** What is left after using the stack once (a bucket after a recipe), or EMPTY. */
     ItemStack craftingRemainder(ItemStack stack);
 
-    /** Server to one client (a {@code Share.SharedPayload} or {@code Share.ImportRequest}); nothing happens when that client cannot receive it. */
+    /**
+     * Server to one client (a {@code Share.SharedPayload}, {@code Share.ImportRequest}, {@code Craft.CraftResult} or
+     * {@code Craft.CraftChainResult});
+     * nothing happens when that client cannot receive it.
+     */
     void sendToPlayer(ServerPlayer player, Object message);
 
     final class Holder {

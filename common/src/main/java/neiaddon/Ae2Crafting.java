@@ -18,7 +18,7 @@ import net.minecraft.world.item.ItemStack;
  * network's items count as the player's. All by reflection on AE2 15 (1.20.1) names; any failure turns this off with one
  * warning, and the terminal is then simply not a crafting grid for autocrafting.
  */
-final class Ae2Crafting {
+public final class Ae2Crafting {
 
     private static final String MENU = "appeng.menu.me.items.CraftingTermMenu";
     private static final String OUTPUT = "appeng.menu.slot.CraftingTermSlot";
@@ -26,7 +26,8 @@ final class Ae2Crafting {
 
     private static boolean broken;
     private static Constructor<?> packet, interaction;
-    private static Object craftItem, setDown;
+    private static Object craftItem, craftStackAction, setDown;
+    private static boolean stackLooked;
     private static Method instance, sendMethod;
     private static Field repo, entries;
     private static Method what, amount, toStack;
@@ -45,12 +46,12 @@ final class Ae2Crafting {
      * Is this an AE2 crafting terminal's menu? True also after a failure, so a run that broke still finds its grid and
      * cleans up; {@link #broken()} keeps a new run from starting.
      */
-    static boolean isTerminal(AbstractContainerMenu menu) {
+    public static boolean isTerminal(AbstractContainerMenu menu) {
         return menu != null && named(menu.getClass(), MENU);
     }
 
     /** Did an AE2 access fail (autocrafting in terminals is then off)? */
-    static boolean broken() {
+    public static boolean broken() {
         return broken;
     }
 
@@ -86,7 +87,39 @@ final class Ae2Crafting {
      * would read Shift and craft a stack). The server refills the grid from the network afterwards. False when it could not
      * be sent.
      */
-    static boolean craftOne(Slot output) {
+    public static boolean craftOne(Slot output) {
+        return craft(output, false);
+    }
+
+    /**
+     * Crafts up to a stack onto the empty cursor in one click (AE2's CRAFT_STACK action): the server crafts again and
+     * again, refilling the grid from the network each time, until the cursor holds a stack or the result changes (a
+     * tool broke, an ingredient ran out). False when it could not be sent.
+     */
+    public static boolean craftStack(Slot output) {
+        return canCraftStack() && craft(output, true);
+    }
+
+    /**
+     * Whether this AE2 has the stack craft action. Looked up once and on its own: an AE2 without it keeps the single
+     * craft and the rest of the terminal support, with one warning in the log.
+     */
+    public static boolean canCraftStack() {
+        if (!stackLooked) {
+            stackLooked = true;
+            try {
+                craftStackAction = Class.forName("appeng.helpers.InventoryAction")
+                    .getField("CRAFT_STACK")
+                    .get(null);
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+                NeiAddon.LOGGER.warn("AE2 has no stack craft action; autocrafting in its terminal crafts one at a time",
+                    e);
+            }
+        }
+        return craftStackAction != null;
+    }
+
+    private static boolean craft(Slot output, boolean stack) {
         try {
             if (packet == null) {
                 Class<?> action = Class.forName("appeng.helpers.InventoryAction");
@@ -95,7 +128,7 @@ final class Ae2Crafting {
                 packet = Class.forName("appeng.core.sync.packets.InventoryActionPacket")
                     .getConstructor(action, int.class, long.class);
             }
-            sendToServer(packet.newInstance(craftItem, output.index, 0L));
+            sendToServer(packet.newInstance(stack ? craftStackAction : craftItem, output.index, 0L));
             return true;
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             broke("could not send AE2's craft action", e);
@@ -108,7 +141,7 @@ final class Ae2Crafting {
      * with a stack held (AE2's {@code MEStorageScreen} sends {@code PICKUP_OR_SET_DOWN} with serial -1): the network takes
      * what it can, the rest stays on the cursor. False when it could not be sent.
      */
-    static boolean putCarriedIntoNetwork(AbstractContainerMenu menu) {
+    public static boolean putCarriedIntoNetwork(AbstractContainerMenu menu) {
         try {
             if (interaction == null) {
                 Class<?> action = Class.forName("appeng.helpers.InventoryAction");
@@ -136,7 +169,7 @@ final class Ae2Crafting {
     }
 
     /** Puts the grid back into the network (the terminal's own "clear" action). False when it could not be asked. */
-    static boolean clearGrid(AbstractContainerMenu menu) {
+    public static boolean clearGrid(AbstractContainerMenu menu) {
         try {
             menu.getClass()
                 .getMethod("clearCraftingGrid")
@@ -152,7 +185,7 @@ final class Ae2Crafting {
      * The network's items as the open terminal screen knows them, keyed like the addon's item ids ({@link RecipeData#idOf});
      * fluids and other kinds are left out. Null when the screen is no AE2 terminal or it cannot be read.
      */
-    static Map<String, Long> networkItems(Screen screen) {
+    public static Map<String, Long> networkItems(Screen screen) {
         Map<String, Long> out = new HashMap<>();
         if (broken || screen == null) return null;
         try {
